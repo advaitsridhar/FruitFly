@@ -52,6 +52,7 @@ class Experiment:
     settle_ms: float = 100.0
     tags: tuple[str, ...] = ()
     note: str = ""
+    profile: str | None = None      # the model profile the expected ranges were measured with (None = any)
 
 
 def R(spec, label, lo, hi, source=""):
@@ -78,9 +79,29 @@ CLASSIC: list[Experiment] = [
                tags=("classic", "touch")),
 ]
 
-# Extended experiments are filled in by settings.EXTENDED after the probe-calibrated ranges; kept here
-# so that `run_all` can find them by tag.
-EXTENDED: list[Experiment] = []
+# The circuits this kit added, with the ranges measured on this machine in the *game* profile
+# (docs/SCIENCE.md has every number; the pure model runs away on most of these stimuli).
+PROBE = "measured on the real connectome, game profile (docs/SCIENCE.md)"
+EXTENDED: list[Experiment] = [
+    Experiment("Smell of vinegar", ODOUR_VINEGAR, 600,
+               [R("DM1_lPN", "DM1 projection neuron", 150, 500, PROBE),
+                R("class:Kenyon_Cell", "Kenyon cells (sparse code)", 0.5, 5, PROBE),
+                R("MBON14", "MBON14, a KC-driven MBON", 10, 90, PROBE),
+                R("MBON11", "MBON11 (γ1pedc, KC input only: dopamine muted)", 1, 60, PROBE)],
+               tags=("extended", "smell"), profile="game"),
+    Experiment("Bitter taste → punishment dopamine", BITTER, 600,
+               [R("PPL101", "PPL101 (γ1pedc dopamine)", 30, 150, PROBE), R("prefix:PAM", "PAM reward dopamine", 0, 2, PROBE)],
+               tags=("extended", "learning"), profile="game"),
+    Experiment("A loud sound", {"prefix:JO-B": 100}, 400,
+               [R("DNp01", "giant fibre (startle)", 20, 150, PROBE)], tags=("extended", "hearing"), profile="game"),
+    Experiment("Courtship command", {"prefix:pC1_": 60}, 500,
+               [R("pIP10", "pIP10 song neuron", 30, 150, PROBE), R("DNp13", "DNp13", 5, 90, PROBE)],
+               tags=("extended", "courtship"), profile="game"),
+    Experiment("Wide-field motion, right eye", {"T4a/R,T5a/R": 100}, 400,
+               [R("HSE/R,HSN/R,HSS/R", "HS cells, right", 200, 500, PROBE), R("DNp15/R", "DNp15 right (optomotor)", 50, 300, PROBE),
+                R("DNa02/R", "DNa02 right (turn right)", 40, 250, PROBE), R("DNa02/L", "DNa02 left", 0, 20, PROBE)],
+               tags=("extended", "vision"), profile="game"),
+]
 
 
 def all_experiments() -> list[Experiment]:
@@ -178,16 +199,25 @@ def format_result(res: ExperimentResult) -> str:
     return "\n".join(lines)
 
 
-def run_all(brain: FlyBrain, experiments=None, only: str | None = None, seeds=(0,), verbose=True):
+def run_all(brain: FlyBrain, experiments=None, only: str | None = None, seeds=(0,), verbose=True,
+            profile: str | None = None):
+    """Run experiments; those whose expected ranges were measured with another profile are skipped
+    (say ``profile=None`` to run everything regardless)."""
     experiments = experiments if experiments is not None else all_experiments()
     if verbose:
         print("\n Experiment                         Neuron                            Rate        Expected")
         print(" " + "-" * 96)
-    out = []
+    out, skipped = [], []
     for exp in experiments:
         if only and only.lower() not in exp.name.lower() and only.lower() not in " ".join(exp.tags):
             continue
+        if profile is not None and exp.profile is not None and exp.profile != profile:
+            skipped.append(exp)
+            continue
         out.append(run_experiment(brain, exp, seeds=seeds, verbose=verbose))
+    if verbose and skipped:
+        print(f"\n (skipped {len(skipped)} experiments whose ranges were measured with the "
+              f"'{skipped[0].profile}' profile: {', '.join(e.name for e in skipped)}; run them with --profile {skipped[0].profile})")
     return out
 
 

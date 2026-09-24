@@ -289,7 +289,16 @@ class Game:
         self.brain.reset()
         self.world.clear("all")
         self.world.hand = None
+        self.world.set_stripes(0, 0.0)
         self.body.reset()
+        # the senses forget what they were in the middle of
+        self.antennae.dust_left = 0.0
+        self.antennae.hearing = 0.0
+        self.bristles.touch_left = 0.0
+        self.bristles.last_touch_t = -99.0
+        self.nose.background.clear()
+        self.retina.features = type(self.retina.features)(self.retina.eyes)
+        self._prev_felt = {}
         self.zaps = []                    # [spec, hz, seconds left]
         self.mode = "idle"
         self.wander = dict(walking=True, left=2.0, yaw=0.0)
@@ -429,6 +438,7 @@ class Game:
             if key in self.custom_readouts:
                 del self.custom_readouts[key]
                 self.readouts.pop(key, None)
+                self.hz_shown.pop(key, None)
                 self.brain.remove_monitor(key)
         elif kind == "clear":
             w.clear(a.get("what", "all"))

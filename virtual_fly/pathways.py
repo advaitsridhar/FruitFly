@@ -142,11 +142,11 @@ def strongest_partners(conn: Connectome, spec: str, direction: str = "out", top:
         conn.inputs_of(spec, top=top, by_side=by_side)
     tg = conn.type_graph()
     for r in rows:
-        name = f"{r['type']}/{r['side']}" if r["side"] else r["type"]
-        node = tg.index.get(name)
-        if node is None:
-            r["fraction"] = None
-            continue
-        total = tg.in_total[node] if direction == "out" else tg.out_total[node]
+        if r["side"]:
+            nodes = [tg.index[n] for n in (f"{r['type']}/{r['side']}",) if n in tg.index]
+        else:                                    # summed over sides
+            nodes = [tg.index[n] for n in tg.index if n == r["type"] or n.startswith(r["type"] + "/")]
+        totals = tg.in_total if direction == "out" else tg.out_total
+        total = float(sum(totals[n] for n in nodes))
         r["fraction"] = float(r["synapses"] / total) if total > 0 else None
     return rows

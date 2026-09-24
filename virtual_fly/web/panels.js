@@ -370,8 +370,16 @@ export class EventsPanel {
 // ================================================================= 10. Recording
 export class RecordingPanel {
   // `on` is tracked here: the server keeps `state.recording` (the kept frames) after a stop.
-  constructor() { this.on = false; $("recBtn").onclick = () => { this.on = !this.on; post({ type: "record", on: this.on, spikes: $("recSpikes").checked }); this.render(this.last); }; }
-  update(S) { this.last = S.recording; if (!S.recording) this.on = false; this.render(S.recording); }
+  constructor() {
+    this.on = null; this.holdUntil = 0;
+    $("recBtn").onclick = () => { this.on = !this.on; this.holdUntil = performance.now() + 2000; post({ type: "record", on: this.on, spikes: $("recSpikes").checked }); this.render(this.last); };
+  }
+  update(S) {
+    this.last = S.recording;
+    if (this.on === null) this.on = !!S.recording;                                   // first state: adopt what the server says
+    else if (!S.recording && performance.now() > this.holdUntil) this.on = false;   // (after a grace period: the action lands on the next brain tick)
+    this.render(S.recording);
+  }
   render(r) {
     setText($("recBtn"), this.on ? "■ Stop" : "● Record"); setClass($("recBtn"), "rec", this.on);
     setText($("recInfo"), r ? `${r.frames.toLocaleString()} frames${r.spikes ? " + every spike" : ""}${this.on ? "" : " kept: download below"}` : "not recording");

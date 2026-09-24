@@ -310,6 +310,8 @@ class FlyBrain:
         v, g = self.v, self.g
         slot = self.t % self.n_slots
         if (self.quiet and not self._stim_idx.size and not self._pending[slot] and not self._noise_idx.size):
+            if self.plasticity is not None:              # traces keep decaying, memories keep fading
+                self.plasticity.step(self, self._empty)
             self.t += 1                                  # nothing is happening anywhere: skip the maths
             self.window_ms += self.dt
             self.last_spikes = self._empty
@@ -534,7 +536,7 @@ class FlyBrain:
 
     def _tick_monitors(self, spikes=None):
         """Cheap: only at bin boundaries, from spike_count deltas (reset-aware)."""
-        t_ms = (self.t + 1) * self.dt
+        t_ms = self.t * self.dt                          # called after t was advanced
         for m in self.monitors.values():
             if t_ms - m._t_start >= m.bin_ms - 1e-9:
                 total = int(self.spike_count[m.idx].sum()) if m.idx.size else 0

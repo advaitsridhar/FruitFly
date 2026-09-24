@@ -273,8 +273,10 @@ export class BrainView {
         c.strokeStyle = "#0a0e13"; c.lineWidth = 1; c.stroke();
         if (this.pathNames && this.pathNames[j]) {
           c.font = "600 10px system-ui"; c.fillStyle = "rgba(10,14,19,.75)";
-          const w = c.measureText(this.pathNames[j]).width + 6; c.fillRect(p[0] + 6, p[1] - 12, w, 13);
-          c.fillStyle = "#ffe8b0"; c.fillText(this.pathNames[j], p[0] + 9, p[1] - 2);
+          const w = c.measureText(this.pathNames[j]).width + 6;
+          const lx = Math.max(2, Math.min(this.cssW - w - 2, p[0] + 6)), ly = Math.max(14, Math.min(this.cssH - 2, p[1] - 2));
+          c.fillRect(lx, ly - 10, w, 13);
+          c.fillStyle = "#ffe8b0"; c.fillText(this.pathNames[j], lx + 3, ly);
         }
       });
     }

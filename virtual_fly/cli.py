@@ -210,7 +210,8 @@ def main(argv=None):
 
     print(f"Running the validated experiments with the '{args.profile}' profile "
           f"(every neuron simulated, nothing trained)...")
-    results = E.run_all(brain, only=args.only, seeds=tuple(range(args.seed, args.seed + args.seeds)))
+    results = E.run_all(brain, only=args.only, seeds=tuple(range(args.seed, args.seed + args.seeds)),
+                        profile=args.profile)
     bad = [r for r in results if not r.ok]
     n_read = sum(len(r.readouts) for r in results)
     n_ok = sum(sum(x.ok for x in r.readouts) for r in results)

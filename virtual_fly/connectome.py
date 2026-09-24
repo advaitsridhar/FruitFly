@@ -39,7 +39,9 @@ import numpy as np
 
 PACKAGE_DIR = Path(__file__).resolve().parent
 PROJECT_DIR = PACKAGE_DIR.parent
-DATA_FILE = Path(os.environ.get("FLY_DATA_FILE", PROJECT_DIR / "data" / "malecns-v1.0.flyb.gz"))
+DEFAULT_DATA_FILE = PROJECT_DIR / "data" / "malecns-v1.0.flyb.gz"
+# FLY_DATA_FILE points the whole kit at another connectome file (no download, no checksum)
+DATA_FILE = Path(os.environ.get("FLY_DATA_FILE", DEFAULT_DATA_FILE))
 # Pinned to one commit so the file can never change under you.
 DATA_URL = ("https://raw.githubusercontent.com/blendi-remade/fly-brain-minecraft/"
             "6cfa30175003ef25da68a237d5eda958f8047b82/src/main/resources/connectome/malecns-v1.0.flyb.gz")
@@ -205,7 +207,7 @@ class Connectome:
                                                       neuromere:, dimorphism:, frudsx:)
             body:10783           one neuron by its neuPrint bodyId
             index:1234           one neuron by its index in this file
-            hex:12,7             columnar visual neurons in medulla column (hex1, hex2)
+            hex:12:7             columnar visual neurons in medulla column (hex1, hex2)
             all                  every neuron
 
         End a term with ``/L``, ``/R`` or ``/M`` to keep only that side, e.g. ``"DNa02/L"``.
@@ -277,7 +279,7 @@ class Connectome:
             mask = np.zeros(self.n, dtype=bool)
             mask[int(value)] = True
         elif key == "hex":
-            h1, h2 = (int(v) for v in value.split(","))
+            h1, h2 = (int(v) for v in value.split(":"))
             mask = (self.hex1 == h1) & (self.hex2 == h2)
         else:
             raise ValueError(f"unknown filter '{key}:' in population spec")
@@ -514,9 +516,12 @@ class TypeGraph:
 
 
 def load_connectome(path: Path | str = DATA_FILE, quiet: bool = False) -> Connectome:
-    """Download (first time only) and load the MaleCNS v1.0 connectome."""
+    """Download (first time only) and load the MaleCNS v1.0 connectome.
+
+    Only the default file is downloaded and checksummed; a path given explicitly or through the
+    ``FLY_DATA_FILE`` environment variable is loaded as it is."""
     path = Path(path)
-    if path == DATA_FILE:
+    if path == DEFAULT_DATA_FILE:
         download_connectome(path, quiet=quiet)
     t0 = time.time()
     conn = Connectome(path)

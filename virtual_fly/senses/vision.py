@@ -123,8 +123,8 @@ class Eye:
         return arr.reshape(self.n_az, self.n_el)
 
 
-def _blobs(mask2d: np.ndarray) -> list[tuple[int, float, float]]:
-    """Connected dark regions (4-connected) as (size, mean_i, mean_j)."""
+def _blobs(mask2d: np.ndarray) -> list[tuple]:
+    """Connected dark regions (4-connected) as (size, mean_i, mean_j, streak=0, touches_edge)."""
     n_i, n_j = mask2d.shape
     seen = np.zeros_like(mask2d, dtype=bool)
     out = []
@@ -143,7 +143,9 @@ def _blobs(mask2d: np.ndarray) -> list[tuple[int, float, float]]:
                     if 0 <= na < n_i and 0 <= nb < n_j and mask2d[na, nb] and not seen[na, nb]:
                         seen[na, nb] = True
                         stack.append((na, nb))
-            out.append((len(cells), float(np.mean([c[0] for c in cells])), float(np.mean([c[1] for c in cells]))))
+            rows = [c[0] for c in cells]
+            out.append((len(cells), float(np.mean(rows)), float(np.mean([c[1] for c in cells])), 0,
+                        min(rows) == 0 or max(rows) == n_i - 1))
     return out
 
 
@@ -184,9 +186,10 @@ class FeatureDetectors:
         out: dict[str, float] = {}
         felt: dict[str, str] = {}
         own_shift = abs(self_turn) * dt        # radians the image shifted because the fly turned
-        # walking toward something makes it expand too; raise the looming threshold with the fly's own
-        # speed so that approaching a post or a mate is not an attack (a hand-built efference copy)
-        loom_threshold = self.LOOM_THRESHOLD_DEG + 6.0 * abs(self_speed)
+        # walking toward something makes it expand too, and turning makes objects slide into view;
+        # raise the looming threshold with the fly's own speed and turn rate so that approaching a
+        # post or a mate, or looking round, is not an attack (a hand-built efference copy)
+        loom_threshold = self.LOOM_THRESHOLD_DEG + 6.0 * abs(self_speed) + 0.5 * math.degrees(abs(self_turn))
         for s, eye in self.eyes.items():
             objects = eye.object_mask                   # things in the dish, never the wall or its stripes
             blobs = _blobs(eye.grid(objects))
@@ -200,9 +203,11 @@ class FeatureDetectors:
                 pb = self._match(b, prev, max_dist=3.5 + own_shift / facet)
                 streak = 0
                 if pb is not None and b[0] > pb[0]:
-                    streak = pb[3] + 1 if len(pb) > 3 else 1
-                tracked.append((b[0], b[1], b[2], streak))
-                if b[0] < self.BIG_MIN or pb is None or streak < 2:
+                    streak = pb[3] + 1
+                tracked.append((b[0], b[1], b[2], streak, b[4]))
+                # a blob cut off by the front or back edge of the eye is entering or leaving the
+                # field of view: its apparent growth is not expansion
+                if b[0] < self.BIG_MIN or pb is None or streak < 2 or b[4] or pb[4]:
                     continue
                 r_now, r_prev = math.sqrt(b[0] / math.pi), math.sqrt(pb[0] / math.pi)
                 # an approaching object grows in place; one passing by shifts more than it grows
