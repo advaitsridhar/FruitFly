@@ -453,9 +453,11 @@ export class GeneticsPanel {
 }
 
 // ================================================================= 8c. Genome
+const TONE_COLOURS = { dopamine: "#d9a2ff", octopamine: "#ffb454", serotonin: "#6ad1ff" };
+
 export class GenomePanel {
   constructor(L) {
-    this.L = L; this.lastKey = "";
+    this.L = L; this.lastKey = ""; this.partsOn = null;
     const sel = $("genomeLevel"); sel.innerHTML = "";
     for (const lv of (L.genome && L.genome.levels) || []) {
       const o = document.createElement("option"); o.value = lv.level; o.textContent = lv.level; o.title = lv.label; sel.appendChild(o);
@@ -463,6 +465,20 @@ export class GenomePanel {
     sel.value = "type";
     $("growBtn").onclick = () => this.grow(sel.value);
     $("realBtn").onclick = () => this.grow("real");
+    // the parts list: one tone bar per modulator, built once; widths are updated every frame
+    $("partsBtn").onclick = async () => {
+      if (this.partsOn === null) return;
+      const r = await post({ type: "parts", on: !this.partsOn });
+      if (!r.ok) { setText($("genomeStatus"), r.error); setClass($("genomeStatus"), "err", true); }
+    };
+    const tones = $("tones"); tones.innerHTML = ""; this.toneEls = {};
+    for (const m of ((L.parts && L.parts.tables && L.parts.tables.modulators) || [])) {
+      const lab = el("span", "lbl", esc(m.label)); lab.title = `${m.genes.join(", ")} · receptors ${m.receptors} · ${m.why}`;
+      const bar = el("div", "bar thin"); const fill = document.createElement("div");
+      fill.style.background = TONE_COLOURS[m.nt] || "var(--accent)"; bar.appendChild(fill);
+      const val = el("span", "n", "0 %"); val.title = "mean tone over this modulator's targets, as a fraction of its full effect";
+      tones.append(lab, bar, val); this.toneEls[m.nt] = { fill, val };
+    }
   }
   async grow(level) {
     const seed = parseInt($("genomeSeed").value) || 0;
@@ -475,6 +491,7 @@ export class GenomePanel {
     setClass(st, "err", !!g.error);
     $("growBtn").disabled = !!g.growing;
     if (g.error) setText(st, `Could not grow: ${g.error}`);
+    else if (g.growing && g.growing.reason === "parts") setText(st, `rebuilding the brain with the parts list ${g.growing.parts ? "on" : "off"}… ${fmt(g.growing.secs, 0)} s (the game keeps running)`);
     else if (g.growing) setText(st, `growing a fly from its ${g.growing.level} wiring rules (seed ${g.growing.seed})… ${fmt(g.growing.secs, 0)} s (the game keeps running)`);
     else if (g.level === "real") setText(st, "the real wiring");
     else {
@@ -482,8 +499,9 @@ export class GenomePanel {
       setText(st, `${g.level} rules, seed ${g.seed}: ${(w.edges_grown || 0).toLocaleString()} connections, ${Math.round(100 * (w.shared_connections_fraction || 0))} % shared with the real wiring` +
         (r.groups ? ` · ${r.groups.toLocaleString()} groups, ${r.pairs.toLocaleString()} rules, ${(r.numbers / 1e6).toFixed(1)} M numbers` : ""));
     }
+    this.updateParts(g);
     const sv = g.survival;
-    const key = sv ? `${g.level}|${g.seed}|${sv.running}|${sv.results.length}|${(sv.results[sv.results.length - 1] || {}).ok}` : "none";
+    const key = sv ? `${g.level}|${g.seed}|${g.parts && g.parts.on}|${sv.running}|${sv.results.length}|${(sv.results[sv.results.length - 1] || {}).ok}` : "none";
     if (key === this.lastKey) return;
     this.lastKey = key;
     box.innerHTML = "";
@@ -497,6 +515,27 @@ export class GenomePanel {
       const n = r.ok === null ? "n/a" : `${(r.readouts || []).filter((x) => x.ok).length} / ${(r.readouts || []).length}`;
       d.innerHTML = `<i></i><span>${esc(r.name)}${bad ? ` <small>${esc(bad)}</small>` : ""}</span><span class="n">${n}</span>`;
       box.appendChild(d);
+    }
+  }
+  updateParts(g) {
+    const p = g.parts || {};
+    $("partsBtn").disabled = !!g.growing;
+    if (p.on !== this.partsOn) {
+      this.partsOn = p.on;
+      setText($("partsBtn"), p.on ? "Parts list: on" : "Parts list: off");
+      setClass($("partsBtn"), "primary", !!p.on);
+      const c = (this.L.parts && this.L.parts.counts) || {};
+      setText($("partsInfo"), p.on
+        ? `${(c.modulatory_neurons || 0).toLocaleString()} dopamine, octopamine and serotonin neurons act through slow tones on ${(c.modulated_targets || 0).toLocaleString()} targets; ${(c.graded_neurons || 0).toLocaleString()} optic-lobe cells transmit graded signals`
+        : "every neuron is the same machine (Shiu et al. 2024); switch on to give each the parts its genes make");
+      setShown($("tones"), !!p.on);
+    }
+    if (p.on && p.status && p.status.tone) {
+      for (const [nt, t] of Object.entries(p.status.tone)) {
+        const e = this.toneEls[nt]; if (!e) continue;
+        setWidth(e.fill, 100 * t.mean);
+        setText(e.val, `${Math.round(100 * t.mean)} %`);
+      }
     }
   }
 }

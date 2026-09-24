@@ -1074,7 +1074,102 @@ pairing finer than the side label. The experiments that inject T4a/T5a or LC4/LP
 populations do not test that structure; a grown fly's eyes work in the game because the retina
 still drives the real columns, but what those columns feed is rewired.
 
-## 8. Honest limitations
+## 8. The genes as a parts list (v2.4)
+
+Section 6.6 reads which genes a neuron expresses and section 7 grows the wiring from rules. The
+step between them is what the genes *build*: the published model gives every neuron the same
+machine (a leaky integrate-and-fire unit whose one per-neuron property is the sign of its
+transmitter), and real neurons are not like that. `parts.py` changes the model in the two places
+where the literature is solid enough to say how, and leaves a table for the rest.
+
+**Three transmitters act only through slow receptors.** Every dopamine receptor in *Drosophila*
+(Dop1R1, Dop1R2, Dop2R, DopEcR), every octopamine receptor (Oamb, Octα2R, Octβ1R-3R) and every
+serotonin receptor (5-HT1A, 1B, 2A, 2B, 7) is G-protein-coupled (Karam et al. 2020; El-Kholy et
+al. 2015; Blenau & Thamm 2011); none opens an ion channel. A spike in one of the 399
+dopaminergic, 165 octopaminergic and 415 serotonergic neurons of MaleCNS therefore cannot make
+a fast synaptic potential, yet the published model, and the game profile for octopamine and
+serotonin, treat them as ordinary excitatory neurons (the game profile already muted the
+dopamine neurons' fast synapses by hand, section 4). With the parts list on, all 979 lose their
+fast synapses (79,183 connections onto 30,157 targets) and each spike instead adds to a *tone*
+on its targets: one unit per ten synapses, decaying with a time constant of 0.5 s (dopamine;
+Cohn, Morantte & Ruta 2015 see dopamine transients of about a second in the mushroom body),
+1 s (octopamine) or 2 s (serotonin). The tone scales the target's synaptic input,
+`gain = 1 + a · level / (level + 5)`, saturating at +30 % for dopamine and serotonin and +50 % for
+octopamine (Suver, Mamiya & Dickinson 2012 measured about that much gain on the lobula-plate
+tangential cells from octopamine during flight; Dacks et al. 2009 saw serotonin enhance
+antennal-lobe projection-neuron responses over seconds). The sign is one choice per transmitter,
+and that is the model's honest gap: each target's receptors decide whether a tone excites
+(Gs-coupled Dop1R1, Oamb, 5-HT7) or inhibits it (Gi-coupled Dop2R, 5-HT1A), and receptor
+expression per cell type is not in this data. The dopamine neurons keep their role in plasticity
+(section 4.5) unchanged; silencing or modulating a modulatory population silences or scales its
+tone as it would any output.
+
+**Five groups of optic-lobe cell types do not spike.** Photoreceptors R1-R8 (6,091 neurons here;
+Hardie & Raghu 2001), the lamina monopolar cells L1-L5 (8,884; Laughlin & Hardie 1978; Zheng et
+al. 2006), the medulla columnar inputs to the motion detectors Mi1, Mi4, Mi9, Tm1, Tm2, Tm3, Tm4
+and Tm9 (14,358; Behnia et al. 2014; Yang et al. 2016; Arenz et al. 2017), T4 and T5 themselves
+(13,585; Gruntman, Romani & Reiser 2018) and the tangential cells HS, VS and CT1 (44; Haag &
+Borst 1996; Schnell et al. 2010; Meier & Borst 2019) signal with graded potentials. With the
+parts list on these 42,962 cells release transmitter in proportion to their depolarisation: a
+cell held at the spike threshold releases 300 quanta per second, one at half threshold 150, and
+each quantum is delivered to the targets exactly as a spike's worth of transmitter would be.
+There is no threshold, no reset and no refractory period, so a graded cell transmits inputs a
+spiking model would drop, and its output saturates instead of racing. What this model does not
+capture is tonic release: the real OFF pathway signals by *reducing* a resting release, and here
+a cell at rest releases nothing. The retina still drives T4/T5 as forced events (section 5.2), so
+the game's vision is unchanged upstream; what changes is everything the T4/T5 and HS/VS cells
+feed.
+
+**A table for the rest.** `parts.CELL_PARAMS` takes per-type overrides of the spike threshold and
+of the graded flag in the ordinary population-spec language (`--part "class:Kenyon_Cell:theta=10"`
+from the terminal), so measured values, from patch recordings or one day from ion-channel
+expression per cell type in the Fly Cell Atlas, can be dropped in without touching the model. It
+ships empty: no per-type threshold in the literature is solid enough to hard-code.
+
+**What it does to the validated experiments** (game profile, every experiment of sections 2, 4-6
+and 6.6, parts list off against on; `fly-brain --profile game --parts`):
+
+| experiment | parts off | parts on |
+|---|---|---|
+| Silence (no input) | ok | ok |
+| Sugar on the mouthparts | ok (MN9 50 Hz) | ok (MN9 73 Hz) |
+| Bitter taste | ok | ok |
+| Sugar + bitter together | ok | ok |
+| Something looming on the right | ok (GF 295 Hz) | ok (GF 305 Hz) |
+| Dust on the antennae | ok | ok |
+| Smell of vinegar | ok (MBON11 1.0 Hz) | **MBON11 0 Hz** (range 1-60), the other three readouts ok |
+| Bitter taste → punishment dopamine | ok (PPL101 78 Hz) | ok (PPL101 113 Hz) |
+| A loud sound | ok | ok |
+| Courtship command | ok (DNp13 39 Hz) | ok (DNp13 5 Hz, at the edge) |
+| Wide-field motion, right eye | ok (HS 443 Hz, DNa02 left 0 Hz) | ok (HS 300 Hz, DNa02 left 20 Hz, at the edge) |
+| the five genetic experiments | ok | ok |
+| **passed** | **16 / 16** | **15 / 16** |
+
+Fifteen of sixteen survive a change that removes 79,000 fast synapses and rewrites the output
+rule of a quarter of the brain, which says the validated reflexes do not depend on the
+monoamine neurons' fast synapses or on the optic lobe's spiking. The one miss is the marginal
+readout of the vinegar experiment: MBON11's Kenyon-cell drive gives 1.0 Hz in the standard model,
+the lower edge of its range, and 0 Hz with the parts on (its PPL1 dopamine tone is absent without
+bitter taste, and its input gain is unchanged). Three readouts move to the edges of their ranges,
+all in the direction the parts predict: the graded HS cells saturate at 300 events/s instead of
+firing at 443 Hz and transmit their sub-threshold contralateral input (DNa02 left 20 Hz), and the
+courtship command loses the octopaminergic and serotonergic fast drive that DNp13 was getting.
+The tones themselves are silent in these experiments because none of them drives a modulatory
+population for long; in the game a loud sound, bitter taste or a busy scene raise them (a busy
+second of sugar, motion, smell and sound leaves the octopamine tone at 66 % of its full effect
+on 15,000 targets, dopamine at 35 %, serotonin at 41 %).
+
+**Cost.** The graded cells' release, the tones' deposit and the gain applied to arriving input
+are compiled kernels in the numba backend and plain array operations in NumPy, with the same
+float32 arithmetic in the same order, so both backends stay spike-identical (the test suite
+checks it with every modulator and graded cell in play). A busy second of brain time (sugar,
+motion, smell and sound at once) costs 1.15 s with the parts on against 0.73 s off in the
+compiled backend, a third more, mostly because the graded cells emit a third more events (316,000
+against 235,000 a second under a typical game load). In the game that means a real-time factor of
+0.8-0.9 under heavy stimulation on this machine, against 1.0 with the parts off; `--fast` (a 1 ms
+step) restores real time. In NumPy the parts add about 60 %.
+
+## 9. Honest limitations
 
 The starter kit's list, extended. These are the things a neuroscientist would point at first.
 
@@ -1135,8 +1230,14 @@ The starter kit's list, extended. These are the things a neuroscientist would po
 
 ---
 
-## 9. References
+## 10. References
 
+* Ache JM, Polsky J, Alghailani S, Parekh R, Breads P, Peek MY, Bock DD, von Reyn CR, Card GM
+  (2019). Neural basis for looming size and velocity encoding in the *Drosophila* giant fiber
+  escape pathway. *Current Biology* 29(6):1073-1081. doi:10.1016/j.cub.2019.01.079
+* Arenz A, Drews MS, Richter FG, Ammer G, Borst A (2017). The temporal tuning of the *Drosophila*
+  motion detectors is determined by the dynamics of their input elements. *Current Biology*
+  27(7):929-944. doi:10.1016/j.cub.2017.01.051
 * Aso Y, Hattori D, Yu Y, Johnston RM, Iyer NA, Ngo T-TB, Dionne H, Abbott LF, Axel R, Tanimoto H,
   Rubin GM (2014a). The neuronal architecture of the mushroom body provides a logic for associative
   learning. *eLife* 3:e04577. doi:10.7554/eLife.04577
@@ -1145,14 +1246,32 @@ The starter kit's list, extended. These are the things a neuroscientist would po
   Heberlein U, Preat T, Branson KM, Tanimoto H, Rubin GM (2014b). Mushroom body output neurons
   encode valence and guide memory-based action selection in *Drosophila*. *eLife* 3:e04580.
   doi:10.7554/eLife.04580
-* Ache JM, Polsky J, Alghailani S, Parekh R, Breads P, Peek MY, Bock DD, von Reyn CR, Card GM
-  (2019). Neural basis for looming size and velocity encoding in the *Drosophila* giant fiber
-  escape pathway. *Current Biology* 29(6):1073-1081. doi:10.1016/j.cub.2019.01.079
+* Behnia R, Clark DA, Carter AG, Clandinin TR, Desplan C (2014). Processing properties of ON and OFF
+  pathways for *Drosophila* motion detection. *Nature* 512:427-430. doi:10.1038/nature13427
 * Berg S, Beckett IR, Costa M, Schlegel P, Januszewski M, et al. (2026). Sexual dimorphism in the
   complete *Drosophila* male central nervous system connectome. *Cell* 189(18):5504-5526.
   doi:10.1016/j.cell.2026.08.015. Data: MaleCNS v1.0, CC BY 4.0, https://male-cns.janelia.org/
+* Blenau W, Thamm M (2011). Distribution of serotonin (5-HT) and its receptors in the insect brain
+  with focus on the mushroom bodies. *Arthropod Structure & Development* 40(5):381-394.
+  doi:10.1016/j.asd.2011.01.004
+* Cohn R, Morantte I, Ruta V (2015). Coordinated and compartmentalized neuromodulation shapes
+  sensory processing in *Drosophila*. *Cell* 163(7):1742-1755. doi:10.1016/j.cell.2015.11.019
+* Dacks AM, Green DS, Root CM, Nighorn AJ, Wang JW (2009). Serotonin modulates olfactory processing
+  in the antennal lobe of *Drosophila*. *Journal of Neurogenetics* 23(4):366-377.
+  doi:10.3109/01677060903085722
+* El-Kholy S, Stephano F, Li Y, Bhandari A, Fink C, Roeder T (2015). Expression analysis of
+  octopamine and tyramine receptors in *Drosophila*. *Cell and Tissue Research* 361(3):669-684.
+  doi:10.1007/s00441-015-2137-4
 * Farrell JA, Murlis J, Long X, Li W, Cardé RT (2002). Filament-based atmospheric dispersion model
   to achieve short time-scale structure of odor plumes. *Environmental Fluid Mechanics* 2:143-169.
+* fly-brain-minecraft (blendi-remade). The compact connectome file, the gain of 0.65, the
+  Kenyon-cell input scaling and many of the sensory and motor neuron choices.
+  https://github.com/blendi-remade/fly-brain-minecraft (commit `6cfa301`; code MIT, data CC BY 4.0).
+* Gruntman E, Romani S, Reiser MB (2018). Simple integration of fast excitation and offset, delayed
+  inhibition computes directional selectivity in *Drosophila*. *Nature Neuroscience* 21:250-257.
+  doi:10.1038/s41593-017-0046-4
+* Haag J, Borst A (1996). Amplification of high-frequency synaptic inputs by active dendritic
+  membrane processes. *Nature* 379:639-641. doi:10.1038/379639a0
 * Hallem EA, Carlson JR (2006). Coding of odors by a receptor repertoire. *Cell* 125(1):143-160.
   doi:10.1016/j.cell.2006.01.050
 * Hampel S, Franconville R, Simpson JH, Seeds AM (2015). A neural command circuit for grooming
@@ -1160,6 +1279,8 @@ The starter kit's list, extended. These are the things a neuroscientist would po
 * Handler A, Graham TGW, Cohn R, Morantte I, Siliciano AF, Zeng J, Li Y, Ruta V (2019). Distinct
   dopamine receptor pathways underlie the temporal sensitivity of associative learning. *Cell*
   178(1):60-75. doi:10.1016/j.cell.2019.05.040
+* Hardie RC, Raghu P (2001). Visual transduction in *Drosophila*. *Nature* 413:186-193.
+  doi:10.1038/35093002
 * Hassenstein B, Reichardt W (1956). Systemtheoretische Analyse der Zeit-, Reihenfolgen- und
   Vorzeichenauswertung bei der Bewegungsperzeption des Rüsselkäfers *Chlorophanus*. *Zeitschrift
   für Naturforschung B* 11:513-524.
@@ -1168,6 +1289,9 @@ The starter kit's list, extended. These are the things a neuroscientist would po
 * Inagaki HK, Ben-Tabou de-Leon S, Wong AM, Jagadish S, Ishimoto H, Barnea G, Kitamoto T, Axel R,
   Anderson DJ (2012). Visualizing neuromodulation in vivo: TANGO-mapping of dopamine signaling
   reveals appetite control of sugar sensing. *Cell* 148(3):583-595.
+* Karam CS, Jones SK, Javitch JA (2020). Come Fly with Me: an overview of dopamine receptors in
+  *Drosophila melanogaster*. *Basic & Clinical Pharmacology & Toxicology* 126(S6):56-65.
+  doi:10.1111/bcpt.13277
 * Keleş MF, Frye MA (2017). Object-detecting neurons in *Drosophila*. *Current Biology*
   27(5):762-766. doi:10.1016/j.cub.2017.01.012
 * Kim AJ, Fitzgerald JK, Maimon G (2015). Cellular evidence for efference copy in *Drosophila*
@@ -1175,15 +1299,23 @@ The starter kit's list, extended. These are the things a neuroscientist would po
 * Klapoetke NC, Nern A, Peek MY, Rogers EM, Breads P, Rubin GM, Reiser MB, Card GM (2017).
   Ultra-selective looming detection from radial motion opponency. *Nature* 551:237-241.
   doi:10.1038/nature24626
+* Laughlin SB, Hardie RC (1978). Common strategies for light adaptation in the peripheral visual
+  systems of fly and dragonfly. *Journal of Comparative Physiology A* 128:319-340.
+  doi:10.1007/BF00657606
 * Maisak MS, Haag J, Ammer G, Serbe E, Meier M, Leonhardt A, Schilling T, Bahl A, Rubin GM, Nern A,
   Dickson BJ, Reiff DF, Hopp E, Borst A (2013). A directional tuning map of *Drosophila* elementary
   motion detectors. *Nature* 500:212-216. doi:10.1038/nature12320
+* Meier M, Borst A (2019). Extreme compartmentalization in a *Drosophila* amacrine cell. *Current
+  Biology* 29(9):1545-1550. doi:10.1016/j.cub.2019.03.070
 * Münch D, Galizia CG (2016). DoOR 2.0 - comprehensive mapping of *Drosophila melanogaster*
   odorant responses. *Scientific Reports* 6:21841.
 * Nagel KI, Wilson RI (2011). Biophysical mechanisms underlying olfactory receptor neuron dynamics.
   *Nature Neuroscience* 14:208-216. doi:10.1038/nn.2725
 * Ribeiro IMA, Drews M, Bahl A, Machacek C, Borst A, Dickson BJ (2018). Visual projection neurons
   mediating directed courtship in *Drosophila*. *Cell* 174(3):607-621. doi:10.1016/j.cell.2018.06.020
+* Schnell B, Joesch M, Forstner F, Raghu SV, Otsuna H, Ito K, Borst A, Reiff DF (2010). Processing
+  of horizontal optic flow in three visual interneurons of the *Drosophila* brain. *Journal of
+  Neurophysiology* 103(3):1646-1657. doi:10.1152/jn.00950.2009
 * Shiu PK, Sterne GR, Spiller N, Blumenthal E, et al. (2024). A *Drosophila* computational brain
   model reveals sensorimotor processing. *Nature* 634:210-219. doi:10.1038/s41586-024-07763-9
 * Stensmyr MC, Dweck HKM, Farhan A, Ibba I, Strutz A, Mukunda L, Linz J, Grabe V, Steck K,
@@ -1193,6 +1325,9 @@ The starter kit's list, extended. These are the things a neuroscientist would po
 * Suh GSB, Wong AM, Hergarden AC, Wang JW, Simon AF, Benzer S, Axel R, Anderson DJ (2004). A single
   population of olfactory sensory neurons mediates an innate avoidance behaviour in *Drosophila*.
   *Nature* 431:854-859.
+* Suver MP, Mamiya A, Dickinson MH (2012). Octopamine neurons mediate flight-induced modulation of
+  visual processing in *Drosophila*. *Current Biology* 22(24):2294-2302.
+  doi:10.1016/j.cub.2012.10.034
 * Suver MP, Matheson AMM, Sarkar S, Damiata M, Schoppik D, Nagel KI (2019). Encoding of wind
   direction by central neurons in *Drosophila*. *Neuron* 102(4):828-842.
   doi:10.1016/j.neuron.2019.03.012
@@ -1205,9 +1340,12 @@ The starter kit's list, extended. These are the things a neuroscientist would po
   neurotransmitter release probability. *PNAS* 94(2):719-723. doi:10.1073/pnas.94.2.719
 * Tully T, Quinn WG (1985). Classical conditioning and retention in normal and mutant *Drosophila
   melanogaster*. *Journal of Comparative Physiology A* 157:263-277. doi:10.1007/BF01350033
+* Yang HH, St-Pierre F, Sun X, Ding X, Lin MZ, Clandinin TR (2016). Subcellular imaging of voltage and
+  calcium signals reveals neural processing in vivo. *Cell* 166(1):245-257.
+  doi:10.1016/j.cell.2016.05.031
 * Yorozu S, Wong A, Fischer BJ, Dankert H, Kernan MJ, Kamikouchi A, Ito K, Anderson DJ (2009).
   Distinct sensory representations of wind and near-field sound in the *Drosophila* brain.
   *Nature* 458:201-205.
-* fly-brain-minecraft (blendi-remade). The compact connectome file, the gain of 0.65, the
-  Kenyon-cell input scaling and many of the sensory and motor neuron choices.
-  https://github.com/blendi-remade/fly-brain-minecraft (commit `6cfa301`; code MIT, data CC BY 4.0).
+* Zheng L, de Polavieja GG, Wolfram V, Asyali MH, Hardie RC, Juusola M (2006). Feedback network
+  controls photoreceptor output at the layer of first visual synapses in *Drosophila*. *Journal of
+  General Physiology* 127(5):495-510. doi:10.1085/jgp.200509470

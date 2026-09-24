@@ -11,7 +11,8 @@ refers to, and a wiring diagram with *designed* pathways whose behaviour the tes
     steering LC10a/x -> AOTU019/x -> DNa02/x   (weak alternative: LC10a/x -> AOTU025/x -> DNa02/x)
     motion   Mi1/Mi9/Mi4/C3 -> T4a-d and Tm1/Tm2/Tm9/Tm4 -> T5a-d per medulla column (the reference cells
              carry the hex column coordinates, as in the real data); T4a/T5a -> HSE/HSN/HSS -> DNp15
-    sound    JO-A1/JO-B1 -> DNp01 (a loud sound reaches the giant fibre)
+    sound    JO-A1/JO-B1 -> DNp01 (a loud sound reaches the giant fibre); JO-B1 -> OA-VPM3 (octopamine,
+             onto the HS cells) and CSD (serotonin, onto the projection neurons): the parts list's modulators
     smell    ORN_<glom> -> <glom>_PN -> Kenyon cells -> MBONs ; ALLN and APL inhibition
     learning PPL101 -> MBON11, MBON12 ; PAM01 -> MBON01, MBON02 (DAN->MBON defines the compartment)
     touch    BM_InOm -> GNG_mdn -> MDN, BM_InOm -> MDN
@@ -42,8 +43,9 @@ CLASSES = ["", "gustatory", "olfactory", "Kenyon_Cell", "MBON", "DAN", "ALLN", "
            "mechanosensory", "mechanosensory_proprioceptive", "interneuron", "motor", "descending",
            "visual", "courtship"]
 SUBCLASSES = ["", "sugar", "bitter", "water", "wind_gravity", "grooming", "gamma", "alpha_beta", "auditory", "leg"]
-NTS = ["", "acetylcholine", "gaba", "glutamate", "dopamine", "unclear"]
-SIGN_OF_NT = {"": 1, "acetylcholine": 1, "gaba": -1, "glutamate": -1, "dopamine": 1, "unclear": 1}
+NTS = ["", "acetylcholine", "gaba", "glutamate", "dopamine", "unclear", "octopamine", "serotonin"]
+SIGN_OF_NT = {"": 1, "acetylcholine": 1, "gaba": -1, "glutamate": -1, "dopamine": 1, "unclear": 1,
+              "octopamine": 1, "serotonin": 1}
 SIDES = ["", "L", "R", "M"]
 DIMORPHISMS = ["", "isomorphic", "sexually dimorphic", "potentially sexually dimorphic", "male-specific", "potentially male-specific"]
 FRUDSX = ["", "fru_high", "fru_low", "dsx_high", "dsx_low", "coexpress_high", "coexpress_low"]   # the MaleCNS labels
@@ -314,6 +316,18 @@ def build_synthetic(path: Path | str, seed: int = 7) -> Path:
         con(jo_a[side] + jo_b[side], pc1_1a[side], 5)
         con(jo_b[side], dnp01[side], 30)                     # a loud sound startles: JO-B -> giant fibre
         con(jo_a[side], dnp01[side], 5)
+
+    # ---------------------------------------------------------------- neuromodulators (the parts list, parts.py)
+    # an octopaminergic neuron onto the HS cells and one T4a column (Suver et al. 2012), and a serotonergic
+    # CSD-like neuron onto the projection neurons; both are driven by the sound neurons so that a
+    # stimulus can raise their tone
+    oa = both("OA-VPM3", 1, "cb_intrinsic", "", "octopamine", soma=(160000, 190000, 100000))
+    csd = both("CSD", 1, "cb_intrinsic", "", "serotonin", soma=(92000, 152000, 80000))
+    for side in "LR":
+        con(oa[side], sum((hs[t][side] for t in hs), []), 25)
+        con(oa[side], [t45["T4a"][side][0]], 5)
+        con(csd[side], sum((pn[g][side] for g in GLOMERULI), []), 10)
+        con(jo_b[side], oa[side] + csd[side], 20)
 
     # ---------------------------------------------------------------- wind, dust, touch
     jo_c = both("JO-CA1", 6, S, "mechanosensory", ACH, subclass="wind_gravity", nerve="AN")
