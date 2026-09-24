@@ -78,7 +78,7 @@ and the test tools: `pip install -e ".[dev]"` then `fly-game`, `fly-brain`, `pyt
 | Download fails with a certificate error (macOS) | Run "Install Certificates.command" in your Python folder in Applications. |
 | Download blocked by a firewall | Download [the file](https://raw.githubusercontent.com/blendi-remade/fly-brain-minecraft/6cfa30175003ef25da68a237d5eda958f8047b82/src/main/resources/connectome/malecns-v1.0.flyb.gz) in your browser and put it in `data/`. |
 | "Could not find a free port" | `py fly_game.py --port 9000` |
-| The game says it's running below real time | Your computer is simulating 176k neurons slower than real time; the fly's world slows down to keep up. Close other programs, or start it with `py fly_game.py --fast` (a 1 ms time step, about twice as fast; every classic experiment still passes) or `--no-columnar` (fewer visual neurons driven). |
+| The game says it's running below real time | Your computer is simulating 176k neurons slower than real time; the fly's world slows down to keep up (a 4-core laptop-class machine manages about 0.8x with a busy brain). Close other programs, or start it with `py fly_game.py --fast` (a 1 ms time step, about twice as fast; every classic experiment still passes). |
 
 ## 3. How it works (the whole idea)
 

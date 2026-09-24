@@ -63,8 +63,13 @@ atomic swaps of an immutable bytes object; actions are queued and applied at the
   state arrays per 0.5 ms step, which is the fastest thing NumPy can do for identical neurons (an
   active-set variant that integrated only non-resting neurons was tried and measured slower: with any
   stimulus on, a third to a half of the brain is slightly off rest, and the gathers and scatters cost
-  more than the dense passes they save). A brain that is completely at rest skips the maths
-  entirely; `--fast` (a 1 ms step) halves the cost with every classic experiment still in range.
+  more than the dense passes they save). One guard the starter lacks: every 20 steps, voltages and
+  synaptic inputs that have decayed below a microvolt are snapped to zero, because float32 values
+  drifting into the denormal range slow every array operation several-fold (a busy, never-quiet
+  game brain ran at half speed before this guard). A brain that is completely at rest skips the
+  maths entirely; `--fast` (a 1 ms step) halves the cost with every classic experiment still in
+  range. On the 4-core machine this was built on, the game runs at about 0.8x real time with a
+  busy brain (sugar, a female, walking) and 1.2x with `--fast`.
 * The connectome's input index (`col_ptr`), presynaptic array and cell-type graph are built lazily
   on first use (a second or two each).
 * The layout JSON (2.4 MB) is built once; large responses are gzip-compressed.

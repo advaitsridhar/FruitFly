@@ -97,6 +97,11 @@ both). An active-set variant that integrated only neurons off rest was built and
 on every experiment: with a stimulus on, 38-52 % of the brain sits slightly off rest, and the
 gathers and scatters cost more than the dense passes they save.
 
+* Every 20 steps, `v` and `g` values below 1 µV (`FLUSH_MV`, 7,000x below threshold) are snapped
+  to 0. Without this, values decaying for hundreds of milliseconds drift into the float32 denormal
+  range and the CPU slows every array operation several-fold: a busy game brain went from 76 ms
+  to 36 ms per 25 ms tick when the guard was added. The classic experiments are unchanged to the
+  spike.
 * Every 200 steps (100 ms) the brain checks whether it is *quiet*: no stimulus, no noise, no
   pending delayed input, nothing refractory, and `|v|`, `|g|` below 0.01 mV everywhere. A quiet
   brain skips the maths entirely until input arrives; fatigue keeps fading analytically meanwhile,

@@ -24,8 +24,10 @@ in :mod:`virtual_fly.settings`:
   that capture the whole brain state so an experiment can be replayed or branched.
 
 The integrator itself is the starter kit's dense NumPy loop (the fastest way to update 176k
-identical neurons); a brain at rest with nothing on the way costs nothing, and ``dt=1.0`` halves
-the cost when a machine cannot keep up.
+identical neurons), plus one guard the starter lacks: values that have decayed below a microvolt
+are snapped to zero, because float32 numbers drifting into the denormal range slow every array
+operation several-fold, which halved the speed of a busy, never-quiet game brain. A brain at rest
+with nothing on the way costs nothing, and ``dt=1.0`` halves the cost when a machine cannot keep up.
 
 Use it from your own code::
 
@@ -302,6 +304,7 @@ class FlyBrain:
 
     # ------------------------------------------------------------------ stepping
     REST_MV = 0.01           # below this (v and g) the whole brain counts as back at rest
+    FLUSH_MV = 1e-6          # values below this are snapped to 0 every 20 steps (denormal guard)
 
     @property
     def active(self) -> np.ndarray:
@@ -348,8 +351,14 @@ class FlyBrain:
         g *= self.decay_s                                # synaptic input fades
         v[refractory] = 0.0
         g[refractory] = g_frozen
-        if self.fatigue_mv > 0 and self.t % self._fatigue_block == 0:
-            self._fade_fatigue(self.decay_f ** self._fatigue_block)
+        if self.t % self._fatigue_block == 0:
+            if self.fatigue_mv > 0:
+                self._fade_fatigue(self.decay_f ** self._fatigue_block)
+            # Values that have decayed below a microvolt are snapped to zero. Left alone they drift
+            # into the denormal float range, where the CPU slows every array operation several-fold
+            # (a busy brain ran at half speed before this). A microvolt is 7,000x below threshold.
+            v[np.abs(v) < self.FLUSH_MV] = 0.0
+            g[np.abs(g) < self.FLUSH_MV] = 0.0
         spikes = np.flatnonzero(v >= (self.thr if self._thr_varies else self.theta))
         if self._stim_idx.size:                          # stimulated sensory neurons fire at random
             forced = self._stim_idx[self.rng.random(self._stim_idx.size) < self._stim_p]
