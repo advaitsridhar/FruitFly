@@ -203,9 +203,14 @@ export class BrainView {
   setPath(indices) { this.path = indices && indices.length ? indices : null; }
 
   frame(dt, nowSec) {
+    // 141k points are redrawn at most 30 times a second (the flashes decay in the shader, so they
+    // stay smooth); on a laptop this halves what the map costs the page every frame
+    this._acc = (this._acc || 0) + dt;
+    if (this._acc < 1 / 30 && !this.path && this.picked < 0) return;
+    const step = this._acc; this._acc = 0;
     this.nowSec = nowSec;
-    if (this.spin && this.gl && this.mode3d) this.yaw += dt * 0.25;
-    if (this.gl) this._drawGL(); else this._draw2D(dt);
+    if (this.spin && this.gl && this.mode3d) this.yaw += step * 0.25;
+    if (this.gl) this._drawGL(); else this._draw2D(step);
     this._drawOverlay();
   }
   _mvp(M) {
