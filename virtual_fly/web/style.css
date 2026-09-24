@@ -226,6 +226,17 @@ aside { display: flex; flex-direction: column; gap: 10px; min-height: 0; overflo
 .nbresults .nbhead { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 4px; }
 .nbresults .nbhead .btn { padding: 2px 8px; font-size: 12px; }
 
+/* genome */
+#genomeLevel { max-width: 150px; }
+.survival { display: flex; flex-direction: column; gap: 3px; font-size: 12px; margin-top: 6px; }
+.survival:empty { display: none; }
+.survival .head { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .6px; margin-top: 4px; display: flex; justify-content: space-between; }
+.survival .sv { display: grid; grid-template-columns: 12px 1fr auto; gap: 7px; align-items: center; }
+.survival .sv i { width: 10px; height: 10px; border-radius: 3px; background: var(--line); display: inline-block; }
+.survival .sv.ok i { background: var(--accent); } .survival .sv.bad i { background: var(--danger); } .survival .sv.na i { background: var(--muted); opacity: .5; }
+.survival .sv .n { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.survival .sv small { color: var(--muted); }
+
 /* pathways */
 .paths { display: flex; flex-direction: column; gap: 5px; }
 .path { border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px; cursor: pointer; font-size: 12px; }

@@ -137,6 +137,27 @@ GENETIC = [
 ]
 
 
+def survival(brain: FlyBrain, experiments=None, profile: str | None = None, on_progress=None) -> list[dict]:
+    """Run the experiments one by one and report, per experiment, whether every readout was in its
+    range: the survival report of a grown fly (see :mod:`virtual_fly.wiring`). An experiment whose
+    populations do not exist in this connectome is reported as ``ok: None``. ``on_progress(rows)``
+    is called after each experiment with the rows so far."""
+    experiments = experiments if experiments is not None else CLASSIC + EXTENDED
+    rows: list[dict] = []
+    for exp in experiments:
+        if profile is not None and exp.profile is not None and exp.profile != profile:
+            continue
+        try:
+            res = run_experiment(brain, exp)
+            rows.append({"name": exp.name, "ok": res.ok,
+                         "readouts": [{"label": r.label, "hz": round(r.hz, 1), "lo": r.lo, "hi": r.hi, "ok": r.ok} for r in res.readouts]})
+        except (ValueError, KeyError) as e:
+            rows.append({"name": exp.name, "ok": None, "readouts": [], "error": str(e)})
+        if on_progress is not None:
+            on_progress(list(rows))
+    return rows
+
+
 def all_experiments() -> list[Experiment]:
     return CLASSIC + EXTENDED + GENETIC
 

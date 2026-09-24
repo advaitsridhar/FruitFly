@@ -239,6 +239,12 @@ def test_genes_lines_and_driver_endpoints(served, conn, tmp_path):
     assert code == 200 and [x["symbol"] for x in r["neuron"]["genes"]] == ["fru", "ChAT", "VAChT"]
 
 
+def test_genome_endpoint(served):
+    game, base = served
+    code, r = get_json(base, "/api/genome")
+    assert code == 200 and r["ok"] and r["level"] == "real" and [l["level"] for l in r["levels"]][0] == "real"
+
+
 def test_static_files_and_404s(served):
     game, base = served
     code, headers, body = get(base, "/")

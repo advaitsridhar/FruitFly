@@ -31,6 +31,8 @@ from .body import FlyBody, JUMP_TIME
 from .brain import FlyBrain
 from .plasticity import APPROACH_NTS, AVOID_NTS
 from . import genetics
+from . import wiring
+from .experiments import survival as survival_report
 from .scenarios import SCENARIOS, ScenarioRunner
 from .senses.mechano import Antennae, Bristles
 from .senses.olfaction import ODOURS, Nose
@@ -135,6 +137,7 @@ CHECKS = [
     ("moonwalk", "Zap MDN → it walks backward"),
     ("silence", "Silence MN9, then offer sugar: it can taste, but can't eat"),
     ("genetics", "Silence the fruitless neurons (Genetics), then add a female: no chase, no song, as in fruitless mutants"),
+    ("genome", "Grow a fly from its wiring rules (Genome): same neurons, new wiring; see which reflexes survive"),
 ]
 
 
@@ -239,9 +242,15 @@ class MotorDecoder:
 
 class Game:
     def __init__(self, brain: FlyBrain, autopilot: bool = True, seed: int = 0, columnar: bool = True,
-                 profile_name: str = "game"):
+                 profile_name: str = "game", brain_factory=None):
         self.brain, self.conn = brain, brain.conn
         self.profile_name = profile_name
+        # the genome: the real wiring, and flies grown from its rules (see wiring.py)
+        self.real_conn = brain.conn
+        self.brain_factory = brain_factory or self._default_brain_factory
+        self._rules_cache: dict = {}
+        self._survival_token = None
+        self.genome: dict = {"level": "real", "seed": 0, "growing": None, "survival": None, "wiring": None, "rules": None, "error": None}
         self.rng = random.Random(seed)
         self.seed = seed
         self.actions: queue.Queue = queue.Queue()
@@ -336,6 +345,93 @@ class Game:
         if not first:
             self.events.add(self.t, "system", "New fly, fresh brain (learned synapses kept; use 'forget' to reset them).")
 
+    # ------------------------------------------------------------------ the genome: growing a fly
+    _BRAIN_KWARGS = ("dt", "gain", "kenyon_gain", "fatigue_mv", "fatigue_ms", "std_u", "std_tau_ms",
+                     "noise_hz", "noise_mv", "noise_spec", "threshold_jitter", "seed", "backend")
+
+    def _default_brain_factory(self, conn):
+        from .settings import build_brain
+        kw = {k: v for k, v in self.brain.settings().items() if k in self._BRAIN_KWARGS}
+        return build_brain(conn, self.profile_name, **kw)
+
+    def _start_grow(self, level: str, seed: int):
+        self.genome.update(growing={"level": level, "seed": seed, "t0": time.time()}, error=None)
+        self.events.add(self.t, "genome", f"growing a fly: {level} wiring, seed {seed}")
+        self.say(f"Growing a fly from its {level} wiring rules…", 4.0)
+        threading.Thread(target=self._grow_worker, args=(level, seed), daemon=True).start()
+
+    def _grow_worker(self, level: str, seed: int):
+        try:
+            conn2, rules = wiring.grow_level(self.real_conn, level, seed, rules_cache=self._rules_cache)
+            brain2 = self.brain_factory(conn2)
+            cmp = wiring.compare(self.real_conn, conn2) if conn2 is not self.real_conn else None
+            self.actions.put({"type": "_swap_brain", "brain": brain2, "conn": conn2, "level": level, "seed": seed,
+                              "rules": rules.summary() if rules is not None else None, "wiring": cmp})
+        except Exception as e:                       # a bad level, or out of memory: report, keep the old fly
+            self.genome.update(growing=None, error=str(e))
+            print("error growing a fly", repr(e))
+
+    def _swap_brain(self, a: dict):
+        old = self.brain
+        with old.lock:
+            self.brain, self.conn = a["brain"], a["conn"]
+            for r in READOUTS:
+                self.brain.add_monitor(r[0], r[1], bin_ms=TICK_MS)
+            for k, spec in self.custom_readouts.items():
+                self.brain.add_monitor(k, spec, bin_ms=TICK_MS)
+            for spec in self.user_silenced:
+                try:
+                    self.brain.silence(spec)
+                except ValueError:
+                    pass
+            for spec, factor in self.user_modulated.items():
+                try:
+                    self.brain.modulate(spec, factor)
+                except ValueError:
+                    pass
+            if self.brain.plasticity is not None:
+                self.brain.plasticity.enabled = self.learning_on
+            self.zaps = []
+            self.runaway_s = 0.0
+        level, seed = a["level"], a["seed"]
+        self.genome.update(level=level, seed=seed, growing=None, wiring=a["wiring"], rules=a["rules"], error=None,
+                           survival={"running": True, "results": []})
+        if level == "real":
+            self.events.add(self.t, "genome", "back to the real wiring")
+            self.say("The real wiring is back.", 3.0)
+        else:
+            w = a["wiring"] or {}
+            self.events.add(self.t, "genome", f"a fly grown from its {level} wiring rules (seed {seed}): "
+                            f"{w.get('edges_grown', 0):,} connections, {100 * w.get('shared_connections_fraction', 0):.0f}% shared with the real wiring")
+            self.say(f"A new fly, grown from its {level} wiring rules. Testing its reflexes…", 4.0)
+            self.done.add("genome")
+        token = object()
+        self._survival_token = token
+        threading.Thread(target=self._survival_worker, args=(a["conn"], token), daemon=True).start()
+
+    def _survival_worker(self, conn, token):
+        """Run the validated experiments on a private copy of the grown brain (the game keeps going)."""
+        try:
+            brain = self.brain_factory(conn)
+
+            def progress(rows):
+                if self._survival_token is token:
+                    self.genome["survival"] = {"running": True, "results": rows}
+            rows = survival_report(brain, profile=self.profile_name, on_progress=progress)
+            if self._survival_token is token:
+                ok = sum(1 for r in rows if r["ok"]); tested = sum(1 for r in rows if r["ok"] is not None)
+                self.genome["survival"] = {"running": False, "results": rows, "ok": ok, "tested": tested}
+                self.events.add(self.t, "genome", f"reflex survival: {ok} of {tested} experiments pass on this wiring")
+        except Exception as e:
+            if self._survival_token is token:
+                self.genome["survival"] = {"running": False, "results": [], "error": str(e)}
+
+    def genome_status(self) -> dict:
+        g = dict(self.genome)
+        if g["growing"]:
+            g["growing"] = {**g["growing"], "secs": round(time.time() - g["growing"]["t0"], 1)}
+        return g
+
     def say(self, text: str, secs: float = 3.0):
         self.message, self.message_left = text, secs
 
@@ -370,6 +466,19 @@ class Game:
             return {"ok": False, "error": f"'{a.get('key')}' is not a custom watch."}
         if kind == "scenario" and a.get("id") and a["id"] not in SCENARIOS:
             return {"ok": False, "error": f"unknown scenario {a['id']}"}
+        if kind == "grow":
+            level = str(a.get("level", "type")).strip().lower()
+            if not wiring.valid_level(level):
+                return {"ok": False, "error": "level must be real, type, class or bottleneck:K (K = 1 to 2048)"}
+            if self.genome["growing"]:
+                return {"ok": False, "error": "a fly is already being grown; wait for it"}
+            try:
+                a["level"], a["seed"] = level, int(a.get("seed", 1))
+            except (TypeError, ValueError):
+                return {"ok": False, "error": "seed must be a whole number"}
+            self.genome.update(growing={"level": level, "seed": a["seed"], "t0": time.time()}, error=None)   # claimed now, one at a time
+        if kind == "_swap_brain":
+            return {"ok": False, "error": "internal"}
         self.actions.put(a)
         return {"ok": True, **({"n": a["n"]} if "n" in a else {})}
 
@@ -522,6 +631,10 @@ class Game:
                 if self.brain.recording is not None:
                     self.brain.recording_kept = self.brain.stop_recording()
                 self.events.add(self.t, "system", f"recording stopped ({len(self.recording or [])} frames)")
+        elif kind == "grow":
+            self._start_grow(a["level"], a["seed"])
+        elif kind == "_swap_brain":
+            self._swap_brain(a)
         elif kind == "state":
             for k in ("hunger", "thirst"):
                 if k in a:
@@ -877,6 +990,7 @@ class Game:
             "events": self.events.items[-12:],
             "event_seq": self.events.seq,
             "scenario": self.scenario.status(),
+            "genome": self.genome_status(),
             "recording": None if self.recording is None else {"frames": len(self.recording), "spikes": self.record_spikes,
                                                               "active": self.record_active},
         }
@@ -961,6 +1075,8 @@ class Game:
             "retina": self.retina.layout(),
             "profile": self.profile_name,
             "genetics": self.genetics,
+            "genome": {"levels": [{"level": lv, "label": lb} for lv, lb in wiring.LEVELS],
+                       "rules": {"type_groups": None}},
             "settings": self.brain.settings(),
             "decoder": self.decoder.dn_targets,
             "columnar_vision": self.columnar_on,
@@ -981,6 +1097,7 @@ class Game:
                 "A loud sound → Johnston's organ A/B neurons → the giant fibre (a startle jump), and wind on the antennae → grooming and backing neurons.",
                 "Wide-field motion → T4/T5 (driven column by column from the retina) → HS cells → DNa02 and DNp15 on the same side: the optomotor reflex.",
                 "Which neurons express fruitless and doublesex, and which are male-specific or dimorphic: the MaleCNS annotation, read from the data. Silencing the fruitless neurons stops the song (pIP10 and its route to the wing motor neurons are fru+) and leaves feeding and escape alone.",
+                "A grown fly (Genome card) keeps the connectome's cell-type wiring rules and nothing else: 9 of the 11 validated reflexes survive on type-level rules, none on class-level rules.",
             ],
             "hand_built": [
                 "The retina (which facet sees what) and the feature computations that turn retinal images into LC4/LPLC2/LC10a/T4/T5 rates.",

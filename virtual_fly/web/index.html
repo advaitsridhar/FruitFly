@@ -202,6 +202,19 @@
       <div class="feedback" id="geneSource"></div>
     </div>
 
+    <div class="card" id="genomeCard">
+      <h2><span>Genome</span><span class="tag">wiring rules</span></h2>
+      <div class="feedback">A genome cannot list 90 million synapses; it holds rules. Grow a new fly from this connectome's cell-type wiring rules alone (the same neurons, wired afresh at random within the rules) and see which reflexes survive. Squeeze the rules through a bottleneck to see how much specificity they need.</div>
+      <div class="row wrap" style="margin-top:6px">
+        <label class="slider">wiring <select id="genomeLevel"></select></label>
+        <label class="slider">seed <input type="number" id="genomeSeed" value="1" min="0" max="9999" style="width:64px"></label>
+        <button class="btn primary" id="growBtn" title="Grow a new individual from the rules (takes some seconds; the game keeps running)">Grow</button>
+        <button class="btn" id="realBtn" title="Back to the real wiring">Real wiring</button>
+      </div>
+      <div class="feedback" id="genomeStatus">the real wiring</div>
+      <div class="survival" id="survival"></div>
+    </div>
+
     <div class="card">
       <h2>Pathway explorer</h2>
       <div class="lab">

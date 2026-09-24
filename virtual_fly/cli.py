@@ -81,6 +81,10 @@ def main(argv=None):
                     help="list the gene-expression populations in the data (fruitless, doublesex, transmitter genes) with FlyBase links")
     ap.add_argument("--lines", metavar="SPEC", help="driver lines whose expression images match these neurons (NeuronBridge; needs internet)")
     ap.add_argument("--driver", metavar="LINE", help="MaleCNS neurons a driver line labels, e.g. SS02385 (NeuronBridge; needs internet)")
+    ap.add_argument("--grow", metavar="LEVEL", help="run everything on a fly grown from its wiring rules: type, class or bottleneck:K")
+    ap.add_argument("--grow-seed", type=int, default=1, help="which individual to grow")
+    ap.add_argument("--genome-sweep", metavar="LEVELS", nargs="?", const="real,type,class,bottleneck:64",
+                    help='grow a fly at each level (comma-separated; default "real,type,class,bottleneck:64") and table which experiments survive')
     ap.add_argument("--top", type=int, default=15, help="how many rows to show in rankings")
     ap.add_argument("--seed", type=int, default=0)
     args = ap.parse_args(argv)
@@ -99,6 +103,15 @@ def main(argv=None):
         if idx.size > 30:
             print(f"  ... {idx.size} neurons in total")
         return
+    if args.grow:
+        from .wiring import compare, grow_level
+        t0 = time.time()
+        conn, rules = grow_level(conn, args.grow, args.grow_seed)
+        cmp = compare(load_connectome(quiet=True), conn) if rules is not None else {}
+        print(f"grown a fly from its {args.grow} wiring rules (seed {args.grow_seed}) in {time.time() - t0:.0f} s: "
+              f"{conn.n_edges:,} connections, {int(conn.n_syn.sum()):,} synapses"
+              + (f", {100 * cmp.get('shared_connections_fraction', 0):.0f}% shared with the real wiring" if cmp else "")
+              + (f"; rules: {rules.summary()}" if rules is not None else ""))
     if args.genes:
         from .genetics import summary
         g = summary(conn)
@@ -179,6 +192,31 @@ def main(argv=None):
     if args.noise:
         hz, mv = (float(x) for x in args.noise.split(":"))
         overrides.update(noise_hz=hz, noise_mv=mv)
+    if args.genome_sweep:
+        from .experiments import survival
+        from .wiring import compare, grow_level
+        levels = [x.strip() for x in args.genome_sweep.split(",") if x.strip()]
+        cache: dict = {}
+        table: dict[str, list[dict]] = {}
+        for level in levels:
+            t0 = time.time()
+            c2, rules = grow_level(conn, level, args.grow_seed, rules_cache=cache)
+            cmp = compare(conn, c2) if rules is not None else {}
+            rows = survival(build_brain(c2, args.profile, **overrides), profile=args.profile)
+            table[level] = rows
+            ok = sum(1 for r in rows if r["ok"]); tested = sum(1 for r in rows if r["ok"] is not None)
+            print(f"{level:16} {ok:2d} / {tested} experiments survive   ({c2.n_edges:,} connections"
+                  + (f", {100 * cmp.get('shared_connections_fraction', 0):.0f}% shared with the real wiring" if cmp else "")
+                  + f"; {time.time() - t0:.0f} s)")
+        names = [r["name"] for r in next(iter(table.values()))]
+        print(f"\n{'experiment':36}" + "".join(f"{lv[:14]:>16}" for lv in table))
+        for name in names:
+            cells = []
+            for lv in table:
+                r = next((x for x in table[lv] if x["name"] == name), None)
+                cells.append("n/a" if r is None or r["ok"] is None else "ok" if r["ok"] else f"{sum(x['ok'] for x in r['readouts'])}/{len(r['readouts'])}")
+            print(f"{name[:36]:36}" + "".join(f"{c:>16}" for c in cells))
+        return
     brain = build_brain(conn, args.profile, **overrides)
     for spec in filter(None, (x.strip() for x in args.silence.split(";"))):
         print(f"silencing {spec}: {brain.silence(check_spec(conn, spec))} neurons")

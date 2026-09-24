@@ -45,6 +45,7 @@ Compared with the small starter it grew from, it adds:
 | **A better model** | short-term synaptic depression, background noise, per-population output modulation, threshold heterogeneity, checkpoints, spike recording, rate monitors, a `--fast` 1 ms step; the integrator is the starter's (identical spikes), or the same step as compiled numba kernels when numba is installed (about twice as fast, still identical spikes) | the mechanisms are documented physiology; the parameters are chosen by hand |
 | **Tools** | a pathway tracer ("how does the eye reach the steering neurons?"), lesion scans, dose-response sweeps, seeds, JSON export, scenarios (conditioning protocols, courtship, plume following, escape), a 3-D brain map, an event log, session recording | analysis, not model |
 | **Genetics** | the neurons that express *fruitless* and *doublesex* (the genes that make a male brain male) and the male-specific and dimorphic ones, as populations to silence, activate or watch; the transmitter genes behind every neuron's sign; a lookup of which real driver lines label a population and which neurons a line labels (NeuronBridge); five genetic experiments | the expression labels are the MaleCNS annotation read from the data; the lookups are Janelia's; nothing is hand-built, but only two transcription factors and the transmitter identity are known here |
+| **The genome as a recipe** | grow a new fly from the connectome's cell-type wiring rules alone (same neurons, new wiring) and see which reflexes survive; a bottleneck dial squeezes the rules; seeds are individuals | the rules are learned from the data; growth is random within them; 9 of 11 validated reflexes survive type-level rules, none survive class-level rules |
 
 Everything on screen says which of the two it is; the **"What's real here?"** button lists it all.
 
@@ -240,6 +241,16 @@ neurons it labels, so a real line can be zapped or silenced here; or ask which l
 population. `python fly_brain.py --genes`, `--lines pIP10` and `--driver MB112C` do the same
 from the terminal. The selectors are `gene:fru`, `gene:dsx`, `gene:both`, `gene:VGlut` and so on,
 and `dimorphism:male` / `dimorphism:dimorphic`.
+
+**The genome as a recipe.** The Genome card grows a new fly from this connectome's cell-type
+wiring rules (which types connect, how often, how strongly) with every neuron-to-neuron
+connection drawn afresh, then runs the eleven validated experiments on it and lists which
+reflexes survive. Nine of eleven do; a fly grown from class-level rules keeps none, and the
+bottleneck levels squeeze the type rules through a low-rank code. Change the seed for another
+individual, and "Real wiring" brings the original back. `python fly_brain.py --genome-sweep`
+prints the same table from the terminal, `--grow type` runs any experiment on a grown fly, and
+`python fly_game.py --grow type` starts the game with one. The science and the numbers are in
+`docs/SCIENCE.md`, section 7.
 
 ## 6. Honest limitations
 

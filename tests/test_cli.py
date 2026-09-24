@@ -65,6 +65,15 @@ def test_backend_flag_gives_the_same_rates(capsys):
     assert rates["numpy"] and rates["numpy"] == rates["auto"]          # identical spikes, whichever integrator
 
 
+def test_grow_and_genome_sweep(capsys):
+    main(["--grow", "type", "--grow-seed", "2", "--stim", "LB3b,LB3c:120", "--watch", "MN9", "--ms", "200"])
+    out = capsys.readouterr().out
+    assert "grown a fly from its type wiring rules (seed 2)" in out and "MN9" in out
+    main(["--genome-sweep", "real,type", "--profile", "game"])
+    out = capsys.readouterr().out
+    assert "real " in out and "type " in out and "experiments survive" in out and "experiment" in out
+
+
 def test_stim_without_watch_lists_top_types(capsys):
     main(["--stim", "LB3b,LB3c:120", "--ms", "200", "--top", "3"])
     out = capsys.readouterr().out
