@@ -28,6 +28,30 @@ main { display: grid; grid-template-columns: minmax(0, 1fr) 400px; gap: 14px; pa
 .left { display: flex; flex-direction: column; min-height: 0; gap: 8px; }
 aside { display: flex; flex-direction: column; gap: 10px; min-height: 0; overflow-y: auto; padding-right: 2px; scrollbar-width: thin; scrollbar-gutter: stable; }
 
+/* ---------------------------------------------------------------- panels: hide, choose, move */
+body.nosidebar main { grid-template-columns: minmax(0, 1fr); }
+body.nosidebar aside { display: none; }
+.card { position: relative; }
+.card > h2 { position: relative; cursor: grab; user-select: none; -webkit-user-select: none; }
+/* the hide / pop-out buttons appear when the pointer is over the card (always on a floating one), so a
+   docked card's title keeps its full width */
+.card > h2 .pctl { position: absolute; right: -6px; top: -4px; display: flex; gap: 1px; cursor: default; background: var(--panel); border-radius: 4px; padding-left: 4px; opacity: 0; transition: opacity .12s; }
+.card:hover > h2 .pctl, .card.floating > h2 .pctl, .card.dragging > h2 .pctl { opacity: 1; }
+.card.floating > h2 { padding-right: 40px; }
+.pctl button { background: none; border: 0; color: var(--muted); cursor: pointer; font-size: 13px; line-height: 1; padding: 3px 4px; border-radius: 4px; }
+.pctl button:hover { background: var(--panel2); color: var(--ink); }
+.card.dragging { opacity: .9; box-shadow: 0 10px 30px rgba(0,0,0,.55); border-color: var(--accent); }
+.card.floating { position: fixed; z-index: 30; width: 400px; min-width: 260px; min-height: 60px; max-width: calc(100vw - 16px); max-height: calc(100vh - 16px);
+  overflow: auto; resize: both; box-shadow: 0 14px 40px rgba(0,0,0,.6); border-color: #2c3e57; scrollbar-width: thin; }
+body.dragging, body.dragging * { cursor: grabbing !important; }
+.linkbtn.dim { color: var(--muted); }
+.menu.right { left: auto; right: 0; }
+.menu label { display: flex; gap: 8px; align-items: center; padding: 4px 8px; cursor: pointer; white-space: nowrap; font-size: 13px; border-radius: 6px; }
+.menu label:hover { background: var(--panel2); }
+.menu label .float { color: var(--muted); font-size: 11px; margin-left: auto; padding-left: 10px; }
+.menu .sep { height: 1px; background: var(--line); margin: 4px 2px; }
+.menu .tip { color: var(--muted); font-size: 11px; padding: 6px 8px 2px; max-width: 230px; white-space: normal; }
+
 /* ---------------------------------------------------------------- toolbar + controls */
 .toolbar, .controls { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .tool { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 5px 9px; cursor: pointer; display: inline-flex; gap: 6px; align-items: center; white-space: nowrap; }

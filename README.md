@@ -181,6 +181,13 @@ Scanning hundreds of sensory cell types on the real connectome (the experiments 
 
 ## 5. Things to try
 
+**Make room for the fly.** The **Panels** menu in the header hides the side panels altogether
+(keyboard `H`, so the dish takes the whole width), or ticks exactly the panels you want. Every
+panel can be dragged by its title: up or down to reorder the sidebar, or out over the dish to
+float it anywhere on the screen (the ⧉ button does the same; ⇤ docks it again, × hides it). The
+arrangement is remembered by your browser; "Reset the layout" puts everything back. The mouse
+wheel over the dish, the 🔍 button or `+` / `−` zoom in on the fly (the view follows it).
+
 **In the game** there is a checklist: feed it, offer bitter food, lure it, scare it, dust it, watch
 it bump a wall, drop an odour, teach it, add a female, turn on the wind, clap, spin the drum, zap
 MDN, silence MN9. The **scenarios** run whole protocols for you: appetitive conditioning (odour +

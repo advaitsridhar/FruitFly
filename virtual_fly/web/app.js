@@ -6,13 +6,15 @@ import { Arena, lerpAngle } from "./arena.js";
 import { BrainView, REGION_COLORS } from "./brain3d.js";
 import { RetinaView } from "./retina.js";
 import * as P from "./panels.js";
+import { PanelManager } from "./layout.js";
 
 // ---------------------------------------------------------------- state
 let L = null;                       // layout (brain map, arena size, readouts, odours ...)
 let S = null, Sprev = null, Stime = 0, Sgap = 25, lastSeq = 0, lastStateAt = 0, firstState = false;
 let tool = "lure", odourFood = "", pointer = null, lastSent = 0, sees = false;
-let arena = null, brain = null, retina = null;
+let arena = null, brain = null, retina = null, layout = null;
 const panels = {};
+const ZOOMS = [1, 1.5, 2, 3];
 let toolOrder = ["lure", "hand", "sugar", "bitter", "water", "dust", "shock", "post"];
 const HINTS = {
   lure: "Wiggle the lure slowly beside the fly: it turns toward small moving things (a courtship-chase circuit).",
@@ -53,6 +55,7 @@ async function loadLayout() {
   panels.events = new P.EventsPanel();
   panels.recording = new P.RecordingPanel();
   panels.model = new P.ModelPanel(L);
+  layout = new PanelManager($("aside"), $("panelsBtn"), $("panelMenu"));
   buildDialogs();
   setTool("lure");
   connect();
@@ -207,6 +210,20 @@ arenaEl.addEventListener("pointermove", (e) => {
   }
 });
 arenaEl.addEventListener("pointerleave", () => { pointer = null; post({ type: "hand_off" }); });
+// zoom: the wheel over the dish, the button, or + / -; above 1x the view follows the fly
+function setZoom(z) {
+  if (!arena) return;
+  const zoom = arena.setZoom(z);
+  setText($("zoomBtn"), `🔍 ${zoom % 1 ? zoom.toFixed(1) : zoom}×`);
+  setClass($("zoomBtn"), "on", zoom > 1);
+}
+function zoomStep(dir) {
+  if (!arena) return;
+  const z = arena.zoom, next = dir > 0 ? ZOOMS.find((v) => v > z + 1e-6) : [...ZOOMS].reverse().find((v) => v < z - 1e-6);
+  setZoom(next == null ? (dir > 0 ? ZOOMS[ZOOMS.length - 1] : ZOOMS[0]) : next);
+}
+arenaEl.addEventListener("wheel", (e) => { if (!arena) return; e.preventDefault(); setZoom(arena.zoom * (e.deltaY < 0 ? 1.12 : 1 / 1.12)); }, { passive: false });
+$("zoomBtn").onclick = () => { if (!arena) return; const z = arena.zoom, i = ZOOMS.findIndex((v) => v > z + 1e-6); setZoom(i < 0 ? 1 : ZOOMS[i]); };
 arenaEl.addEventListener("pointerdown", (e) => {
   if (!arena) return;
   const p = pointerAt(e);
@@ -363,6 +380,9 @@ window.addEventListener("keydown", (e) => {
     case "e": case "E": $("retinaToggle").checked = retinaOn = !retinaOn; setShown($("retinaBox"), retinaOn); break;
     case "w": case "W": post({ type: "autopilot", on: !(S && S.autopilot) }); break;
     case "n": case "N": post({ type: "reset" }); break;
+    case "h": case "H": if (layout) layout.toggleSidebar(); break;
+    case "+": case "=": zoomStep(1); break;
+    case "-": case "_": zoomStep(-1); break;
     case "Escape": setShown($("neuronPop"), false); if (brain) brain.picked = -1; $("clearMenu").hidden = true; break;
   }
 });
