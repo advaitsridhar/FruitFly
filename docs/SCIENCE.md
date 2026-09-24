@@ -86,24 +86,26 @@ the brain.
   fly-brain-minecraft and the pure profile use 0.25 to keep the KC code sparse; the game uses 1.0
   because, once the antennal lobe is calmed (section 3), 0.25 leaves the KCs silent (section 4.3).
 
-### 1.4 Active-set integration (what the game actually runs)
+### 1.4 Integration (what the game actually runs)
 
-`FlyBrain.step()` integrates only the *active* set: neurons whose `v` or `g` is above
-`PRUNE_MV` = 0.01 mV. Everything else sits exactly at rest and costs nothing.
+`FlyBrain.step()` is the starter kit's dense loop: every 0.5 ms it decays `v` and `g` for all
+176,422 neurons in a few NumPy passes, delivers the kicks queued 1.8 ms earlier, finds the
+neurons above threshold, and scatters their kicks into the delay queue with `np.add.at`. On this
+machine the six classic experiments run in the same wall time as in the starter kit and produce
+the same spikes to the last one (30,740 / 87,216 / 131,068 spikes for sugar / looming / dust in
+both). An active-set variant that integrated only neurons off rest was built and measured slower
+on every experiment: with a stimulus on, 38-52 % of the brain sits slightly off rest, and the
+gathers and scatters cost more than the dense passes they save.
 
-* A neuron enters the active set when a synaptic kick, a noise kick or a forced stimulus spike
-  touches it; every 20 steps neurons whose `|v|` and `|g|` are both below 0.01 mV are snapped to 0
-  and dropped.
-* If more than 60 % of the brain is active (a runaway loop) the dense path is used instead.
 * Every 200 steps (100 ms) the brain checks whether it is *quiet*: no stimulus, no noise, no
-  pending delayed input and nothing active. A quiet brain skips the maths entirely until input
-  arrives; fatigue keeps fading analytically meanwhile.
+  pending delayed input, nothing refractory, and `|v|`, `|g|` below 0.01 mV everywhere. A quiet
+  brain skips the maths entirely until input arrives; fatigue keeps fading analytically meanwhile,
+  and the plasticity traces keep decaying.
 * Fatigue (section 1.5) is faded in blocks of 20 steps rather than every step.
-
-The result is numerically the same as integrating every neuron, up to the 0.01 mV prune
-threshold, and it is what makes a calm 176,422-neuron brain affordable: the game simulates
-25 ms of brain time per world tick (`TICK_MS`, 50 steps) at 40 ticks per second, and slows the
-world down (the "slow motion" notice) when the brain is busier than real time allows.
+* The game simulates 25 ms of brain time per world tick (`TICK_MS`, 50 steps) at 40 ticks per
+  second, and slows the world down (the "slow motion" notice) when the brain is busier than real
+  time allows. `--fast` uses a 1 ms step (25 per tick): about twice as fast, and all six classic
+  experiments stay in range (MN9 48 Hz, giant fibre 307 Hz, aDN1 140 Hz in the game profile).
 
 ### 1.5 Optional mechanisms (all off in `FlyBrain(conn)`)
 

@@ -59,9 +59,12 @@ atomic swaps of an immutable bytes object; actions are queued and applied at the
 
 ## Performance notes
 
-* `FlyBrain.step` keeps an **active set**: neurons whose voltage or synaptic input is non-zero.
-  Everything else sits exactly at rest and is skipped. Spikes are aggregated per target through a
-  dense scratch array and stored in the delay queue as (indices, values) pairs.
+* `FlyBrain.step` is the starter kit's dense NumPy loop: a handful of passes over the 176k-element
+  state arrays per 0.5 ms step, which is the fastest thing NumPy can do for identical neurons (an
+  active-set variant that integrated only non-resting neurons was tried and measured slower: with any
+  stimulus on, a third to a half of the brain is slightly off rest, and the gathers and scatters cost
+  more than the dense passes they save). A brain that is completely at rest skips the maths
+  entirely; `--fast` (a 1 ms step) halves the cost with every classic experiment still in range.
 * The connectome's input index (`col_ptr`), presynaptic array and cell-type graph are built lazily
   on first use (a second or two each).
 * The layout JSON (2.4 MB) is built once; large responses are gzip-compressed.

@@ -80,7 +80,7 @@ def test_reset_clears_state_but_keeps_wiring(brain):
     assert brain.total_spikes > 0 and len(brain.monitors["relay"].history) > 0
     brain.reset()
     assert brain.t == 0 and brain.total_spikes == 0 and brain.window_ms == 0
-    assert not brain.v.any() and not brain.g.any() and all(q is None for q in brain.queue) and not brain.spike_count.any()
+    assert not brain.v.any() and not brain.g.any() and not brain.queue.any() and not brain.spike_count.any()
     assert brain.monitors["relay"].history == [] and brain.quiet
     assert brain.silenced == {"MN9": brain.silenced["MN9"]} and brain.stim         # wiring and input kept
     assert (brain.thr == THETA).all()

@@ -42,7 +42,7 @@ Compared with the small starter it grew from, it adds:
 | **A second fly** | a scripted female to chase, tap and sing to | the chase and the song (pC1 → pIP10 → wing motor neurons) are wiring; her behaviour and the contact-to-pC1 arousal are hand-built |
 | **Wind, sound, touch** | Johnston's organ senses wind direction and sound; a clap can make the fly jump | sound → giant fibre and wind → grooming are wiring; heading upwind is hand-built |
 | **Internal state** | hunger and thirst rise with time and change what the fly does and tastes | hand-built |
-| **A better model** | an active-set integrator (3-5x faster), short-term synaptic depression, background noise, per-population output modulation, checkpoints, spike recording, rate monitors | the mechanisms are documented physiology; the parameters are chosen by hand |
+| **A better model** | short-term synaptic depression, background noise, per-population output modulation, threshold heterogeneity, checkpoints, spike recording, rate monitors, a `--fast` 1 ms step; the integrator itself is the starter's (same speed, identical spikes) | the mechanisms are documented physiology; the parameters are chosen by hand |
 | **Tools** | a pathway tracer ("how does the eye reach the steering neurons?"), lesion scans, dose-response sweeps, seeds, JSON export, scenarios (conditioning protocols, courtship, plume following, escape), a 3-D brain map, an event log, session recording | analysis, not model |
 
 Everything on screen says which of the two it is; the **"What's real here?"** button lists it all.

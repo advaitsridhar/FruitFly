@@ -23,6 +23,10 @@ in :mod:`virtual_fly.settings`:
 * **Recording** of every spike, **monitors** of population rates over time, and **checkpoints**
   that capture the whole brain state so an experiment can be replayed or branched.
 
+The integrator itself is the starter kit's dense NumPy loop (the fastest way to update 176k
+identical neurons); a brain at rest with nothing on the way costs nothing, and ``dt=1.0`` halves
+the cost when a machine cannot keep up.
+
 Use it from your own code::
 
     from virtual_fly import load_connectome, FlyBrain
@@ -162,13 +166,12 @@ class FlyBrain:
         n = self.n
         self.v = np.zeros(n, dtype=np.float32)
         self.g = np.zeros(n, dtype=np.float32)
-        self._scratch = np.zeros(n, dtype=np.float32)          # dense scratch for aggregating kicks
-        self.queue = [None] * self.n_slots                     # delayed synaptic input: (indices, mV) per slot
+        self._tmp = np.zeros(n, dtype=np.float32)
+        self.queue = np.zeros((self.n_slots, n), dtype=np.float32)   # delayed synaptic input, one slot per step
         self._pending = np.zeros(self.n_slots, dtype=bool)     # does a queue slot hold input?
-        self.active = np.zeros(n, dtype=bool)                  # neurons with non-zero v or g (the only
-        #                                                        ones whose equations need integrating)
         self._recent = [self._empty] * (self.ref_steps - 1)   # who spiked in the last few steps
         self.thr = self._theta_i.copy()                        # current threshold incl. fatigue
+        self._thr_varies = self.fatigue_mv > 0 or self.threshold_jitter > 0
         self.std_x = np.ones(n, dtype=np.float32) if self.std_u > 0 else None   # synaptic resource
         self.std_t = np.zeros(n, dtype=np.int64)               # step at which std_x was last updated
         self.spike_count = np.zeros(n, dtype=np.int32)
@@ -298,16 +301,21 @@ class FlyBrain:
             self.plasticity.reapply(self)
 
     # ------------------------------------------------------------------ stepping
-    PRUNE_MV = 0.01          # a neuron whose v and g are both below this is treated as at rest
-    _PRUNE_EVERY = 20
+    REST_MV = 0.01           # below this (v and g) the whole brain counts as back at rest
+
+    @property
+    def active(self) -> np.ndarray:
+        """Neurons not at rest (non-zero voltage or synaptic input)."""
+        return (np.abs(self.v) >= self.REST_MV) | (np.abs(self.g) >= self.REST_MV)
 
     def step(self) -> np.ndarray:
         """Advance the whole brain by one time step (dt ms). Returns indices of neurons that spiked.
 
-        Only *active* neurons (non-zero voltage or synaptic input) are integrated; the rest sit
-        exactly at rest, so a calm brain costs almost nothing and a busy one costs what it must.
+        The integration is dense (a handful of passes over the 176k-element state arrays, which is
+        what NumPy does fastest); a brain that is completely at rest with nothing on the way costs
+        nothing at all.
         """
-        v, g = self.v, self.g
+        v, g, tmp = self.v, self.g, self._tmp
         slot = self.t % self.n_slots
         if (self.quiet and not self._stim_idx.size and not self._pending[slot] and not self._noise_idx.size):
             if self.plasticity is not None:              # traces keep decaying, memories keep fading
@@ -321,43 +329,28 @@ class FlyBrain:
         if self.quiet and self.fatigue_mv > 0:           # waking up: fatigue kept fading while we slept
             self._fade_fatigue(self.decay_f ** (self.t - self._quiet_since))
         self.quiet = False
-        act = self.active
         if self._pending[slot]:
-            idx, val = self.queue[slot]                  # synaptic kicks that were sent 1.8 ms ago
-            g[idx] += val
-            act[idx] = True
-            self.queue[slot] = None
+            arriving = self.queue[slot]
+            g += arriving                                # synaptic kicks that were sent 1.8 ms ago
+            arriving.fill(0.0)
             self._pending[slot] = False
         if self._noise_idx.size:                         # background bombardment: a few random kicks
             k = self.rng.poisson(self._noise_idx.size * self.noise_hz * self.dt / 1000.0)
             if k:
                 hit = self._noise_idx[self.rng.integers(0, self._noise_idx.size, k)]
                 np.add.at(g, hit, np.float32(self.noise_mv))
-                act[hit] = True
         # neurons that spiked in the last 2 ms are refractory: frozen at reset, input piles up in g
         refractory = np.concatenate(self._recent) if self._recent else self._empty
         g_frozen = g[refractory]
-        active = np.flatnonzero(act)
-        if active.size > 0.6 * self.n:                   # nearly everything is active: dense maths is cheaper
-            v *= self.decay_m                            # leak towards rest ...
-            v += g * self.coupling                       # ... plus synaptic drive
-            g *= self.decay_s                            # synaptic input fades
-            v[refractory] = 0.0
-            g[refractory] = g_frozen
-            spikes = np.flatnonzero(v >= self.thr)
-        else:
-            va, ga = v[active], g[active]
-            va *= self.decay_m
-            va += ga * self.coupling
-            ga *= self.decay_s
-            v[active], g[active] = va, ga
-            v[refractory] = 0.0
-            g[refractory] = g_frozen
-            spikes = active[va >= self.thr[active]]
-            if refractory.size:                          # a refractory neuron cannot spike
-                spikes = np.setdiff1d(spikes, refractory, assume_unique=False) if spikes.size else spikes
+        v *= self.decay_m                                # leak towards rest ...
+        np.multiply(g, self.coupling, out=tmp)
+        v += tmp                                         # ... plus synaptic drive
+        g *= self.decay_s                                # synaptic input fades
+        v[refractory] = 0.0
+        g[refractory] = g_frozen
         if self.fatigue_mv > 0 and self.t % self._fatigue_block == 0:
             self._fade_fatigue(self.decay_f ** self._fatigue_block)
+        spikes = np.flatnonzero(v >= (self.thr if self._thr_varies else self.theta))
         if self._stim_idx.size:                          # stimulated sensory neurons fire at random
             forced = self._stim_idx[self.rng.random(self._stim_idx.size) < self._stim_p]
             if forced.size:
@@ -370,8 +363,8 @@ class FlyBrain:
             self.spike_count[spikes] += 1
             self.total_spikes += spikes.size
             out = (self.t + self.delay_steps) % self.n_slots
-            self.queue[out] = self._send(spikes)
-            self._pending[out] = self.queue[out] is not None
+            self._send(spikes, self.queue[out])
+            self._pending[out] = True
             if self.recording is not None:
                 self.recording.append((self.t, spikes.astype(np.int32)))
             for cb in self.on_spikes:
@@ -385,23 +378,9 @@ class FlyBrain:
         self.last_spikes = spikes
         if self.monitors:
             self._tick_monitors()
-        if self.t % self._PRUNE_EVERY == 0:
-            self._prune(active)
         if self.t % 200 == 0:
             self._check_quiet()
         return spikes
-
-    def _prune(self, active):
-        """Drop neurons that have decayed back to rest from the active set (and snap them to 0)."""
-        if active.size == 0:
-            return
-        va, ga = self.v[active], self.g[active]
-        rest = (np.abs(va) < self.PRUNE_MV) & (np.abs(ga) < self.PRUNE_MV)
-        if rest.any():
-            idx = active[rest]
-            self.v[idx] = 0.0
-            self.g[idx] = 0.0
-            self.active[idx] = False
 
     def _fade_fatigue(self, factor):
         self.thr -= self._theta_i
@@ -412,17 +391,19 @@ class FlyBrain:
         """Every 100 ms: if no input is arriving and every neuron is back at rest, go to sleep."""
         if self._stim_idx.size or self._noise_idx.size or self._pending.any() or any(r.size for r in self._recent):
             return
-        if not self.active.any():
+        if np.abs(self.v).max() < self.REST_MV and np.abs(self.g).max() < self.REST_MV:
+            self.v.fill(0.0)
+            self.g.fill(0.0)
             self.quiet = True
             self._quiet_since = self.t
 
-    def _send(self, spikes):
-        """Aggregate the synaptic kicks of all spiking neurons into (target indices, mV) or None."""
+    def _send(self, spikes, target):
+        """Add the synaptic kicks of all spiking neurons to a slot of the delayed-input queue."""
         starts = self.row_ptr[spikes]
         lengths = self.row_ptr[spikes + 1] - starts
         total = int(lengths.sum())
         if total == 0:
-            return None
+            return
         # positions of every outgoing connection of every spiking neuron, back to back
         edges = np.repeat(starts - np.cumsum(lengths) + lengths, lengths) + np.arange(total)
         weights = self.w[edges]
@@ -433,13 +414,7 @@ class FlyBrain:
             weights = weights * np.repeat(x, lengths).astype(np.float32)
             self.std_x[spikes] = x * (1.0 - self.std_u)                  # this spike used some resource
             self.std_t[spikes] = self.t
-        scratch = self._scratch
-        post = self.post_idx[edges]
-        np.add.at(scratch, post, weights)
-        idx = np.unique(post) if total < 4096 else np.flatnonzero(scratch)
-        val = scratch[idx].copy()
-        scratch[idx] = 0.0
-        return idx, val
+        np.add.at(target, self.post_idx[edges], weights)
 
     def run(self, ms: float, record: bool = False):
         """Simulate ``ms`` milliseconds. With ``record=True`` returns a list of (time_ms, spike indices)."""
@@ -569,8 +544,7 @@ class FlyBrain:
     def snapshot(self) -> dict:
         """Capture the full dynamical state (not the wiring) so it can be restored later."""
         snap = {"t": self.t, "v": self.v.copy(), "g": self.g.copy(),
-                "queue": [None if q is None else (q[0].copy(), q[1].copy()) for q in self.queue],
-                "active": self.active.copy(),
+                "queue": self.queue.copy(),
                 "pending": self._pending.copy(), "recent": [r.copy() for r in self._recent],
                 "thr": self.thr.copy(), "std_x": None if self.std_x is None else self.std_x.copy(),
                 "std_t": self.std_t.copy(), "spike_count": self.spike_count.copy(),
@@ -585,8 +559,7 @@ class FlyBrain:
         self.t = snap["t"]
         self.v[:] = snap["v"]
         self.g[:] = snap["g"]
-        self.queue = [None if q is None else (q[0].copy(), q[1].copy()) for q in snap["queue"]]
-        self.active[:] = snap["active"]
+        self.queue[:] = snap["queue"]
         self._pending[:] = snap["pending"]
         self._recent = [r.copy() for r in snap["recent"]]
         self.thr[:] = snap["thr"]
