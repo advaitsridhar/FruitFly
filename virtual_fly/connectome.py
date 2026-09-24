@@ -172,6 +172,29 @@ class Connectome:
         self._col = None
         self._type_graph = None
 
+    def rewired(self, row_ptr: np.ndarray, post_idx: np.ndarray, n_syn: np.ndarray, label: str = "rewired") -> "Connectome":
+        """A copy of this connectome with new wiring (same neurons and annotations). Used by
+        :mod:`virtual_fly.wiring` to grow synthetic flies. Caches that depend on the wiring are
+        dropped; everything per neuron is shared with the original."""
+        c = object.__new__(Connectome)
+        c.__dict__.update({k: v for k, v in self.__dict__.items() if not k.startswith("_")})
+        c.row_ptr = np.asarray(row_ptr, dtype=np.int64)
+        c.post_idx = np.asarray(post_idx, dtype=np.int32)
+        c.n_syn = np.asarray(n_syn, dtype=np.uint16)
+        if c.row_ptr.size != self.n + 1 or c.post_idx.size != c.n_syn.size or int(c.row_ptr[-1]) != c.post_idx.size:
+            raise ValueError("rewired(): row_ptr, post_idx and n_syn do not describe a valid CSR wiring")
+        c.n_edges = int(c.post_idx.size)
+        syn = c.n_syn.astype(np.int64)
+        c.n_post = np.bincount(c.post_idx, weights=syn, minlength=self.n).astype(np.int32)
+        c.n_pre = np.bincount(np.repeat(np.arange(self.n), np.diff(c.row_ptr)), weights=syn, minlength=self.n).astype(np.int32)
+        c.dataset = f"{self.dataset} ({label})"
+        c.meta = dict(self.meta, rewired=label)
+        c._by_type = self._by_type            # depends only on the types: safe to share
+        c._cache = dict(self._cache)          # population selections depend only on the annotations
+        c._col = None
+        c._type_graph = None
+        return c
+
     # --- tiny binary reader helpers ---
     def _unpack(self, fmt):
         vals = struct.unpack_from(fmt, self._buf, self._pos)
