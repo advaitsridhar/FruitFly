@@ -50,10 +50,25 @@ Everything on screen says which of the two it is; the **"What's real here?"** bu
 
 ## 2. Setup
 
+**Quick start** (macOS / Linux; on Windows use `py` instead of `python3`):
+
+```
+git clone https://github.com/advaitsridhar/FruitFly.git
+cd FruitFly
+python3 -m pip install numpy numba
+python3 fly_game.py
+```
+
+The first start downloads the 23 MB connectome into `data/` and opens the game in your browser;
+later starts are instant. Already have a clone? `git pull origin main` brings it up to date.
+
+Step by step:
+
 1. Install **Python 3.10 or newer** from [python.org](https://www.python.org/downloads/). On Windows,
    tick **"Add python.exe to PATH"** in the installer.
-2. Unzip or clone this folder, open a terminal in it (Windows: click the File Explorer address bar,
-   type `cmd`, press Enter).
+2. Get the code: `git clone https://github.com/advaitsridhar/FruitFly.git` (or download and unzip
+   it from GitHub), then open a terminal in the `FruitFly` folder (Windows: click the File Explorer
+   address bar, type `cmd`, press Enter).
 3. Install NumPy, and numba for the compiled brain integrator (optional, about twice as fast, same spikes):
    ```
    py -m pip install numpy numba      # macOS / Linux: python3 -m pip install numpy numba
