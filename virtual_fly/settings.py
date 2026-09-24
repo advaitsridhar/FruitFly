@@ -18,6 +18,10 @@ Named model profiles: which optional mechanisms are switched on, and why.
 
 Every number here was checked against the classic experiments on this machine; see README.md
 ("What it does, and how it was checked") for the table.
+
+Any profile can be built with ``parts=True`` (the genes as each neuron's parts list, see
+:mod:`virtual_fly.parts`); the ``game`` profile then no longer needs to silence the dopamine
+neurons by hand, because the parts list removes every modulatory neuron's fast synapses.
 """
 
 from __future__ import annotations
@@ -41,6 +45,8 @@ class Profile:
         kwargs = {**self.brain, **overrides}
         brain = FlyBrain(conn, **kwargs)
         for spec in self.silence:
+            if brain.parts is not None and spec == "class:DAN":
+                continue                 # the parts list already removes the dopamine neurons' fast synapses
             brain.silence(spec)
         if self.plasticity is not None:
             MushroomBodyPlasticity(**self.plasticity).attach(brain)

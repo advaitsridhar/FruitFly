@@ -17,6 +17,7 @@ engine, a notebook, a robot) can drive the fly:
     GET  /api/learning                per-MBON synaptic strengths and dopamine
     GET  /api/genes                   the gene-expression populations, transmitter groups, FlyBase links
     GET  /api/genome                  the genome levels and the current fly's growth / survival status
+    GET  /api/parts                   the parts list: modulators, graded cell types, counts, the tones right now
     GET  /api/lines?spec=pIP10        driver lines matching a population (NeuronBridge; needs internet)
     GET  /api/driver?line=SS02385     MaleCNS neurons a driver line labels (NeuronBridge; needs internet)
     GET  /api/recording               the recorded session (JSON), if recording
@@ -40,6 +41,7 @@ from pathlib import Path
 import numpy as np
 
 from . import genetics, wiring
+from . import parts as partslib
 
 from .pathways import relay_ranking, strongest_partners, trace
 
@@ -163,6 +165,9 @@ def make_handler(game):
                     return self._json({"ok": True, "levels": [{"level": lv, "label": lb} for lv, lb in wiring.LEVELS], **game.genome_status()})
                 if path == "/api/genes":
                     return self._json({"ok": True, **game.genetics})
+                if path == "/api/parts":
+                    return self._json({"ok": True, "on": game.parts_on, "tables": partslib.PartsList().describe(),
+                                       "counts": game.parts_counts(), "status": game.brain.parts_status()})
                 if path == "/api/lines":
                     spec = get("spec", "").strip()
                     if not spec:

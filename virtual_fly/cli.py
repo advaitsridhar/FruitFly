@@ -74,6 +74,11 @@ def main(argv=None):
     ap.add_argument("--std", metavar="U:TAU_MS", help="short-term synaptic depression, e.g. 0.1:150")
     ap.add_argument("--noise", metavar="HZ:MV", help="background kicks per neuron, e.g. 2:1.0")
     ap.add_argument("--jitter", type=float, default=None, metavar="MV", help="per-neuron threshold jitter (sd, mV)")
+    ap.add_argument("--parts", action="store_true",
+                    help="the genes as each neuron's parts list: dopamine, octopamine and serotonin act through slow tones, "
+                         "the optic lobe's graded cell types transmit below threshold (parts.py)")
+    ap.add_argument("--part", metavar="SPEC:theta=MV[,graded=0/1]", action="append", default=[],
+                    help='a per-type override in the parts list, e.g. "class:Kenyon_Cell:theta=10" (implies --parts; repeatable)')
     ap.add_argument("--silence", metavar="SPEC", default="", help='block the output of a population, e.g. "class:ALLN" or "MN9"')
     ap.add_argument("--modulate", metavar="SPEC:FACTOR", default="", help='scale the output of a population, e.g. "LB3b,LB3c:1.5"')
     ap.add_argument("--record", metavar="FILE.npz", help="with --stim: save every spike (time_ms, neuron) to this file")
@@ -192,6 +197,16 @@ def main(argv=None):
     if args.noise:
         hz, mv = (float(x) for x in args.noise.split(":"))
         overrides.update(noise_hz=hz, noise_mv=mv)
+    if args.parts or args.part:
+        from .parts import PartsList
+        try:
+            overrides["parts"] = PartsList().with_params(args.part)
+        except ValueError as e:
+            raise SystemExit(f"--part: {e}")
+        c = overrides["parts"].compile(conn).counts
+        print(f"parts list on: {c['modulatory_neurons']:,} modulatory neurons ({', '.join(m['nt'] for m in c['modulators'])}) act through "
+              f"slow tones on {c['modulated_targets']:,} targets; {c['graded_neurons']:,} graded cells"
+              + (f"; overrides: {', '.join(p['spec'] + ' -> ' + ', '.join(f'{k} {v}' for k, v in p.items() if k in ('theta_mv', 'graded') and v is not None) for p in c['params'])}" if c["params"] else ""))
     if args.genome_sweep:
         from .experiments import survival
         from .wiring import compare, grow_level

@@ -18,7 +18,7 @@ STATE_KEYS = {"seq", "t", "rtf", "speed", "fly", "world", "autopilot", "paused",
               "done", "state", "learning", "events", "event_seq", "scenario", "recording", "genome"}
 LAYOUT_KEYS = {"n", "w", "h", "d", "x", "y", "z", "region", "regions", "arena_r", "fly_half", "tick_ms", "presets",
                "types", "edges", "synapses", "readouts", "checks", "odours", "scenarios", "retina", "profile", "settings",
-               "decoder", "columnar_vision", "whats_real", "genetics", "genome"}
+               "decoder", "columnar_vision", "whats_real", "genetics", "genome", "parts"}
 FLY_KEYS = {"x", "y", "h", "v", "w", "mode", "prob", "legs", "groom", "wingL", "wingR", "abdomen", "jump", "hx", "hy", "dist"}
 
 
@@ -435,7 +435,7 @@ def test_motor_decoder(conn):
 def test_checks_and_whats_real(game):
     ids = {c[0] for c in CHECKS}
     assert ids == {"feed", "bitter", "lure", "escape", "groom", "wall", "smell", "learn", "court", "wind", "sound",
-                   "optomotor", "moonwalk", "silence", "genetics", "genome"}
+                   "optomotor", "moonwalk", "silence", "genetics", "genome", "parts"}
     real = game.whats_real()
     assert len(real["wiring"]) >= 5 and len(real["hand_built"]) >= 5 and len(real["not_modelled"]) >= 1
 
@@ -532,3 +532,35 @@ def test_stripes_action_spins_the_drum(game):
     assert fired and fired <= set(game.conn.select("prefix:T4,prefix:T5").tolist())    # the drum drives T4/T5
     game.action({"type": "stripes", "count": 0, "drum_speed": 0.0})
     assert ticks(game, 1)["world"]["stripes"]["count"] == 0
+
+
+def test_parts_list_toggle_rebuilds_the_brain_and_retests_the_reflexes(game):
+    assert game.parts_on is False and game.brain.parts is None
+    assert game.action({"type": "parts", "on": "yes"})["ok"] is False
+    assert game.action({"type": "parts", "on": False})["ok"] is False                 # already off
+    lay = json.loads(game.layout_json)
+    assert lay["parts"]["counts"]["modulatory_neurons"] == 16 and lay["parts"]["counts"]["graded_neurons"] > 100
+    assert [m["nt"] for m in lay["parts"]["tables"]["modulators"]] == ["dopamine", "octopamine", "serotonin"]
+    old_brain = game.brain
+    game.action({"type": "silence", "spec": "MN9"})
+    assert game.action({"type": "parts", "on": True})["ok"]
+    assert game.action({"type": "parts", "on": False})["ok"] is False                # one rebuild at a time
+    assert game.genome["growing"]["reason"] == "parts"
+    assert _wait(game, lambda: game.genome["growing"] is None and game.brain is not old_brain)
+    assert game.parts_on and game.brain.parts is not None and game.conn is game.real_conn and "parts" in game.done
+    assert "MN9" in game.brain.silenced and "class:DAN" not in game.brain.silenced and "class:ALLN" in game.brain.silenced
+    st = game.genome_status()["parts"]
+    assert st["on"] and set(st["status"]["tone"]) == {"dopamine", "octopamine", "serotonin"} and st["status"]["graded"] > 100
+    assert _wait(game, lambda: game.genome["survival"] and not game.genome["survival"]["running"], secs=120)
+    assert game.genome["survival"]["tested"] > 0
+    state = json.loads(game.state_json)
+    assert state["genome"]["parts"]["on"] and "tone" in state["genome"]["parts"]["status"]
+    # a grown fly keeps the parts list, and switching it off keeps the grown wiring
+    game.action({"type": "grow", "level": "type", "seed": 2})
+    assert _wait(game, lambda: game.genome["growing"] is None and game.conn is not game.real_conn)
+    assert game.brain.parts is not None and game.parts_on and game.genome["level"] == "type"
+    grown = game.conn
+    assert game.action({"type": "parts", "on": False})["ok"]
+    assert _wait(game, lambda: game.genome["growing"] is None and game.brain.parts is None)
+    assert not game.parts_on and game.conn is grown and game.genome["level"] == "type" and "class:DAN" in game.brain.silenced
+    assert json.loads(game.state_json)["genome"]["parts"] == {"on": False, "status": None}
