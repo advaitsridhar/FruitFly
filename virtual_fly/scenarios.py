@@ -149,11 +149,15 @@ class ScenarioRunner:
         self.left = 0.0
         self.store: dict = {}
         self.measure: dict = {}
+        self.saved_tool: str | None = None
 
     def start(self, sid: str):
+        if self.current is not None:
+            self.stop(silent=True)
         self.current = SCENARIOS[sid]
         self.step_i = -1
         self.store = {}
+        self.saved_tool = self.game.world.tool
         self.game.world.tool = "none"
         self.game.events.add(self.game.t, "scenario", f"scenario started: {self.current.name}")
         self._next()
@@ -161,14 +165,25 @@ class ScenarioRunner:
     def stop(self, silent: bool = False):
         if self.current is not None and not silent:
             self.game.events.add(self.game.t, "scenario", f"scenario stopped: {self.current.name}")
+        self._finish()
+
+    def _finish(self):
+        """Give the player back their tool and take the scripted hand away (whether stopped or run to the end)."""
         self.current = None
         self.store = {}
         self.measure = {}
+        w = self.game.world
+        if w.tool == "hand" or w.tool == "none":          # only what the scenario set; keep a tool the player chose since
+            w.tool = self.saved_tool if self.saved_tool not in (None, "none") else "lure"
+        w.hand = None
+        self.saved_tool = None
 
     def _next(self):
         self.step_i += 1
         if self.current is None or self.step_i >= len(self.current.steps):
-            self.current = None
+            if self.current is not None:
+                self.game.events.add(self.game.t, "scenario", f"scenario finished: {self.current.name}")
+            self._finish()
             return
         st = self.current.steps[self.step_i]
         self.left = st.secs

@@ -10,7 +10,7 @@ from virtual_fly.senses.mechano import (DUST_SENSORS, HEAD_BRISTLES, LEG_PROPRIO
                                         WIND_RIGHT, Antennae, Bristles)
 from virtual_fly.senses.olfaction import ODOURS, ORN_MAX_HZ, Nose, sat as hill
 from virtual_fly.senses.taste import BITTER_GRNS, SUGAR_GRNS, WATER_GRNS, Forelegs, Mouth
-from virtual_fly.senses.vision import (COLUMNAR_AXES, WALL_HEIGHT, ColumnarMotion, Eye, FeatureDetectors, Retina,
+from virtual_fly.senses.vision import (_blobs, COLUMNAR_AXES, WALL_HEIGHT, ColumnarMotion, Eye, FeatureDetectors, Retina,
                                        VisibleObject, sat)
 from virtual_fly.world import ARENA_R, FLY_HALF, World
 
@@ -37,6 +37,24 @@ def test_eye_geometry_and_wall():
     old = eye.image
     eye.render(0, 0, 0, [], ARENA_R)
     assert eye.prev is old
+
+
+def test_eye_facets_form_a_rectangular_grid():
+    eye = Eye("L")
+    az = eye.grid(eye.az)
+    assert np.allclose(az, az[:, :1])                                         # no half-facet stagger between rows
+    assert np.allclose(eye.grid(eye.el), eye.grid(eye.el)[:1, :])
+    assert np.all(np.diff(az[:, 0]) > 0) and np.all(np.diff(Eye("R").grid(Eye("R").az)[:, 0]) < 0)
+
+
+def test_blob_only_counts_the_rear_edge_of_the_eye_as_entering():
+    mask = np.zeros((30, 16), dtype=bool)
+    mask[0:3, 5:8] = True                                                     # at the front (binocular overlap)
+    mask[27:30, 5:8] = True                                                   # at the back edge
+    mask[10:13, 2:5] = True                                                   # in the middle
+    blobs = sorted(_blobs(mask), key=lambda b: b[1])
+    assert [b[0] for b in blobs] == [9, 9, 9]
+    assert [b[4] for b in blobs] == [False, False, True]
 
 
 def test_eye_renders_dark_objects_on_the_correct_side():
@@ -178,6 +196,12 @@ def test_columnar_motion_maps_facets_to_the_hex_lattice(conn, scene):
             assert sorted(col.tolist()) == list(range(6))                    # home column = its inputs' column
             home = conn.hex1[idx] * 0                                        # T4/T5 have no hex of their own
             assert (conn.hex1[idx] == -1).all() and home.size == 6
+        # the frame's anatomy: hex1 + hex2 grows dorsally (higher elevation), hex1 - hex2 grows toward
+        # the front (smaller |azimuth|); see docs/SCIENCE.md 5.3
+        h1, h2 = cols["hex"] // 1000, cols["hex"] % 1000
+        assert np.corrcoef(cols["col_el"], h1 + h2)[0, 1] > 0.9
+        assert np.corrcoef(np.abs(cols["col_az"]), h1 - h2)[0, 1] < -0.8
+    assert COLUMNAR_AXES["a_deg"] == 106.0 and COLUMNAR_AXES["c_deg"] == 26.0
     idx, hz = cm.rates(DT)
     assert idx.size == hz.size == 0                                          # nothing has moved yet
     world.add_obstacle(6, 12, r=4)

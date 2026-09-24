@@ -130,6 +130,39 @@ def test_monitor_histories_have_correct_bins(brain):
     assert brain.monitors == {}
 
 
+def test_new_monitor_ignores_spikes_fired_before_it_existed(brain):
+    brain.stimulate("LB3b", 200)
+    brain.run(100)
+    idx = brain.conn.select("LB3b")
+    before = int(brain.spike_count[idx].sum())
+    assert before > 10
+    m = brain.add_monitor("late", "LB3b", bin_ms=10)
+    assert m._count == before and m.history == []
+    brain.run(10)
+    delta = int(brain.spike_count[idx].sum()) - before
+    assert m.history and m.history[0] * idx.size * 0.01 == pytest.approx(delta, abs=3.0)
+    assert m.history[0] * idx.size * 0.01 < before                        # not the whole backlog
+
+
+def test_snapshot_restore_rewinds_monitors(brain):
+    m = brain.add_monitor("sugar", "LB3b", bin_ms=10)
+    brain.stimulate("LB3b", 150)
+    brain.run(100)
+    snap = brain.snapshot()
+    assert snap["monitors"] == {"sugar": (m._count, m._t_start, 10)}
+    brain.run(100)
+    first = list(m.history)
+    assert len(first) == 20
+    brain.restore(snap)
+    assert len(m.history) == 10 and m.history == first[:10] and m._count == snap["monitors"]["sugar"][0]
+    brain.run(100)
+    assert m.history == first                                             # bins after the restore repeat exactly
+    late = brain.add_monitor("late", "LB3c", bin_ms=10)                   # a monitor the snapshot never saw
+    brain.restore(snap)
+    assert late.history == [] and late._count == int(brain.spike_count[late.idx].sum())
+    assert late._t_start == brain.time_ms
+
+
 def test_recording(brain):
     assert brain.stop_recording() == []
     brain.stimulate("LB3b,LB3c", 120)

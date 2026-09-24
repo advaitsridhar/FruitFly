@@ -98,6 +98,27 @@ def test_action_endpoint(served):
     assert game.actions.empty() and game.zaps and game.zaps[0][0] == "MDN"
     code, body = post(base, "/api/other", {})
     assert code == 404
+    code, reply = post(base, "/api/action", [1, 2, 3])
+    assert code == 200 and reply["ok"] is False and "JSON object" in reply["error"]
+
+
+def test_post_to_an_unknown_path_drains_its_body(served):
+    """A 404 must still consume the request body, or the next request on a keep-alive connection
+    is parsed from the middle of the previous one."""
+    game, base = served
+    host, port = base[len("http://"):].split(":")
+    c = http.client.HTTPConnection(host, int(port), timeout=10)
+    body = json.dumps({"type": "zap", "spec": "MDN", "hz": 60, "padding": "x" * 5000}).encode()
+    c.request("POST", "/api/other", body=body, headers={"Content-Type": "application/json"})
+    resp = c.getresponse()
+    assert resp.status == 404 and resp.read() == b"not found"
+    c.request("GET", "/api/state")                                            # same connection
+    resp = c.getresponse()
+    assert resp.status == 200 and json.loads(resp.read())["seq"] >= 0
+    c.request("POST", "/api/action", body=b'{"type": "pause", "on": false}', headers={"Content-Type": "application/json"})
+    resp = c.getresponse()
+    assert resp.status == 200 and json.loads(resp.read()) == {"ok": True}
+    c.close()
 
 
 def test_types_search(served):

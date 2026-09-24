@@ -63,6 +63,15 @@ def test_wind_and_female_toggle():
     assert w.female is None
     w.toggle_female(True)
     assert math.hypot(w.female.x, w.female.y) == pytest.approx(18)
+    w.toggle_female(False)
+    w.toggle_female(True, "3.5", "-4")                                     # JSON from the browser: strings, or None
+    assert (w.female.x, w.female.y) == (3.5, -4.0)
+    w.toggle_female(False)
+    w.toggle_female(True, 3, None)
+    assert math.hypot(w.female.x, w.female.y) == pytest.approx(18)
+    w.toggle_female(False)
+    w.toggle_female(True, 500, 0)                                         # outside the dish: brought back inside
+    assert math.hypot(w.female.x, w.female.y) == pytest.approx(ARENA_R - 2.0)
 
 
 def test_puffs_are_released_and_drift_with_wind():

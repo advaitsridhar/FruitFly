@@ -209,6 +209,26 @@ def test_silence_modulate_and_watch_actions(game):
     assert game.action({"type": "watch", "spec": ""})["ok"] is False
 
 
+def test_watch_cannot_shadow_a_built_in_readout(game):
+    before = {k: v.copy() for k, v in game.readouts.items()}
+    for key in ("MN9", "DNp15L", "GF"):                                # shown and hidden readouts alike
+        reply = game.action({"type": "watch", "spec": "GNG232", "key": key})
+        assert reply["ok"] is False and "built-in" in reply["error"]
+    # without a name, a spec that happens to be a readout key gets a distinct one
+    assert game.action({"type": "watch", "spec": "MN9"}) == {"ok": True, "n": 2}
+    state = ticks(game, 1)
+    assert state["custom"] == {"watch:MN9": "MN9"} and "watch:MN9" in state["hz"]
+    for key in ("MN9", "DNp15L", "nothing"):
+        assert game.action({"type": "unwatch", "key": key})["ok"] is False
+    ticks(game, 1)
+    assert all(np.array_equal(game.readouts[k], v) for k, v in before.items())
+    assert "MN9" in game.hz_shown and "DNp15L" in game.readouts
+    # re-watching the same name replaces the spec and keeps one monitor
+    assert game.action({"type": "watch", "spec": "GNG087", "key": "watch:MN9"})["ok"]
+    state = ticks(game, 1)
+    assert state["custom"] == {"watch:MN9": "GNG087"} and game.brain.monitors["watch:MN9"].spec == "GNG087"
+
+
 def test_unwatch_removes_the_key_from_published_rates(game):
     game.action({"type": "watch", "spec": "GNG232", "key": "relay"})
     ticks(game, 1)
@@ -275,6 +295,8 @@ def test_reset_calm_and_learning_actions(game):
 
 
 def test_record_action(game):
+    hx, hy = head_xy(game)
+    game.action({"type": "drop", "kind": "sugar", "x": hx, "y": hy})           # something to record
     game.action({"type": "record", "on": True, "spikes": True})
     state = ticks(game, 3)
     assert state["recording"] == {"frames": 3, "spikes": True, "active": True} and game.brain.recording is not None
@@ -285,6 +307,37 @@ def test_record_action(game):
     # stopping keeps the frames for download but stops adding to them
     assert game.brain.recording is None and any(e["text"].startswith("recording stopped") for e in game.events.items)
     assert state["recording"] == {"frames": 3, "spikes": True, "active": False}
+    assert len(game.brain.recording_kept) > 0                               # the spikes of the take, for download
+    # a new take discards the kept spikes and starts fresh frames; a restart mid-take never leaks a live recording
+    game.action({"type": "record", "on": True, "spikes": False})
+    state = ticks(game, 1)
+    assert game.brain.recording_kept == [] and game.brain.recording is None and state["recording"]["frames"] == 1
+    game.action({"type": "record", "on": True, "spikes": True})
+    ticks(game, 1)
+    game.action({"type": "record", "on": True, "spikes": True})           # restart while spikes are being recorded
+    state = ticks(game, 2)
+    assert game.brain.recording is not None and state["recording"] == {"frames": 2, "spikes": True, "active": True}
+    game.action({"type": "record", "on": False})
+    ticks(game, 1)
+    assert game.brain.recording is None and game.brain.recording_kept and len(game.brain.recording_kept) > 0
+
+
+def test_scenario_gives_the_tool_back_when_it_ends(game):
+    game.world.tool = "lure"
+    game.action({"type": "scenario", "id": "escape"})
+    ticks(game, 2)
+    assert game.world.tool == "hand" and game.world.hand is not None
+    game.action({"type": "scenario"})                                     # stopped by the player
+    ticks(game, 1)
+    assert game.world.tool == "lure" and game.world.hand is None and game.scenario.saved_tool is None
+    game.world.tool = "none"
+    game.action({"type": "scenario", "id": "escape"})
+    ticks(game, 2)
+    while game.scenario.current is not None:                              # run it to its natural end
+        game.scenario._next()
+    assert game.world.tool == "lure" and game.world.hand is None
+    assert any(e["text"] == "scenario finished: Looming escape" for e in game.events.items)
+    assert game.scenario.store == {} and game.scenario.measure == {}
 
 
 def test_scenario_runner_advances_steps(game):

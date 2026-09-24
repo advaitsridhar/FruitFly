@@ -72,6 +72,14 @@ def test_select_type_filter_matches_exactly(conn):
     assert conn.select("LC10a/L").size + conn.select("LC10a/R").size == lc10a.size
 
 
+def test_select_type_names_containing_commas(conn):
+    idx = conn.select("DNp51,DNpe019")                              # the whole spec is one type name
+    assert idx.size == 2 and set(conn.types[idx]) == {"DNp51,DNpe019"}
+    assert conn.select("DNp51,DNpe019/L").size == 1 and set(conn.side[conn.select("DNp51,DNpe019/R")]) == {"R"}
+    assert conn.count("DNp51,DNpe019") == 2 and conn.select("prefix:DNp51").size == 2
+    assert conn.select("DNp51").size == 0 and conn.select("DNpe019").size == 0
+
+
 def test_select_body_and_index(conn):
     i = 17
     assert conn.select(f"index:{i}").tolist() == [i]

@@ -215,9 +215,14 @@ class World:
 
     def toggle_female(self, on: bool, x: float | None = None, y: float | None = None):
         if on and self.female is None:
-            if x is None:
+            if x is None or y is None:
                 a = self.rng.uniform(-math.pi, math.pi)
                 x, y = 18 * math.cos(a), 18 * math.sin(a)
+            else:
+                x, y = float(x), float(y)
+                r = math.hypot(x, y)
+                if r > ARENA_R - 2.0:                        # keep her inside the arena wall
+                    x, y = x * (ARENA_R - 2.0) / r, y * (ARENA_R - 2.0) / r
             self.female = Female(self.rng, x, y)
         elif not on:
             self.female = None

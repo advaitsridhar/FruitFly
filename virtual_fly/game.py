@@ -79,6 +79,7 @@ HIDDEN_READOUTS = {   # used by the decoder but not shown as bars
     "BDN1": "DNge053", "BDN4": "DNge050", "oDN1": "DNg97", "bluebell": "DNg60", "Brake": "AN19A018",
     "DNa03L": "DNa03/L", "DNa03R": "DNa03/R", "DNp15L": "DNp15/L", "DNp15R": "DNp15/R",
 }
+BUILTIN_KEYS = {r[0] for r in READOUTS} | set(HIDDEN_READOUTS)   # a 'watch' may never shadow these
 
 # The antennal-lobe local neurons are silenced in the game (outputs blocked, like tetanus toxin).
 BASELINE_SILENCED = "class:ALLN"
@@ -350,6 +351,17 @@ class Game:
             if n == 0:
                 return {"ok": False, "error": f"No neurons match '{spec}'. Try a type like MDN or prefix:LC10."}
             a["n"] = n
+            a["spec"] = spec
+        if kind == "watch":
+            explicit = str(a.get("key") or "").strip()
+            key = (explicit or a["spec"])[:24]
+            if key in BUILTIN_KEYS:                          # the decoder reads these; a rewire would steer the body
+                if explicit:
+                    return {"ok": False, "error": f"'{key}' is a built-in readout; pick another name for the watch."}
+                key = f"watch:{a['spec']}"[:24]
+            a["key"] = key
+        if kind == "unwatch" and a.get("key") not in self.custom_readouts:
+            return {"ok": False, "error": f"'{a.get('key')}' is not a custom watch."}
         if kind == "scenario" and a.get("id") and a["id"] not in SCENARIOS:
             return {"ok": False, "error": f"unknown scenario {a['id']}"}
         self.actions.put(a)
@@ -429,7 +441,11 @@ class Game:
             self.say(f"Output of {a['spec']} ({n} neurons) scaled x{factor:g}.", 3.0)
             self.events.add(self.t, "lab", f"modulate {a['spec']} x{factor:g}")
         elif kind == "watch":
-            key = str(a.get("key") or a["spec"])[:24]
+            key = a["key"]                                   # validated in action()
+            if key in BUILTIN_KEYS:
+                raise ValueError(f"'{key}' is a built-in readout")
+            if key in self.custom_readouts:
+                self.brain.remove_monitor(key)
             self.custom_readouts[key] = a["spec"]
             self.readouts[key] = self.conn.select(a["spec"])
             self.hz_shown[key] = 0.0
@@ -484,6 +500,9 @@ class Game:
                 self.scenario.stop()
         elif kind == "record":
             if a.get("on", True):
+                if self.brain.recording is not None:     # a restart while spikes were being recorded
+                    self.brain.stop_recording()
+                self.brain.recording_kept = []           # the previous take is gone once a new one starts
                 self.recording = []
                 self.record_active = True
                 self.record_spikes = bool(a.get("spikes", False))
@@ -492,7 +511,7 @@ class Game:
                 self.events.add(self.t, "system", "recording started")
             elif self.record_active:
                 self.record_active = False               # frames are kept for download until the next start
-                if self.record_spikes:
+                if self.brain.recording is not None:
                     self.brain.recording_kept = self.brain.stop_recording()
                 self.events.add(self.t, "system", f"recording stopped ({len(self.recording or [])} frames)")
         elif kind == "state":

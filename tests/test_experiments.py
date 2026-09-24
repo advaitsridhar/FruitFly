@@ -93,6 +93,25 @@ def test_lesion_scan_orders_relays_by_effect(brain):
     assert by_label[0]["hz"] == 0
 
 
+def test_lesion_scan_validates_the_readout_and_always_unsilences(brain, monkeypatch):
+    with pytest.raises(ValueError, match="not a readout"):
+        E.lesion_scan(brain, SUGAR_EXP, ["GNG232"], "no such readout")
+    assert brain.silenced == {}
+    calls = []
+    real = E.run_experiment
+
+    def flaky(b, exp, seeds=(0,)):
+        calls.append(1)
+        if len(calls) == 2:                                               # the first lesioned run blows up
+            raise RuntimeError("boom")
+        return real(b, exp, seeds=seeds)
+
+    monkeypatch.setattr(E, "run_experiment", flaky)
+    with pytest.raises(RuntimeError):
+        E.lesion_scan(brain, SUGAR_EXP, ["GNG232"], "MN9")
+    assert brain.silenced == {}                                           # the lesion was undone anyway
+
+
 def test_save_json(brain, tmp_path):
     results = [run_experiment(brain, LOOM_EXP)]
     out = tmp_path / "results.json"

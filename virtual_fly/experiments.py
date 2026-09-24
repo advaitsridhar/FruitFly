@@ -245,6 +245,9 @@ def lesion_scan(brain: FlyBrain, exp: Experiment, candidates: list[str], readout
     """Silence each candidate population in turn and re-measure one readout.
 
     Returns rows sorted by how much the readout dropped: the relays the behaviour depends on."""
+    if not any(r.spec == readout or r.label == readout for r in exp.readouts):
+        raise ValueError(f"'{readout}' is not a readout of experiment '{exp.name}': "
+                         f"{[r.label for r in exp.readouts]}")
     base = run_experiment(brain, exp, seeds=(seed,))
     base_hz = next(r.hz for r in base.readouts if r.spec == readout or r.label == readout)
     rows = []
@@ -253,9 +256,11 @@ def lesion_scan(brain: FlyBrain, exp: Experiment, candidates: list[str], readout
             n = brain.silence(spec)
         except ValueError:
             continue
-        res = run_experiment(brain, exp, seeds=(seed,))
-        hz = next(r.hz for r in res.readouts if r.spec == readout or r.label == readout)
-        brain.unsilence(spec)
+        try:
+            res = run_experiment(brain, exp, seeds=(seed,))
+            hz = next(r.hz for r in res.readouts if r.spec == readout or r.label == readout)
+        finally:
+            brain.unsilence(spec)                    # never leave a lesion behind, whatever happened
         rows.append({"silenced": spec, "neurons": n, "hz": hz, "baseline": base_hz,
                      "change": (hz - base_hz) / base_hz if base_hz else 0.0})
     rows.sort(key=lambda r: r["change"])

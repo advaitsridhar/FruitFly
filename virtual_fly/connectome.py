@@ -225,15 +225,22 @@ class Connectome:
             order = np.argsort(self.type_idx, kind="stable")
             bounds = np.searchsorted(self.type_idx[order], np.arange(len(self.tables["types"]) + 1))
             self._by_type = (order, bounds, {t: k for k, t in enumerate(self.tables["types"])})
+        exact = self._exact_type(spec.strip())        # 70 type names contain ',' or '&': try whole first
+        if exact is not None:
+            result = np.flatnonzero(exact).astype(np.int64)
+            self._cache[spec] = result
+            return result
         keep, drop = [], []
         for term in (s.strip() for s in spec.split(",")):
             if not term:
                 continue
             negate = term.startswith("!")
             term = term[1:].strip() if negate else term
-            mask = np.ones(self.n, dtype=bool)
-            for part in term.split("&"):
-                mask &= self._match(part.strip())
+            mask = self._exact_type(term)
+            if mask is None:
+                mask = np.ones(self.n, dtype=bool)
+                for part in term.split("&"):
+                    mask &= self._match(part.strip())
             (drop if negate else keep).append(mask)
         if not keep:
             result = np.zeros(0, dtype=np.int64)
@@ -244,6 +251,22 @@ class Connectome:
             result = np.flatnonzero(mask).astype(np.int64)
         self._cache[spec] = result
         return result
+
+    def _exact_type(self, term: str) -> np.ndarray | None:
+        """Mask for a term that is literally a cell-type name (optionally with a ``/L`` ``/R`` ``/M`` side),
+        or None. Checked before any splitting so type names containing ',' '&' or ':' still work."""
+        order, bounds, lookup = self._by_type
+        side = None
+        if len(term) > 2 and term[-2] == "/" and term[-1] in "LRM" and term not in lookup:
+            term, side = term[:-2], term[-1]
+        k = lookup.get(term)
+        if k is None or term == "":
+            return None
+        mask = np.zeros(self.n, dtype=bool)
+        mask[order[bounds[k]:bounds[k + 1]]] = True
+        if side is not None:
+            mask &= self.side == side
+        return mask
 
     def _match(self, part: str) -> np.ndarray:
         side = None

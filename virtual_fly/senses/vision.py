@@ -61,8 +61,8 @@ class Eye:
         az = np.linspace(math.radians(-8), math.radians(165), n_az) * s
         el = np.linspace(math.radians(-55), math.radians(60), n_el)
         AZ, EL = np.meshgrid(az, el, indexing="ij")
-        # hex-like offset: shift alternate elevation rows by half a facet
-        AZ = AZ + (np.arange(n_el) % 2)[None, :] * (az[1] - az[0]) * 0.5 * s
+        # a plain rectangular grid: staggering alternate rows (as a real hex lattice does) makes a purely
+        # horizontal edge produce a vertical component in every column-to-column comparison
         self.n_az, self.n_el = n_az, n_el
         self.az = AZ.ravel()
         self.el = EL.ravel()
@@ -144,8 +144,10 @@ def _blobs(mask2d: np.ndarray) -> list[tuple]:
                         seen[na, nb] = True
                         stack.append((na, nb))
             rows = [c[0] for c in cells]
+            # only the rear edge of the eye counts as "entering the field": column 0 is the frontal
+            # overlap of both eyes, where an approaching object is exactly what must be detected
             out.append((len(cells), float(np.mean(rows)), float(np.mean([c[1] for c in cells])), 0,
-                        min(rows) == 0 or max(rows) == n_i - 1))
+                        max(rows) == n_i - 1))
     return out
 
 
@@ -287,11 +289,15 @@ class ColumnarMotion:
     go to T4, OFF edges (darkening) to T5, as in the real fly.
 
     **Calibration** (``axes``): the column lattice uses hex axes at 60 degrees. The preferred
-    direction of each T4 subtype was measured from the data itself, as the offset between a T4's
-    Mi9 inputs (preferred side of the dendrite) and its Mi4/C3 inputs (null side): in the hex-lattice
-    plane the *a* subtype points at ``a_deg`` and the *c* subtype at ``c_deg``. Because *a* means
-    front-to-back and *c* means upward, these two vectors define the azimuth and elevation axes of the
-    visual field. Columns are then spread linearly over the eye's field (``az_range``,
+    direction of each T4 subtype was measured from the data itself, from the offset between a T4's
+    Mi9 inputs (the preferred side of the dendrite, where an edge moving in the preferred direction
+    enters) and its Mi4/C3 inputs (the null side): motion in the preferred direction runs from the
+    Mi9 side to the Mi4 side, so the preferred direction is Mi4 - Mi9. In the hex-lattice plane the
+    *a* subtype points at ``a_deg`` and the *c* subtype at ``c_deg``. Because *a* means front-to-back
+    and *c* means upward, these two vectors define the azimuth and elevation axes of the visual
+    field. Three independent checks of the frame are in docs/SCIENCE.md 5.3 (HSN's inputs are
+    dorsal, LPLC2's inputs are arranged for outward motion, Mi1 somata run dorsal with hex1+hex2).
+    Columns are then spread linearly over the eye's field (``az_range``,
     ``el_range``). Distances along the lattice are not exact angles (the real eye's facets are not
     uniformly spaced), but every column lands on the correct part of the visual field and the
     subtypes point the right way, which is what the downstream wiring needs.
@@ -445,9 +451,11 @@ class ColumnarMotion:
 
 
 # Preferred-direction axes of T4 subtypes in the hex-lattice plane, measured from the MaleCNS data
-# (offset Mi9 - Mi4 of each T4's inputs, ~450-700 cells per subtype and side, both sides agree
-# within 3 degrees): a (front-to-back) -75 deg, b +100 deg, c (up) -154 deg, d +32 deg.
-COLUMNAR_AXES = {"a_deg": -74.0, "c_deg": -154.0, "az_range": (-8.0, 165.0), "el_range": (-55.0, 60.0)}
+# (offset Mi4 - Mi9 of each T4's inputs, ~450-700 cells per subtype and side, both sides agree
+# within 3 degrees): a (front-to-back) +106 deg, b -80 deg, c (up) +26 deg, d -148 deg.
+# (An earlier build used Mi9 - Mi4, the same axes rotated by 180 degrees, which put HSN's inputs in
+# the ventral field and LPLC2's inputs in the contraction arrangement; see docs/SCIENCE.md 5.3.)
+COLUMNAR_AXES = {"a_deg": 106.0, "c_deg": 26.0, "az_range": (-8.0, 165.0), "el_range": (-55.0, 60.0)}
 
 
 class Retina:

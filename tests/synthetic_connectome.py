@@ -218,6 +218,7 @@ def build_synthetic(path: Path | str, seed: int = 7) -> Path:
     dna03 = both("DNa03", 1, "descending_neuron", "descending", ACH, soma=(44000, 224000, 150000))
     dng13 = both("DNg13", 1, "descending_neuron", "descending", ACH, neuromere="GNG", soma=(46000, 250000, 150000))
     dnp15 = both("DNp15", 1, "descending_neuron", "descending", ACH, soma=(41000, 221000, 150000))
+    both("DNp51,DNpe019", 1, "descending_neuron", "descending", ACH, soma=(43000, 223000, 150000))   # a real name with a comma
     hs = {t: both(t, 1, "visual_centrifugal", "visual", ACH, soma=(230000, 200000, 110000)) for t in ("HSE", "HSN", "HSS")}
     t45 = {}
     for cell in ("T4", "T5"):

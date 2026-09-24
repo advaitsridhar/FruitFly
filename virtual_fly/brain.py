@@ -512,6 +512,9 @@ class FlyBrain:
         """Keep a rolling history of a population's rate (Hz per neuron), one value per bin."""
         m = Monitor(name, spec, self.conn.select(spec), float(bin_ms))
         m._t_start = self.time_ms
+        # start from the population's current count: spikes fired before the monitor existed must not
+        # be booked to its first bin
+        m._count = int(self.spike_count[m.idx].sum()) if m.idx.size else 0
         self.monitors[name] = m
         return m
 
@@ -559,7 +562,8 @@ class FlyBrain:
                 "std_t": self.std_t.copy(), "spike_count": self.spike_count.copy(),
                 "window_ms": self.window_ms, "total_spikes": self.total_spikes,
                 "quiet": self.quiet, "quiet_since": self._quiet_since,
-                "rng": self.rng.bit_generator.state}
+                "rng": self.rng.bit_generator.state,
+                "monitors": {k: (m._count, m._t_start, len(m.history)) for k, m in self.monitors.items()}}
         if self.plasticity is not None:
             snap["plasticity"] = self.plasticity.snapshot()
         return snap
@@ -579,6 +583,13 @@ class FlyBrain:
         self.window_ms, self.total_spikes = snap["window_ms"], snap["total_spikes"]
         self.quiet, self._quiet_since = snap["quiet"], snap["quiet_since"]
         self.rng.bit_generator.state = snap["rng"]
+        for k, m in self.monitors.items():             # monitors bin from spike_count deltas: rewind them too
+            if k in snap.get("monitors", {}):
+                m._count, m._t_start, n_hist = snap["monitors"][k]
+                del m.history[n_hist:]
+            else:                                      # added after the snapshot: restart from the restored counts
+                m._count = int(self.spike_count[m.idx].sum()) if m.idx.size else 0
+                m._t_start = self.time_ms
         if self.plasticity is not None and "plasticity" in snap:
             self.plasticity.restore(self, snap["plasticity"])
 

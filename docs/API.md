@@ -91,7 +91,7 @@ filaments, up to 300); `wind = {angle, speed}` (direction the wind blows *toward
 | `zap` | `spec, hz[, secs]` | stimulate a population (reply includes `n` neurons) |
 | `silence` / `unsilence` | `spec` (unsilence: omit for all) | block / restore a population's output |
 | `modulate` | `spec, factor` | scale a population's output (1 = normal) |
-| `watch` / `unwatch` | `spec[, key]` / `key` | add / remove a custom readout (appears in `hz`) |
+| `watch` / `unwatch` | `spec[, key]` / `key` | add / remove a custom readout (appears in `hz`). A `key` that names a built-in readout (`MN9`, `GF`, `DNp15L`, ...) is refused, since the decoder reads those; without a `key` the spec is the name, prefixed `watch:` if it collides. `unwatch` only removes custom watches. |
 | `clear` | `[what]` | `all`, `food`, `odours`, `obstacles` |
 | `reset` | | new fly, fresh brain (learned synapses kept) |
 | `calm` | | reset the brain's activity to rest |

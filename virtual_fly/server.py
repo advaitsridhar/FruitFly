@@ -160,7 +160,8 @@ def make_handler(game):
                                       {"Content-Disposition": "attachment; filename=fly-session.json"})
                 if path == "/api/spikes":
                     b = game.brain
-                    rec = b.recording if b.recording is not None else getattr(b, "recording_kept", [])
+                    with b.lock:                     # the game thread appends to the live recording
+                        rec = list(b.recording) if b.recording is not None else list(getattr(b, "recording_kept", []))
                     t_ms, idx = b.recording_arrays(rec)
                     buf = io.BytesIO()
                     np.savez_compressed(buf, time_ms=t_ms, neuron=idx, body_id=conn.body_id[idx] if idx.size else idx)
@@ -213,11 +214,18 @@ def make_handler(game):
                 game.unsubscribe(q)
 
         def do_POST(self):
+            try:                                     # drain the body first so a keep-alive connection stays in sync
+                length = int(self.headers.get("Content-Length") or 0)
+                raw = self.rfile.read(length) if length > 0 else b""
+            except (ValueError, OSError):
+                self.close_connection = True
+                return self._send(400, b"bad request", "text/plain")
             if self.path != "/api/action":
                 return self._send(404, b"not found", "text/plain")
             try:
-                length = int(self.headers.get("Content-Length") or 0)
-                data = json.loads(self.rfile.read(length) or b"{}")
+                data = json.loads(raw or b"{}")
+                if not isinstance(data, dict):
+                    raise ValueError("the action must be a JSON object")
                 reply = game.action(data)
             except Exception as e:
                 reply = {"ok": False, "error": str(e)}

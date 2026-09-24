@@ -620,39 +620,53 @@ about 32 × 30 columns. Soma anatomy fixes the orientation: `hex1 + hex2` increa
 y = 11k, the subesophageal zone ventral at y = 38-44k), and `hex1 − hex2` increases laterally and
 posteriorly in the medulla, which is the *anterior* visual field after the first chiasm.
 
-**Preferred directions** (`step1c`): the dendrite of a T4 cell samples Mi9 on its leading side
-and Mi4/C3 on its trailing side (Takemura et al. 2017), so the offset between the centroids of a
-T4's Mi9 inputs and its Mi4 inputs points along its null-to-preferred axis. Per subtype and side
-(hex units; standard error ≤ 0.03; 440-764 cells each):
+**Preferred directions** (`step1c`): the dendrite of a T4 cell samples Mi9 on its preferred
+side (where an edge moving in the preferred direction enters the receptive field) and Mi4/C3 on
+its null side (Takemura et al. 2017), so an edge moving in the preferred direction runs from the
+Mi9 centroid to the Mi4 centroid: the **preferred direction is Mi4 − Mi9**, the offset below with
+its sign reversed. Per subtype and side (hex units; standard error ≤ 0.03; 440-764 cells each):
 
-| subtype | Mi9 − Mi4, left | Mi9 − Mi4, right | angle in the 60° hex plane (L / R) | direction |
+| subtype | Mi9 − Mi4, left | Mi9 − Mi4, right | preferred direction (Mi4 − Mi9) in the 60° hex plane (L / R) | direction |
 |---|---|---|---|---|
-| T4a | (+0.85, −1.17) | (+0.91, −1.16) | −75° / −72° | front-to-back |
-| T4b | (−0.88, +1.28) | (−0.84, +1.34) | +102° / +98° | back-to-front |
-| T4c | (−1.74, −1.35) | (−1.79, −1.42) | −154° / −154° | up |
-| T4d | (+1.71, +1.90) | (+1.74, +1.88) | +32° / +31° | down |
+| T4a | (+0.85, −1.17) | (+0.91, −1.16) | +105° / +108° | front-to-back |
+| T4b | (−0.88, +1.28) | (−0.84, +1.34) | −78° / −82° | back-to-front |
+| T4c | (−1.74, −1.35) | (−1.79, −1.42) | +26° / +26° | up |
+| T4d | (+1.71, +1.90) | (+1.74, +1.88) | −148° / −149° | down |
 
 a/b are antiparallel along `hex2 − hex1`, c/d along `hex1 + hex2`, and the T5 offsets
 (Tm9 − Tm1) point the same way. The two sides agree within 3°. `COLUMNAR_AXES` in
-`senses/vision.py` uses a = −74°, c = −154° in the 60°-axis plane
+`senses/vision.py` uses a = +106°, c = +26° in the 60°-axis plane
 (`cx = hex1 + 0.5·hex2, cy = 0.866·hex2`), projects every column onto these two axes and spreads
-the result linearly over the eye's field (azimuth −8° to 165°, elevation −55° to 60°). Distances
-along the lattice are not exact angles, but every column lands on the right part of the visual
-field and every subtype points the right way, which is what the downstream wiring needs. In this
-frame the a and c axes are 97° apart rather than 90°; the real lattice is tilted relative to the
-equator.
+the result linearly over the eye's field (azimuth −8° to 165°, elevation −55° to 60°): azimuth
+grows (toward the back) with `hex2 − hex1` and elevation grows with `hex1 + hex2`, exactly the
+anatomy above. Distances along the lattice are not exact angles, but every column lands on the
+right part of the visual field and every subtype points the right way, which is what the
+downstream wiring needs. In this frame the a and c axes are 80° apart rather than 90°; the real
+lattice is tilted relative to the equator. (The first release of this kit had transcribed the
+Mi9 − Mi4 offsets themselves as the preferred directions, i.e. the same frame rotated by 180°,
+which put the front of the eye at the back and the top at the bottom; the probes in 5.4-5.5
+used the correct frame throughout, so their numbers were unaffected. It was caught by the three
+checks below, which the test suite now encodes on the synthetic lattice.)
 
-Two independent checks that the frame is right:
+Three independent checks that the frame is right:
 
 * **T4/T5 → lobula-plate tangential cells** (right side, synapses): T4a → HSE 6951, HSN 6526,
   HSS 6741 (and LPi12 28,678); T4b → H2 12,235 (HS 0); T4c → LPi34 39,231 (VS 6); T4d → VS 24,437;
   T5a → HSE 8317, HSN 8219, HSS 7037; T5b → H2 14,558; T5d → VS 24,463. So a/b are the
   horizontal system (layers 1/2) and c/d the vertical system (layers 3/4), as in Maisak et al.
-  2013.
+  2013. And the synapse-weighted elevation of each HS cell's T4/T5 inputs in this frame is
+  HSN +12°, HSE −1°, HSS −26° (right side; left +12°, +1°, −30°): north above, south below, as the
+  names say (Schnell et al. 2010).
 * **LPLC2 receptive fields**: for each of the 91 right LPLC2 cells the mean visual offset of its
-  T4/T5 inputs from its own centre is a: +2.96 columns azimuth (behind), b: −2.39 (in front),
-  c: +2.64 elevation (above), d: −2.82 (below), standard error ~0.1. That is the outward-motion
-  arrangement Klapoetke et al. 2017 measured physiologically, recovered from wiring alone.
+  T4/T5 inputs from its own T4/T5 centre is a: +1.67 columns azimuth (behind), b: −1.49 (in
+  front), c: +4.13 elevation (above), d: −4.41 (below); left eye +1.81 / −1.53 / +4.12 / −4.35
+  (7,500-10,600 synapses per subtype). That is the outward-motion arrangement Klapoetke et al.
+  2017 measured physiologically, recovered from wiring alone; and driving the outward pattern
+  within 9 columns of a centre in this frame gives LPLC2 8.2 Hz (best cell 133 Hz) and DNp01
+  6.7 Hz, the contraction pattern 1.0 Hz and 0 (`check_loom`, 250 ms).
+* **Mi1 somata**: the medulla's dorsal edge is toward the calyx (low y in the volume). The
+  frame's elevation of an Mi1 column correlates −0.97 with its soma's y on both sides, i.e. up
+  is dorsal.
 
 ### 5.4 What T4/T5 injection reaches: looming
 

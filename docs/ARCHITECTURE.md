@@ -37,8 +37,8 @@ Every tick is 25 ms of fly time:
    they touch; the antennae report wind and sound; bristles report touch. The result is a map
    `population spec -> Hz` plus per-neuron rates for the T4/T5 columns, and a small dict of what the
    fly felt, for the screen.
-3. **The brain** (`FlyBrain.step` x 50): every neuron in the connectome is integrated (only the
-   active ones cost anything), stimulated sensory neurons fire as Poisson processes, spikes
+3. **The brain** (`FlyBrain.step` x 50): every neuron in the connectome is integrated (a brain
+   that is completely at rest skips the maths), stimulated sensory neurons fire as Poisson processes, spikes
    propagate over the 6.3 million connections with the 1.8 ms delay, and the plasticity rule updates
    the KC->MBON weights from the KC and dopamine traces.
 4. **Readouts**: firing rates of the key neuron populations over the tick; silenced neurons count
