@@ -40,9 +40,15 @@ export class Arena {
   }
   _camera(dt, pose) {
     if (this.zoom <= 1) { this.cam.x = this.cam.y = 0; return; }
-    // keep the fly in the middle, but never look past the dish: the visible half-width in mm sets the limit
+    // keep the fly in the middle, but never look past the wall: the camera centre stays at least half the
+    // shorter canvas side from the wall in every direction (a radial limit, then a per-axis one for the
+    // long axis, which may already show the whole dish)
     const lim = Math.max(0, this.R - Math.min(this.w, this.h) / 2 / this.scale);
-    const tx = pose ? Math.max(-lim, Math.min(lim, pose.x)) : 0, ty = pose ? Math.max(-lim, Math.min(lim, pose.y)) : 0;
+    let tx = pose ? pose.x : 0, ty = pose ? pose.y : 0;
+    const d = Math.hypot(tx, ty);
+    if (d > lim) { tx *= lim / d; ty *= lim / d; }
+    const lx = Math.max(0, this.R - this.w / 2 / this.scale), ly = Math.max(0, this.R - this.h / 2 / this.scale);
+    tx = Math.max(-lx, Math.min(lx, tx)); ty = Math.max(-ly, Math.min(ly, ty));
     const k = Math.min(1, dt * 4);
     this.cam.x += (tx - this.cam.x) * k; this.cam.y += (ty - this.cam.y) * k;
   }
@@ -216,7 +222,7 @@ export class Arena {
       const [x1, y1] = this.W2C(ex, ey), [x2, y2] = this.W2C(o.x, o.y);
       c.strokeStyle = loom ? "rgba(255,93,93,.55)" : "rgba(77,226,197,.5)"; c.lineWidth = 1; c.setLineDash([4, 4]);
       c.beginPath(); c.moveTo(x1, y1); c.lineTo(x2, y2); c.stroke(); c.setLineDash([]);
-      c.strokeStyle = loom ? "rgba(255,93,93,.7)" : "rgba(77,226,197,.7)"; c.beginPath(); c.arc(x2, y2, 8, 0, 2 * Math.PI); c.stroke();
+      c.strokeStyle = loom ? "rgba(255,93,93,.7)" : "rgba(77,226,197,.7)"; c.beginPath(); c.arc(x2, y2, Math.max(8, 1.6 * this.scale), 0, 2 * Math.PI); c.stroke();
     }
   }
 

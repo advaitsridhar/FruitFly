@@ -334,6 +334,18 @@ def test_bristles_touch_and_proprioception():
     assert HEAD_BRISTLES in br.rates(wall, DT, False, 5.0)
     world.add_obstacle(10, 0, r=4)
     assert HEAD_BRISTLES in br.rates(Pose(x=10 - 4 - FLY_HALF - 0.3, y=0.0, h=0.0), DT, False, 9.0)
+    # the bristles adapt: a head held still against the wall fires once, not for as long as it stays there
+    br = Bristles(world)
+    assert HEAD_BRISTLES in br.rates(wall, DT, False, 50.0)
+    fired = sum(HEAD_BRISTLES in br.rates(wall, 0.05, True, 50.0 + 0.05 * k) for k in range(1, 41))   # 2 s pressed against it
+    assert 2 <= fired <= 4
+    assert HEAD_BRISTLES not in br.rates(wall, DT, False, 52.2)
+    assert HEAD_BRISTLES in br.rates(wall, DT, False, 52.6)                  # 2.6 s after the touch it re-arms
+    br.rates(wall, 0.3, False, 52.9)
+    assert HEAD_BRISTLES not in br.rates(wall, DT, False, 52.95)
+    assert HEAD_BRISTLES in br.rates(Pose(x=wall.x, y=0.5, h=0.0), DT, False, 53.0)   # the head moved along the wall
+    br.rates(Pose(x=wall.x, y=0.5, h=0.0), 0.3, False, 53.3)
+    assert HEAD_BRISTLES in br.rates(Pose(x=wall.x, y=0.5, h=0.3), DT, False, 53.4)   # or turned
     br = Bristles(world)                                                      # fresh: no touch pending
     pose.v = 6.0
     assert br.rates(pose, DT, False, 20.0) == {LEG_PROPRIO: pytest.approx(15.0)}

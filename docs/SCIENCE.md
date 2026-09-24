@@ -228,7 +228,10 @@ These came out of scanning ~400 sensory types with the pure model (starter READM
 and are used by the game:
 
 * `LC10a` on one side → `DNa02` on the same side (via `AOTU019`, `AOTU041`, `TuTuA`): the lure.
-* head bristles `BM_InOm` → `MDN` (backing away from a bump).
+* head bristles `BM_InOm` → `MDN` (backing away from a bump). The bristles adapt (v2.4): a touch
+  fires them for 0.2 s, and a head held still against the wall fires them again only when it moves
+  or after 2.5 s. Before that a sustained wall touch drove the grooming neurons, grooming stopped
+  the fly with its head on the wall, and it groomed there indefinitely.
 * `pC1` courtship neurons → `pIP10` (song).
 
 ---
