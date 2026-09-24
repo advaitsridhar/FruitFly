@@ -97,6 +97,7 @@ and the test tools: `pip install -e ".[dev]"` then `fly-game`, `fly-brain`, `pyt
 | Download blocked by a firewall | Download [the file](https://raw.githubusercontent.com/blendi-remade/fly-brain-minecraft/6cfa30175003ef25da68a237d5eda958f8047b82/src/main/resources/connectome/malecns-v1.0.flyb.gz) in your browser and put it in `data/`. |
 | "Could not find a free port" | `py fly_game.py --port 9000` |
 | The game says it's running below real time | Your computer is simulating 176k neurons slower than real time; the fly's world slows down to keep up. First make sure numba is installed (`py -m pip install numba`; the terminal says "Brain integrator: compiled (numba)" at start-up): with it, a 4-core laptop-class machine manages about 1.5x real time with a busy brain, without it about 0.7x. Then close other programs, or start it with `py fly_game.py --fast` (a 1 ms time step, about twice as fast again; every classic experiment still passes). |
+| The 3-D brain map goes dark while its yaw counter keeps ticking | Your browser took the graphics (WebGL) context away, for instance after a GPU driver reset, sleep and resume, or too many WebGL tabs (Firefox drops the least recently used one past 16). The page now asks for it back and redraws the map when it returns, and says "graphics reset, restoring…" in the map meanwhile; if it says to reload, reload the tab. A flat map with the note that WebGL is unavailable means the browser refused WebGL altogether (check its graphics settings). |
 
 ## 3. How it works (the whole idea)
 

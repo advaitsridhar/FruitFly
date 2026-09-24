@@ -48,9 +48,28 @@ export class BrainView {
     this.nowSec = 0;
     this._buildArrays();
     this.gl = null;
+    this.lost = false; this.glDead = false; this.lostAt = 0; this.losses = [];
     try { this.gl = canvas.getContext("webgl", { antialias: false, alpha: false, premultipliedAlpha: false, preserveDrawingBuffer: false }); } catch (e) { this.gl = null; }
     if (this.gl) {
-      try { this._initGL(); } catch (e) { console.warn("WebGL init failed, using 2-D map", e); this.gl = null; }
+      try { this._initGL(); } catch (e) {
+        console.warn("WebGL init failed, using 2-D map", e); this.gl = null;
+        // a canvas that has been in WebGL mode cannot give a 2-D context any more: a fresh one takes its place
+        const fresh = canvas.cloneNode(false); canvas.replaceWith(fresh); this.canvas = canvas = fresh;
+      }
+    }
+    if (this.gl) {
+      // The browser can take the WebGL context away (a GPU process restart, a driver reset, too many contexts,
+      // sleep and resume) and only gives it back if the page asks: preventDefault() on the loss is the opt-in.
+      // Without it the map stayed a dark box with the yaw label ticking until the page was reloaded.
+      canvas.addEventListener("webglcontextlost", (e) => {
+        const now = performance.now();
+        this.losses = this.losses.filter((t) => now - t < 60000); this.losses.push(now);
+        console.info("Brain map: the WebGL context was lost:", e.statusMessage || "(no reason given)");
+        this.lost = true; this.lostAt = now;
+        if (this.losses.length > 3) { this.glDead = true; return; }        // a driver in a reset loop: stop asking
+        e.preventDefault();
+      });
+      canvas.addEventListener("webglcontextrestored", () => this._restoreGL(true));
     }
     if (!this.gl) this._init2D();
     this._resize();
@@ -106,6 +125,19 @@ export class BrainView {
     gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
     gl.clearColor(6 / 255, 9 / 255, 13 / 255, 1);
     this.dirtyT = false;
+  }
+
+  _restoreGL(retry) {
+    if (!this.lost || this.glDead || !this.gl) return;
+    try {
+      this._initGL();                                   // recreates the program, the buffers (with the current spike times) and the state
+      this.gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+      this.dirtyT = true; this.lost = false;
+      console.info("Brain map: the WebGL context is back");
+    } catch (e) {
+      console.warn("Brain map: WebGL re-init after the context came back failed", e);
+      if (retry) setTimeout(() => this._restoreGL(false), 1000); else this.glDead = true;
+    }
   }
 
   // ---------------------------------------------------------------- 2-D fallback
@@ -209,7 +241,7 @@ export class BrainView {
     if (this._acc < 1 / 30 && !this.path && this.picked < 0) return;
     const step = this._acc; this._acc = 0;
     this.nowSec = nowSec;
-    if (this.spin && this.gl && this.mode3d) this.yaw += step * 0.25;
+    if (this.spin && this.gl && this.mode3d && !this.lost) this.yaw += step * 0.25;
     if (this.gl) this._drawGL(); else this._draw2D(step);
     this._drawOverlay();
   }
@@ -224,6 +256,7 @@ export class BrainView {
   }
   _drawGL() {
     const gl = this.gl;
+    if (this.lost || gl.isContextLost()) return;         // nothing to draw with until the context is restored
     if (this.dirtyT) { gl.bindBuffer(gl.ARRAY_BUFFER, this.bT); gl.bufferSubData(gl.ARRAY_BUFFER, 0, this.lastT); this.dirtyT = false; }
     gl.clear(gl.COLOR_BUFFER_BIT);
     gl.uniformMatrix4fv(this.u.uMVP, false, this._mvp(this._matrix()));
@@ -264,6 +297,12 @@ export class BrainView {
     c.fillStyle = "rgba(231,237,244,.5)"; c.font = "10.5px system-ui";
     c.fillText("brain", 6, 14); c.fillText("nerve cord", 6, this.cssH * 0.66);
     if (this.mode3d && this.gl) { c.fillStyle = "rgba(139,152,169,.7)"; c.fillText(`yaw ${Math.round(((this.yaw * 180 / Math.PI) % 360 + 360) % 360)}°`, 6, this.cssH - 8); }
+    if (this.gl && this.lost) {                          // say so, instead of a silent dark box
+      const secs = (performance.now() - this.lostAt) / 1000;
+      const msg = this.glDead ? "graphics reset: reload the page to bring the brain back"
+        : secs > 10 ? "graphics reset: reload the page if the brain does not come back" : secs > 1 ? "graphics reset, restoring…" : "";
+      if (msg) { c.fillStyle = "rgba(231,237,244,.85)"; c.font = "600 11px system-ui"; c.fillText(msg, 6, this.cssH / 2); }
+    }
     const M = this._matrix();
     if (this.path) {
       const pts = this.path.map((i) => (i == null || this.slotOf[i] < 0) ? null : this._proj(this.slotOf[i], M));

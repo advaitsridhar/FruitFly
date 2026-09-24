@@ -389,17 +389,28 @@ window.addEventListener("keydown", (e) => {
 
 // ---------------------------------------------------------------- main loop
 let last = performance.now();
+const failed = new Set();
+// one broken drawer must not stop the others, and nothing may stop the loop itself: each part is guarded
+// and the next frame is always scheduled (a failure is logged once)
+function guard(name, fn) {
+  try { fn(); } catch (e) { if (!failed.has(name)) { failed.add(name); console.error(`${name} failed; the rest of the page keeps running`, e); } }
+}
 function frame(now) {
-  const dt = Math.min(0.1, (now - last) / 1000); last = now;
-  if (L && arena) {
-    if (renderPending && S) { renderPending = false; renderState(S); }
-    const pose = S ? flyPose() : null, female = S ? femalePose() : null;
-    arena.draw(dt, { S, pose, female, pointer, tool, sees, handAng: S ? serverHandAngle() : 0, stripes: S ? stripesNow() : null });
-    brain.frame(dt, now / 1000);
-    panels.keys.drawSparks(now);
-    setShown($("disc"), lastStateAt > 0 && now - lastStateAt > 3000);
+  try {
+    const dt = Math.min(0.1, (now - last) / 1000); last = now;
+    if (L && arena) {
+      if (renderPending && S) { renderPending = false; guard("panels", () => renderState(S)); }
+      const pose = S ? flyPose() : null, female = S ? femalePose() : null;
+      guard("the dish", () => arena.draw(dt, { S, pose, female, pointer, tool, sees, handAng: S ? serverHandAngle() : 0, stripes: S ? stripesNow() : null }));
+      guard("the brain map", () => brain.frame(dt, now / 1000));
+      guard("the key-neuron sparklines", () => panels.keys.drawSparks(now));
+      setShown($("disc"), lastStateAt > 0 && now - lastStateAt > 3000);
+    }
+  } catch (e) {
+    guard("the frame", () => { throw e; });
+  } finally {
+    requestAnimationFrame(frame);
   }
-  requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
 loadLayout();
