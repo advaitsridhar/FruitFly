@@ -160,7 +160,7 @@ def make_handler(game):
                                       {"Content-Disposition": "attachment; filename=fly-session.json"})
                 if path == "/api/spikes":
                     b = game.brain
-                    rec = b.recording or []
+                    rec = b.recording if b.recording is not None else getattr(b, "recording_kept", [])
                     t_ms, idx = b.recording_arrays(rec)
                     buf = io.BytesIO()
                     np.savez_compressed(buf, time_ms=t_ms, neuron=idx, body_id=conn.body_id[idx] if idx.size else idx)

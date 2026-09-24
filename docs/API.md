@@ -48,7 +48,7 @@ One JSON object per tick (40 per second at real time). Same schema on both endpo
 | `mode` | `idle`, `walk`, `feed`, `groom`, `escape`, `backward`, `court` |
 | `fly` | `{x, y, h, v, w, mode, prob, legs, groom, wingL, wingR, abdomen, jump, hx, hy, dist}`: position mm, heading rad (0 = +x, CCW), forward speed mm/s, yaw rate rad/s, proboscis 0..1, gait phase, groom phase, wing extensions 0..1, abdomen bend 0..1, jump progress 0..1 or null, head position, distance walked |
 | `world` | `{food[], obstacles[], odours[], puffs[], wind, female, hand, tool}`: see below |
-| `senses` | which senses are active now: keys `taste_sugar`, `taste_bitter`, `taste_water`, `small` (`"L"`,`"R"`,`"LR"`), `loom`, `flow`, `smell` (odour id), `pheromone`, `courting`, `sound`, `wind` (bearing in degrees the wind comes from, + = left), `dust`, `touch`, `reward`, `shock`, `zap` (text) |
+| `senses` | which senses are active now: keys `taste_sugar`, `taste_bitter`, `taste_water`, `small` (`"L"`,`"R"`,`"LR"`), `loom`, `flow`, `smell` (odour id), `pheromone`, `courting`, `sound`, `wind` (bearing in degrees the wind comes from, + = left; `0` means straight ahead, so test for the key, not the value), `dust`, `touch`, `reward`, `shock`, `zap` (text) |
 | `retina` | `{L: base64, R: base64}`: one byte per facet (0 dark .. 255 bright), facet order matches `layout.retina` |
 | `hz` | firing rate (Hz per neuron, smoothed) per readout key, including custom watches |
 | `motor` | decoder drives: `forward, yaw, backward, halt, feed, groom, song, court` (0..1; yaw -1..1, + = right) |
@@ -65,7 +65,7 @@ One JSON object per tick (40 per second at real time). Same schema on both endpo
 | `learning` | `null` or `{enabled, depressed_fraction, events, learned_bias, smelling, mbon: {type: {strength, now, valence, dopamine}}}` (`strength` = mean remaining KC→MBON strength 0..1 over all Kenyon cells; `now` = the same weighted by the Kenyon cells active right now, i.e. for the odour being smelled; `valence` +1 approach / -1 avoid) |
 | `events[]` | the last 12 events `{id, t, kind, text}`; `event_seq` is the newest id |
 | `scenario` | `null` or `{id, name, step, steps, caption, left, measure{}}` |
-| `recording` | `null` or `{frames, spikes}` |
+| `recording` | `null` or `{frames, spikes, active}` (after `record off` the frames are kept for download, `active` is false, until the next `record on`) |
 
 `world` fields: `food[] = {id, kind (sugar|bitter|water), x, y, r, amount}`; `obstacles[] = {id, x, y, r}`;
 `odours[] = {id, odour, x, y, strength, food}` (sources); `puffs[] = [x, y, r, c, odour]` (plume

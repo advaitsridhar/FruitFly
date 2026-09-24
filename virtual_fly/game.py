@@ -278,6 +278,7 @@ class Game:
         self.seq = 0
         self.rtf = 1.0
         self.recording: list | None = None
+        self.record_active = False
         self.record_spikes = False
         self.learning_on = brain.plasticity is not None
         self.lock = threading.RLock()
@@ -484,14 +485,16 @@ class Game:
         elif kind == "record":
             if a.get("on", True):
                 self.recording = []
+                self.record_active = True
                 self.record_spikes = bool(a.get("spikes", False))
                 if self.record_spikes:
                     self.brain.start_recording()
                 self.events.add(self.t, "system", "recording started")
-            else:
+            elif self.record_active:
+                self.record_active = False               # frames are kept for download until the next start
                 if self.record_spikes:
-                    self.brain.stop_recording()
-                self.events.add(self.t, "system", "recording stopped")
+                    self.brain.recording_kept = self.brain.stop_recording()
+                self.events.add(self.t, "system", f"recording stopped ({len(self.recording or [])} frames)")
         elif kind == "state":
             for k in ("hunger", "thirst"):
                 if k in a:
@@ -788,7 +791,7 @@ class Game:
             self.runaway_s = 0.0
             self.say("Runaway firing (a known flaw of this simple model, mostly in the smell centre). Brain calmed.", 4.0)
             self.events.add(self.t, "system", "runaway firing: brain reset to rest")
-        if self.recording is not None:
+        if self.recording is not None and self.record_active:
             self.recording.append({"t": round(self.t, 3), "fly": self.body.to_dict(), "mode": mode,
                                    "hz": {k: round(v, 1) for k, v in hz.items()}, "senses": self.senses_now,
                                    "sps": int(sps)})
@@ -847,7 +850,8 @@ class Game:
             "events": self.events.items[-12:],
             "event_seq": self.events.seq,
             "scenario": self.scenario.status(),
-            "recording": None if self.recording is None else {"frames": len(self.recording), "spikes": self.record_spikes},
+            "recording": None if self.recording is None else {"frames": len(self.recording), "spikes": self.record_spikes,
+                                                              "active": self.record_active},
         }
         self.seq += 1
         self.state_dict = state

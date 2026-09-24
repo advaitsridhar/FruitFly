@@ -277,12 +277,14 @@ def test_reset_calm_and_learning_actions(game):
 def test_record_action(game):
     game.action({"type": "record", "on": True, "spikes": True})
     state = ticks(game, 3)
-    assert state["recording"] == {"frames": 3, "spikes": True} and game.brain.recording is not None
+    assert state["recording"] == {"frames": 3, "spikes": True, "active": True} and game.brain.recording is not None
     frame = game.recording[-1]
     assert set(frame) == {"t", "fly", "mode", "hz", "senses", "sps"} and frame["t"] == pytest.approx(0.075)
     game.action({"type": "record", "on": False})
-    ticks(game, 1)
-    assert game.brain.recording is None and any(e["text"] == "recording stopped" for e in game.events.items)
+    state = ticks(game, 2)
+    # stopping keeps the frames for download but stops adding to them
+    assert game.brain.recording is None and any(e["text"].startswith("recording stopped") for e in game.events.items)
+    assert state["recording"] == {"frames": 3, "spikes": True, "active": False}
 
 
 def test_scenario_runner_advances_steps(game):
