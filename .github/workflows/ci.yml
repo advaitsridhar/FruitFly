@@ -22,6 +22,7 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e ".[dev]"
       # The suite runs on a small synthetic connectome written by tests/conftest.py; the real
-      # 23 MB data file is never downloaded in CI.
+      # 23 MB data file is never downloaded in CI. numba is installed (via [dev]) so the compiled
+      # integrator is tested against the NumPy one; the suite also passes without it.
       - name: Test
         run: python -m pytest -q

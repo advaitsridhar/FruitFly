@@ -24,10 +24,13 @@ in :mod:`virtual_fly.settings`:
   that capture the whole brain state so an experiment can be replayed or branched.
 
 The integrator itself is the starter kit's dense NumPy loop (the fastest way to update 176k
-identical neurons), plus one guard the starter lacks: values that have decayed below a microvolt
-are snapped to zero, because float32 numbers drifting into the denormal range slow every array
-operation several-fold, which halved the speed of a busy, never-quiet game brain. A brain at rest
-with nothing on the way costs nothing, and ``dt=1.0`` halves the cost when a machine cannot keep up.
+identical neurons in NumPy), plus one guard the starter lacks: values that have decayed below a
+nanovolt are snapped to zero, because float32 numbers drifting into the denormal range slow every
+array operation several-fold, which halved the speed of a busy, never-quiet game brain. With the
+``numba`` package installed the same step runs as compiled kernels (:mod:`virtual_fly.fastbrain`),
+about twice as fast and spike-for-spike identical; ``backend="numpy"`` keeps the NumPy loop. A brain
+at rest with nothing on the way costs nothing, and ``dt=1.0`` halves the cost when a machine cannot
+keep up.
 
 Use it from your own code::
 
@@ -46,6 +49,7 @@ from typing import Callable
 
 import numpy as np
 
+from . import fastbrain
 from .connectome import Connectome
 
 MV_PER_SYNAPSE = 0.275       # Shiu et al. 2024
@@ -108,8 +112,13 @@ class FlyBrain:
                  fatigue_mv: float = 0.0, fatigue_ms: float = 2000.0,
                  std_u: float = 0.0, std_tau_ms: float = 500.0,
                  noise_hz: float = 0.0, noise_mv: float = 1.0, noise_spec: str = "all",
-                 threshold_jitter: float = 0.0, seed: int = 0):
+                 threshold_jitter: float = 0.0, seed: int = 0, backend: str = "auto"):
         self.conn = conn
+        if backend not in ("auto", "numpy", "numba"):
+            raise ValueError("backend must be 'auto', 'numpy' or 'numba'")
+        if backend == "numba" and not fastbrain.available():
+            raise RuntimeError("the numba backend needs the numba package: pip install numba")
+        self.backend = "numba" if (backend == "numba" or (backend == "auto" and fastbrain.available())) else "numpy"
         self.dt = float(dt)
         self.gain, self.kenyon_gain = float(gain), float(kenyon_gain)
         self.fatigue_mv, self.fatigue_ms = float(fatigue_mv), float(fatigue_ms)
@@ -150,6 +159,13 @@ class FlyBrain:
         self._stim_idx = self._empty
         self._stim_p = np.zeros(0)
         self._noise_idx = conn.select(noise_spec) if noise_hz > 0 else self._empty
+        if self.backend == "numba":
+            fastbrain.warm_up()                             # compile once (cached on disk afterwards)
+            self._flush32 = np.float32(self.FLUSH_MV)
+            self._fatigue32 = np.float32(self.fatigue_mv)
+            self._spkflag = np.zeros(n, dtype=np.bool_)     # kernel scratch: crossed threshold this step
+            self._cand = np.zeros(n, dtype=np.int64)        # kernel scratch: threshold crossings
+            self._spk = np.zeros(n, dtype=np.int64)         # kernel scratch: spikes of the step
         self.monitors: dict[str, Monitor] = {}
         self.recording: list | None = None
         self.on_spikes: list[Callable[[np.ndarray, int], None]] = []   # callbacks (spikes, t) each step
@@ -332,6 +348,8 @@ class FlyBrain:
         if self.quiet and self.fatigue_mv > 0:           # waking up: fatigue kept fading while we slept
             self._fade_fatigue(self.decay_f ** (self.t - self._quiet_since))
         self.quiet = False
+        if self.backend == "numba":
+            return self._step_numba(slot)
         if self._pending[slot]:
             arriving = self.queue[slot]
             g += arriving                                # synaptic kicks that were sent 1.8 ms ago
@@ -373,6 +391,58 @@ class FlyBrain:
             self.total_spikes += spikes.size
             out = (self.t + self.delay_steps) % self.n_slots
             self._send(spikes, self.queue[out])
+            self._pending[out] = True
+            if self.recording is not None:
+                self.recording.append((self.t, spikes.astype(np.int32)))
+            for cb in self.on_spikes:
+                cb(spikes, self.t)
+        if self._recent:
+            self._recent = [spikes] + self._recent[:-1]
+        if self.plasticity is not None:
+            self.plasticity.step(self, spikes)
+        self.t += 1
+        self.window_ms += self.dt
+        self.last_spikes = spikes
+        if self.monitors:
+            self._tick_monitors()
+        if self.t % 200 == 0:
+            self._check_quiet()
+        return spikes
+
+    def _step_numba(self, slot: int) -> np.ndarray:
+        """The same step as above, with the arithmetic in the compiled kernels of :mod:`fastbrain`."""
+        v, g = self.v, self.g
+        arriving = self.queue[slot]
+        has_arriving = bool(self._pending[slot])
+        if has_arriving and self._noise_idx.size:        # keep NumPy's order: arrival, then the noise kicks
+            g += arriving
+            arriving.fill(0.0)
+            has_arriving = False
+        self._pending[slot] = False
+        if self._noise_idx.size:
+            k = self.rng.poisson(self._noise_idx.size * self.noise_hz * self.dt / 1000.0)
+            if k:
+                hit = self._noise_idx[self.rng.integers(0, self._noise_idx.size, k)]
+                np.add.at(g, hit, np.float32(self.noise_mv))
+        refractory = np.concatenate(self._recent) if self._recent else self._empty
+        do_flush = self.t % self._fatigue_block == 0
+        if do_flush and self.fatigue_mv > 0:
+            self._fade_fatigue(self.decay_f ** self._fatigue_block)
+        if self._stim_idx.size:
+            forced = self._stim_idx[self.rng.random(self._stim_idx.size) < self._stim_p]
+        else:
+            forced = self._empty
+        out = (self.t + self.delay_steps) % self.n_slots
+        use_std = self.std_x is not None
+        n_spk = fastbrain.step_kernel(v, g, arriving, has_arriving, refractory,
+                                      self.decay_m, self.coupling, self.decay_s, self.thr,
+                                      self._flush32, do_flush, forced, self._spkflag, self._cand, self._spk,
+                                      self._fatigue32, self.spike_count, self.row_ptr, self.post_idx, self.w,
+                                      self.queue[out], use_std, self.std_x if use_std else self._tmp, self.std_t,
+                                      self.t, self.dt, self.std_tau_ms, self.std_u)
+        spikes = self._spk[:n_spk].copy() if n_spk else self._empty
+        if n_spk:
+            self.total_spikes += n_spk
             self._pending[out] = True
             if self.recording is not None:
                 self.recording.append((self.t, spikes.astype(np.int32)))
@@ -595,7 +665,7 @@ class FlyBrain:
 
     def settings(self) -> dict:
         """The model parameters, for logging and for the game's 'what is running' panel."""
-        return {"dt": self.dt, "gain": self.gain, "kenyon_gain": self.kenyon_gain,
+        return {"dt": self.dt, "backend": self.backend, "gain": self.gain, "kenyon_gain": self.kenyon_gain,
                 "fatigue_mv": self.fatigue_mv, "fatigue_ms": self.fatigue_ms,
                 "std_u": self.std_u, "std_tau_ms": self.std_tau_ms,
                 "noise_hz": self.noise_hz, "noise_mv": self.noise_mv, "noise_spec": self.noise_spec,

@@ -19,6 +19,6 @@ from .plasticity import MushroomBodyPlasticity, mbon_valence
 from .pathways import trace, relay_ranking
 from . import experiments
 
-__version__ = "2.0.0"
+__version__ = "2.1.0"
 __all__ = ["Connectome", "DATA_FILE", "download_connectome", "load_connectome", "FlyBrain",
            "MushroomBodyPlasticity", "mbon_valence", "trace", "relay_ranking", "experiments", "__version__"]
