@@ -97,8 +97,21 @@ both). An active-set variant that integrated only neurons off rest was built and
 on every experiment: with a stimulus on, 38-52 % of the brain sits slightly off rest, and the
 gathers and scatters cost more than the dense passes they save.
 
-* Every 20 steps, `v` and `g` values below 1 µV (`FLUSH_MV`, 7,000x below threshold) are snapped
-  to 0. Without this, values decaying for hundreds of milliseconds drift into the float32 denormal
+* **The compiled integrator** (`fastbrain.py`, since v2.1; used when `numba` is installed,
+  `--backend numpy` gives the loop above): the same float32 operations in the same order (leak,
+  integrate, freeze the refractory neurons, flush, threshold, union with the forced Poisson spikes,
+  then the kicks connection by connection in `np.add.at`'s order), fused into one vectorised pass
+  and one loop, so it is bit-identical: identical spike trains on the real data for the classic
+  stimuli (1,000 recorded steps compared), and on the synthetic connectome with every mechanism
+  (fatigue, depression, jitter, noise, learning, `dt` 1.0) in `tests/test_fastbrain.py`. Per 0.5 ms
+  step with sugar and looming on: NumPy 0.63 ms, compiled 0.28 ms (0.11 ms dense pass, 0.04 ms
+  scan for threshold crossings, 0.06 ms scatter of ~2,700 kicks, 0.03 ms Python), on one core.
+  A multi-threaded version of the dense pass was 1.3x faster on an idle machine and ten times
+  slower with one other busy process on the box, so the kernel is single-threaded on purpose.
+  The busy game tick (sugar, female, drum) went from 34 to 17 ms (1.5x real time) at `dt` 0.5 and
+  from 20 to 9 ms (2.7x) at `dt` 1.0.
+* Every 20 steps, `v` and `g` values below 1 nV (`FLUSH_MV` = 1e-6 mV, seven million times below
+  threshold) are snapped to 0. Without this, values decaying for hundreds of milliseconds drift into the float32 denormal
   range and the CPU slows every array operation several-fold: a busy game brain went from 76 ms
   to 36 ms per 25 ms tick when the guard was added. The classic experiments are unchanged to the
   spike.

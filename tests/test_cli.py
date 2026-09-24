@@ -56,6 +56,15 @@ def test_stim_and_watch_with_json(capsys, tmp_path):
     assert data["rates"]["MN9"] > 20 and data["rates"]["GNG232"] > 20 and data["settings"]["dt"] == 0.5
 
 
+def test_backend_flag_gives_the_same_rates(capsys):
+    rates = {}
+    for backend in ("numpy", "auto"):
+        main(["--stim", "LB3b,LB3c:120", "--watch", "MN9", "--ms", "200", "--backend", backend])
+        out = capsys.readouterr().out
+        rates[backend] = [line for line in out.splitlines() if "MN9" in line]
+    assert rates["numpy"] and rates["numpy"] == rates["auto"]          # identical spikes, whichever integrator
+
+
 def test_stim_without_watch_lists_top_types(capsys):
     main(["--stim", "LB3b,LB3c:120", "--ms", "200", "--top", "3"])
     out = capsys.readouterr().out

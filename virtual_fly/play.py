@@ -39,11 +39,13 @@ def main(argv=None):
                     help="don't drive the connectome's T4/T5 motion-detector columns from the retina")
     ap.add_argument("--dt", type=float, default=0.5, help="brain time step in ms (0.5 default; 1.0 = twice as fast, slightly coarser)")
     ap.add_argument("--fast", action="store_true", help="same as --dt 1.0: for computers that run the brain below real time")
+    ap.add_argument("--backend", choices=("auto", "numpy", "numba"), default="auto",
+                    help="brain integrator: the compiled numba kernels when numba is installed (auto), or plain NumPy")
     ap.add_argument("--seed", type=int, default=0)
     args = ap.parse_args(argv)
 
     profile = "pure" if args.pure else args.profile
-    overrides = {"seed": args.seed, "dt": 1.0 if args.fast else args.dt}
+    overrides = {"seed": args.seed, "dt": 1.0 if args.fast else args.dt, "backend": args.backend}
     if args.fatigue is not None:
         overrides["fatigue_mv"] = args.fatigue
     if args.kenyon_gain is not None:
@@ -54,6 +56,10 @@ def main(argv=None):
     print("Loading the fly's nervous system...", file=sys.stderr)
     conn = load_connectome()
     brain = build_brain(conn, profile, **overrides)
+    if brain.backend == "numba":
+        print("Brain integrator: compiled (numba).", file=sys.stderr)
+    else:
+        print("Brain integrator: NumPy. For a several-times faster brain: pip install numba", file=sys.stderr)
     if args.no_learning and brain.plasticity is not None:
         brain.plasticity.enabled = False
     game = Game(brain, autopilot=not args.no_autopilot, seed=args.seed, columnar=not args.no_columnar,

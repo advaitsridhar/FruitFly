@@ -42,7 +42,7 @@ Compared with the small starter it grew from, it adds:
 | **A second fly** | a scripted female to chase, tap and sing to | the chase and the song (pC1 → pIP10 → wing motor neurons) are wiring; her behaviour and the contact-to-pC1 arousal are hand-built |
 | **Wind, sound, touch** | Johnston's organ senses wind direction and sound; a clap can make the fly jump | sound → giant fibre and wind → grooming are wiring; heading upwind is hand-built |
 | **Internal state** | hunger and thirst rise with time and change what the fly does and tastes | hand-built |
-| **A better model** | short-term synaptic depression, background noise, per-population output modulation, threshold heterogeneity, checkpoints, spike recording, rate monitors, a `--fast` 1 ms step; the integrator itself is the starter's (same speed, identical spikes) | the mechanisms are documented physiology; the parameters are chosen by hand |
+| **A better model** | short-term synaptic depression, background noise, per-population output modulation, threshold heterogeneity, checkpoints, spike recording, rate monitors, a `--fast` 1 ms step; the integrator is the starter's (identical spikes), or the same step as compiled numba kernels when numba is installed (about twice as fast, still identical spikes) | the mechanisms are documented physiology; the parameters are chosen by hand |
 | **Tools** | a pathway tracer ("how does the eye reach the steering neurons?"), lesion scans, dose-response sweeps, seeds, JSON export, scenarios (conditioning protocols, courtship, plume following, escape), a 3-D brain map, an event log, session recording | analysis, not model |
 
 Everything on screen says which of the two it is; the **"What's real here?"** button lists it all.
@@ -53,9 +53,9 @@ Everything on screen says which of the two it is; the **"What's real here?"** bu
    tick **"Add python.exe to PATH"** in the installer.
 2. Unzip or clone this folder, open a terminal in it (Windows: click the File Explorer address bar,
    type `cmd`, press Enter).
-3. Install NumPy:
+3. Install NumPy, and numba for the compiled brain integrator (optional, about twice as fast, same spikes):
    ```
-   py -m pip install numpy            # macOS / Linux: python3 -m pip install numpy
+   py -m pip install numpy numba      # macOS / Linux: python3 -m pip install numpy numba
    ```
 4. Check the brain works (downloads the data the first time, then runs the validated experiments):
    ```
@@ -78,7 +78,7 @@ and the test tools: `pip install -e ".[dev]"` then `fly-game`, `fly-brain`, `pyt
 | Download fails with a certificate error (macOS) | Run "Install Certificates.command" in your Python folder in Applications. |
 | Download blocked by a firewall | Download [the file](https://raw.githubusercontent.com/blendi-remade/fly-brain-minecraft/6cfa30175003ef25da68a237d5eda958f8047b82/src/main/resources/connectome/malecns-v1.0.flyb.gz) in your browser and put it in `data/`. |
 | "Could not find a free port" | `py fly_game.py --port 9000` |
-| The game says it's running below real time | Your computer is simulating 176k neurons slower than real time; the fly's world slows down to keep up (a 4-core laptop-class machine manages about 0.8x with a busy brain). Close other programs, or start it with `py fly_game.py --fast` (a 1 ms time step, about twice as fast; every classic experiment still passes). |
+| The game says it's running below real time | Your computer is simulating 176k neurons slower than real time; the fly's world slows down to keep up. First make sure numba is installed (`py -m pip install numba`; the terminal says "Brain integrator: compiled (numba)" at start-up): with it, a 4-core laptop-class machine manages about 1.5x real time with a busy brain, without it about 0.7x. Then close other programs, or start it with `py fly_game.py --fast` (a 1 ms time step, about twice as fast again; every classic experiment still passes). |
 
 ## 3. How it works (the whole idea)
 

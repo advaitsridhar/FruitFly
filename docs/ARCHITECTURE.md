@@ -5,6 +5,7 @@ fly_brain.py / fly_game.py / my_first_fly.py     thin entry points (kept from th
 virtual_fly/
   connectome.py    the data: FLYB reader, population specs, input/output indices, cell-type graph
   brain.py         the simulation: LIF network, optional brakes/noise/modulation, monitors, checkpoints
+  fastbrain.py     the same integration step as compiled numba kernels (optional, same spikes, ~2x faster)
   plasticity.py    mushroom-body learning: dopamine-gated depression of KC->MBON synapses
   pathways.py      static analysis: strongest routes between populations, lesion candidates
   experiments.py   validated protocols, seeds, sweeps, lesion scans, JSON export
@@ -59,17 +60,25 @@ atomic swaps of an immutable bytes object; actions are queued and applied at the
 
 ## Performance notes
 
-* `FlyBrain.step` is the starter kit's dense NumPy loop: a handful of passes over the 176k-element
-  state arrays per 0.5 ms step, which is the fastest thing NumPy can do for identical neurons (an
-  active-set variant that integrated only non-resting neurons was tried and measured slower: with any
-  stimulus on, a third to a half of the brain is slightly off rest, and the gathers and scatters cost
-  more than the dense passes they save). One guard the starter lacks: every 20 steps, voltages and
-  synaptic inputs that have decayed below a microvolt are snapped to zero, because float32 values
-  drifting into the denormal range slow every array operation several-fold (a busy, never-quiet
-  game brain ran at half speed before this guard). A brain that is completely at rest skips the
-  maths entirely; `--fast` (a 1 ms step) halves the cost with every classic experiment still in
-  range. On the 4-core machine this was built on, the game runs at about 0.8x real time with a
-  busy brain (sugar, a female, walking) and 1.2x with `--fast`.
+* `FlyBrain.step` has two interchangeable integrators that produce the same spikes to the last
+  one (the test suite checks this on every optional mechanism, and `--backend` picks one). The
+  NumPy one is the starter kit's dense loop: a handful of passes over the 176k-element state arrays
+  per 0.5 ms step, plus `np.add.at` to scatter the spikes' synaptic kicks. The compiled one
+  (`fastbrain.py`, used automatically when `numba` is installed) does the same float32 arithmetic in
+  the same order in one fused, vectorised pass and a plain loop over the spiking neurons' outgoing
+  connections: 0.28 ms per step against 0.63 ms, all on one core. Two variants were measured and
+  rejected: an active-set integrator that touched only non-resting neurons (slower in NumPy: with any
+  stimulus on, a third to a half of the brain is slightly off rest, so the gathers cost more than the
+  dense passes they save), and a multi-threaded kernel (1.3x faster on an idle machine, ten times
+  *slower* the moment one other process such as the browser used a core, because every 50 µs
+  parallel region waited for a descheduled worker). One guard the starter lacks: every 20 steps,
+  voltages and synaptic inputs that have decayed below a nanovolt are snapped to zero, because
+  float32 values drifting into the denormal range slow every array operation several-fold (a busy,
+  never-quiet game brain ran at half speed before this guard). A brain that is completely at rest
+  skips the maths entirely; `--fast` (a 1 ms step) halves the cost with every classic experiment
+  still in range. On the 4-core machine this was built on, the game with a busy brain (sugar, a
+  female, the drum) runs at about 1.5x real time compiled and 0.7x in NumPy, and 2.7x / 1.2x with
+  `--fast`.
 * The connectome's input index (`col_ptr`), presynaptic array and cell-type graph are built lazily
   on first use (a second or two each).
 * The layout JSON (2.4 MB) is built once; large responses are gzip-compressed.

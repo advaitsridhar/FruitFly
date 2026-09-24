@@ -66,6 +66,8 @@ def main(argv=None):
     ap.add_argument("--profile", choices=sorted(PROFILES), default="pure",
                     help="model profile: pure (the paper, default here), game (what the game runs), brakes")
     ap.add_argument("--dt", type=float, default=0.5, help="time step in ms (0.1 = the paper's Brian2 default, slower)")
+    ap.add_argument("--backend", choices=("auto", "numpy", "numba"), default="auto",
+                    help="integrator: compiled numba kernels when numba is installed (auto), or plain NumPy; same spikes either way")
     ap.add_argument("--gain", type=float, default=None, help="global synaptic gain (default 0.65)")
     ap.add_argument("--kenyon-gain", type=float, default=None, help="input gain of Kenyon cells (0.25 pure, 1.0 game)")
     ap.add_argument("--fatigue", type=float, default=None, metavar="MV", help="threshold increase per spike, fading over 2 s")
@@ -125,7 +127,7 @@ def main(argv=None):
                 json.dump([p.to_dict() for p in paths], f, indent=1)
         return
 
-    overrides = {"dt": args.dt, "seed": args.seed}
+    overrides = {"dt": args.dt, "seed": args.seed, "backend": args.backend}
     for key, val in (("gain", args.gain), ("kenyon_gain", args.kenyon_gain), ("fatigue_mv", args.fatigue),
                      ("threshold_jitter", args.jitter)):
         if val is not None:

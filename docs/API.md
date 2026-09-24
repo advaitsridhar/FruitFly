@@ -27,7 +27,7 @@ Returned once at start-up (gzip-compressed if the client accepts it; ~2.4 MB raw
 | `scenarios[]` | `{id, name, description}` |
 | `retina` | `{L: {n_az, n_el, az[], el[]}, R: {...}}` facet directions (radians, fly frame; `az` + = left) |
 | `profile` | model profile name (`game`, `pure`, `brakes`) |
-| `settings` | brain settings dict (dt, gain, fatigue, silenced, plasticity ...) |
+| `settings` | brain settings dict (dt, backend `numpy`/`numba`, gain, fatigue, silenced, plasticity ...) |
 | `decoder` | per decoder DN spec: motor synapses it reaches (`direct_motor_synapses`, `two_hop_motor_synapses_by_neuromere`) |
 | `columnar_vision` | bool: T4/T5 columns driven from the retina |
 | `whats_real` | `{wiring[], hand_built[], not_modelled[]}` text for the "What's real here?" dialog |
