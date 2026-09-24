@@ -61,7 +61,8 @@ def test_bottleneck_compresses_and_regrows(conn):
     assert b.level == "bottleneck:8" and b.rank == 8 and b.n_groups == rules.n_groups
     assert b.size_numbers() == 2 * rules.n_groups * 8 + 2 * rules.n_groups < rules.size_numbers() * 10
     assert 0.5 * rules.n_pairs <= b.n_pairs <= 1.5 * rules.n_pairs                 # re-thresholded to the same order
-XX
+    # rescaled towards the real total, within each pair's capacity (the tiny synthetic groups saturate)
+    assert b.pair_edges.sum() == pytest.approx(rules.n_edges_total, rel=0.25)
     g = W.grow(conn, b, seed=1)
     _csr_is_valid(g)
     assert 0.3 * conn.n_edges < g.n_edges < 1.5 * conn.n_edges
