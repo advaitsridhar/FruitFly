@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Virtual Fly</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='26' font-size='26'%3E%F0%9F%AA%B0%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>🪰 Virtual Fly</h1>
+  <span class="sub" id="sub">loading the nervous system…</span>
+  <div class="stats">
+    <span title="spikes per second in the whole brain">brain <b id="stSps">0</b> spikes/s</span>
+    <span title="how fast the brain runs compared with real time">sim speed <b id="stRtf">–</b></span>
+    <span title="time the fly has lived">fly time <b id="stT">0.0</b> s</span>
+  </div>
+  <button class="linkbtn" id="realBtn">What's real here?</button>
+  <button class="linkbtn round" id="keysBtn" title="Keyboard shortcuts">?</button>
+</header>
+
+<main>
+  <section class="left">
+    <div class="toolbar" id="toolbar">
+      <button class="tool on" data-tool="lure" title="A small decoy fly: move it near the fly">🪰 Lure</button>
+      <button class="tool" data-tool="hand" title="Your hand: swoop it at the fly fast">✋ Hand</button>
+      <button class="tool" data-tool="sugar" title="Click to drop sugar">🍬 Sugar</button>
+      <button class="tool" data-tool="bitter" title="Click to drop bitter food">🧪 Bitter</button>
+      <button class="tool" data-tool="water" title="Click to drop water">💧 Water</button>
+      <button class="tool" data-tool="dust" title="Click near the fly to puff dust at its antennae">💨 Dust</button>
+      <button class="tool" data-tool="shock" title="Electric shock: punishment dopamine (PPL1) pairs with whatever it smells">⚡ Shock</button>
+      <button class="tool" data-tool="post" title="Click to plant a post the fly can bump into and see">🪵 Post</button>
+      <button class="tool act" id="clapBtn" title="A loud sound: Johnston's organ A/B neurons reach the giant fibre, so a clap can startle it into a jump">👏 Clap <span class="k">C</span></button>
+      <span class="sep"></span>
+      <span class="odours" id="odourTools"></span>
+      <span class="odourfood" id="odourFood" hidden>
+        <span class="lbl">with</span>
+        <button class="mini on" data-food="">nothing</button>
+        <button class="mini" data-food="sugar">sugar</button>
+        <button class="mini" data-food="bitter">bitter</button>
+      </span>
+    </div>
+
+    <div class="controls" id="controls">
+      <label class="toggle" title="Real flies start walking on their own. This model has no spontaneous activity, so a hand-built 'urge to walk' stands in for it."><input type="checkbox" id="autopilot" checked> walking urge</label>
+      <label class="toggle" title="Synaptic plasticity at the Kenyon-cell → MBON synapses"><input type="checkbox" id="learnToggle"> learning</label>
+      <label class="toggle" title="Add a scripted female fly to the dish (she has no brain)"><input type="checkbox" id="femaleToggle"> ♀ female</label>
+      <span class="sep"></span>
+      <button class="btn" id="pauseBtn" title="Space">Pause</button>
+      <span class="menuwrap">
+        <button class="btn" id="clearBtn">Clear ▾</button>
+        <div class="menu" id="clearMenu" hidden>
+          <button data-what="all">everything</button>
+          <button data-what="food">food</button>
+          <button data-what="odours">odours</button>
+          <button data-what="obstacles">posts</button>
+        </div>
+      </span>
+      <button class="btn" id="resetBtn" title="New fly, fresh brain (learned synapses are kept)">New fly</button>
+      <span class="sep"></span>
+      <label class="slider" title="Time scale of the simulation">speed <input type="range" id="speed" min="0.25" max="2" step="0.05" value="1"> <b id="speedVal">1.00×</b></label>
+      <span class="sep"></span>
+      <span class="wind" title="Wind: click or drag the dial to set the direction it blows toward; the slider sets its speed">
+        <canvas id="windDial" width="36" height="36"></canvas>
+        <label class="slider">wind <input type="range" id="windSpeed" min="0" max="40" step="1" value="0"> <b id="windVal">off</b></label>
+      </span>
+      <span class="sep"></span>
+      <span class="drum" title="The optomotor drum: stripes painted on the wall and spun around the fly. Through the wiring, T4/T5 → HS cells → DNp15/DNa02 make it turn with the drum.">
+        <label class="slider">stripes <select id="stripesCount"><option value="0">off</option><option value="8">8</option><option value="16">16</option><option value="24">24</option></select></label>
+        <label class="slider">drum <input type="range" id="drumSpeed" min="-3" max="3" step="0.1" value="0"> <b id="drumVal">still</b></label>
+      </span>
+      <span class="sep"></span>
+      <label class="toggle" title="Draw faint lines from the eyes to the objects the retina is reporting"><input type="checkbox" id="seesToggle"> sees</label>
+      <label class="toggle" title="Show what the two compound eyes see"><input type="checkbox" id="retinaToggle" checked> eyes</label>
+    </div>
+
+    <div class="stage" id="stage">
+      <canvas id="arena"></canvas>
+      <div class="retina" id="retinaBox">
+        <canvas id="retina"></canvas>
+        <div class="retlabels"><span>L eye</span><span>R eye</span></div>
+      </div>
+      <div class="toast" id="toast"></div>
+    </div>
+    <div class="hint" id="hint">Wiggle the lure beside the fly and it turns toward it.</div>
+  </section>
+
+  <aside id="aside">
+    <div class="card" id="brainCard">
+      <h2><span>Brain: every neuron, live</span><span id="brainCount"></span></h2>
+      <div class="brainwrap">
+        <canvas id="brain"></canvas>
+        <canvas id="brainOverlay"></canvas>
+        <div class="brainbtns">
+          <button class="mini" id="brainView" title="Switch between the flat front view and 3-D">3-D</button>
+          <button class="mini on" id="brainSpin" title="Slowly rotate the brain">spin</button>
+          <button class="mini" id="brainReset" title="Reset the view">reset</button>
+        </div>
+        <div class="popover" id="neuronPop" hidden></div>
+      </div>
+      <div class="legend" id="legend"></div>
+      <div class="feedback" id="brainHint">Drag to rotate, wheel to zoom, click a dot to look up that neuron.</div>
+    </div>
+
+    <div class="card">
+      <h2>Why it's doing that</h2>
+      <div class="why"><span class="mode" id="mode">idle</span><span id="driver">…</span></div>
+      <div class="chips" id="senses"></div>
+    </div>
+
+    <div class="card">
+      <h2><span>Key neurons</span><span>spikes/s · last 6 s</span></h2>
+      <div class="rows" id="rows"></div>
+    </div>
+
+    <div class="card">
+      <h2><span>Internal state</span><span class="tag">hand-built</span></h2>
+      <div class="drives" id="drives">
+        <div class="drive"><span class="name">hunger</span><div class="bar"><div id="hungerBar" style="background:#f2b134"></div></div><span class="val" id="hungerVal">0</span><input type="range" id="hungerSet" min="0" max="1" step="0.01" title="set hunger"></div>
+        <div class="drive"><span class="name">thirst</span><div class="bar"><div id="thirstBar" style="background:#4da3ff"></div></div><span class="val" id="thirstVal">0</span><input type="range" id="thirstSet" min="0" max="1" step="0.01" title="set thirst"></div>
+        <div class="drive"><span class="name">arousal</span><div class="bar"><div id="arousalBar" style="background:#ff9ad5"></div></div><span class="val" id="arousalVal">0</span><span class="note">rises while courting</span></div>
+      </div>
+      <div class="feedback">Hunger sharpens the sugar sense and makes the fly explore; it falls as it eats. These drives are not in the wiring diagram.</div>
+    </div>
+
+    <div class="card" id="learningCard">
+      <h2><span>Learning</span><span id="learnStatus" class="tag"></span></h2>
+      <div id="learnBody">
+        <div class="mbons" id="mbons"></div>
+        <div class="mbonkey"><span><i class="app"></i>approach MBON</span><span><i class="av"></i>avoid MBON</span><span>bar = KC→MBON strength for the odour it smells now (1 = original); tick = mean over all Kenyon cells</span></div>
+        <div class="gauge">
+          <div class="gaugelbl"><span>avoid</span><span id="gaugeText">not smelling anything</span><span>approach</span></div>
+          <div class="gaugebar"><div class="mid"></div><div class="needle" id="gaugeNeedle"></div></div>
+        </div>
+        <div class="feedback" id="learnText">–</div>
+        <div class="row">
+          <button class="btn" id="learnBtn">Learning: on</button>
+          <button class="btn" id="forgetBtn" title="Reset every KC→MBON synapse to its original strength">Forget</button>
+        </div>
+      </div>
+      <div class="feedback" id="learnOff" hidden>Plasticity is off in this profile.</div>
+    </div>
+
+    <div class="card">
+      <h2><span>Experiments to try</span><span id="checksDone"></span></h2>
+      <ul class="checks" id="checks"></ul>
+    </div>
+
+    <div class="card">
+      <h2>Scenarios</h2>
+      <div class="scenario" id="scenarioStatus" hidden>
+        <div class="scn-head"><b id="scnName"></b><span id="scnStep"></span><button class="mini" id="scnStop">Stop</button></div>
+        <div class="bar thin"><div id="scnProgress" style="background:var(--accent)"></div></div>
+        <div class="scn-caption" id="scnCaption"></div>
+        <div class="scn-left" id="scnLeft"></div>
+        <div class="kv" id="scnMeasure"></div>
+      </div>
+      <div class="scenarios" id="scenarios"></div>
+    </div>
+
+    <div class="card">
+      <h2>Neuron lab</h2>
+      <div class="lab">
+        <div class="row">
+          <input type="text" id="spec" list="typelist" placeholder="neuron type, e.g. MDN, LC10a/L or prefix:LC10" spellcheck="false" autocomplete="off">
+          <input type="number" id="hz" value="80" min="1" max="500" title="spikes per second"><span class="unit">Hz</span>
+        </div>
+        <div class="row wrap">
+          <button class="btn primary" id="zapBtn" title="Make these neurons fire for 2 seconds">⚡ Zap 2 s</button>
+          <button class="btn" id="silenceBtn" title="Block their output synapses, like tetanus toxin in a real fly">🚫 Silence</button>
+          <button class="btn" id="modBtn" title="Scale their output synapses by a factor (1 = normal)">Modulate ×</button>
+          <input type="number" id="factor" value="0.5" min="0" max="5" step="0.1" title="output factor">
+          <button class="btn" id="watchBtn" title="Add these neurons as a bar in 'Key neurons'">👁 Watch</button>
+        </div>
+        <div class="presets" id="presets"></div>
+        <div class="silenced" id="silenced"></div>
+        <div class="silenced" id="modulated"></div>
+        <div class="feedback" id="feedback">Zap = make them fire. Silence = they still fire, but nothing downstream hears them.</div>
+      </div>
+      <datalist id="typelist"></datalist>
+    </div>
+
+    <div class="card">
+      <h2>Pathway explorer</h2>
+      <div class="lab">
+        <div class="row">
+          <input type="text" id="traceFrom" list="typelist" value="LC10a/L" placeholder="from" spellcheck="false" autocomplete="off">
+          <span class="arrow">→</span>
+          <input type="text" id="traceTo" list="typelist" value="DNa02/L" placeholder="to" spellcheck="false" autocomplete="off">
+        </div>
+        <div class="row">
+          <label class="slider">hops <select id="traceHops"><option>2</option><option>3</option><option selected>4</option><option>5</option></select></label>
+          <button class="btn primary" id="traceBtn">Trace the wiring</button>
+          <span class="feedback" id="traceInfo"></span>
+        </div>
+        <div class="paths" id="paths"></div>
+        <div class="relays" id="relays"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2><span>Event log</span><button class="mini" id="eventsClear">clear</button></h2>
+      <ul class="events" id="events"></ul>
+    </div>
+
+    <div class="card">
+      <h2>Recording</h2>
+      <div class="lab">
+        <div class="row">
+          <button class="btn" id="recBtn">● Record</button>
+          <label class="toggle"><input type="checkbox" id="recSpikes"> spikes too</label>
+          <span class="feedback" id="recInfo">not recording</span>
+        </div>
+        <div class="row links">
+          <a class="btn" href="api/recording" download="fly-session.json">⤓ frames (JSON)</a>
+          <a class="btn" href="api/spikes" download="fly-spikes.npz">⤓ spikes (npz)</a>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2><span>Model</span><span id="modelProfile" class="tag"></span></h2>
+      <div class="kv" id="modelKv"></div>
+      <details class="decoder">
+        <summary>Decoder: which motor pools each descending neuron reaches (measured from the wiring)</summary>
+        <table id="decoderTable"></table>
+      </details>
+    </div>
+  </aside>
+</main>
+
+<dialog id="realDlg">
+  <button class="btn close" data-close>Close</button>
+  <h3>What's real here?</h3>
+  <p>The fly's brain is a simulation of the whole male fruit-fly central nervous system: all 176,422 neuron entries in the MaleCNS v1.0 connectome (about 166,700 annotated cells plus unannotated fragments; HHMI Janelia / Cambridge / Google, <i>Cell</i> 2026). Every neuron is the same simple "leaky integrate-and-fire" unit, and every connection's strength comes from the synapse count in the wiring diagram (Shiu et al., <i>Nature</i> 2024). Nothing is trained.</p>
+  <p>Since the first version the fly has grown eyes (a real retina whose image feeds looming, small-object and motion detectors), a nose (odour plumes carried by the wind, a sparse Kenyon-cell code, and dopamine-gated learning at the KC→MBON synapses), ears and wind sensors (Johnston's organ), a female to court, and hunger and thirst.</p>
+  <h4>Comes out of the wiring (not tuned by us)</h4>
+  <ul id="realWiring"></ul>
+  <h4>Hand-built (someone chose these)</h4>
+  <ul id="realHand"></ul>
+  <h4>Not in the model at all</h4>
+  <ul id="realNot"></ul>
+</dialog>
+
+<dialog id="keysDlg">
+  <button class="btn close" data-close>Close</button>
+  <h3>Keyboard</h3>
+  <table class="keys">
+    <tr><td><kbd>1</kbd>–<kbd>9</kbd>, <kbd>0</kbd></td><td>pick a tool (in toolbar order)</td></tr>
+    <tr><td><kbd>Space</kbd></td><td>pause / resume</td></tr>
+    <tr><td><kbd>C</kbd></td><td>clap (a loud sound)</td></tr>
+    <tr><td><kbd>F</kbd></td><td>add / remove the female</td></tr>
+    <tr><td><kbd>S</kbd></td><td>toggle the "sees" overlay</td></tr>
+    <tr><td><kbd>E</kbd></td><td>toggle the eye (retina) inset</td></tr>
+    <tr><td><kbd>W</kbd></td><td>toggle the walking urge</td></tr>
+    <tr><td><kbd>N</kbd></td><td>new fly</td></tr>
+    <tr><td><kbd>Enter</kbd> in the lab</td><td>zap the typed population</td></tr>
+    <tr><td><kbd>Esc</kbd></td><td>close dialogs, hide the neuron popover</td></tr>
+    <tr><td><kbd>Shift</kbd> + click with an odour</td><td>drop the odour together with sugar (<kbd>Alt</kbd>: with bitter)</td></tr>
+  </table>
+</dialog>
+
+<div class="overlay" id="loading"><div><h3>Loading the fly's brain</h3><p>Fetching the map of 176,422 neurons (about 2.4 MB) and waking the nervous system…</p></div></div>
+<div class="overlay" id="disc" hidden><div><h3>Lost the fly's brain</h3><p>The Python program isn't answering. Is <code>fly_game.py</code> still running in its window? Start it again and this page reconnects by itself.</p></div></div>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>

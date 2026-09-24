@@ -1,0 +1,245 @@
+"""
+Command line for the brain simulator (``python fly_brain.py ...`` or ``python -m virtual_fly ...``).
+
+    python fly_brain.py                                   # run every validated experiment
+    python fly_brain.py --only taste --seeds 3            # a subset, averaged over 3 seeds
+    python fly_brain.py --find DNa                        # search cell types by name
+    python fly_brain.py --stim "MDN:60" --watch "MDN,DNp09"
+    python fly_brain.py --stim "LC4/R,LPLC2/R:150"        # no --watch: shows the most active types
+    python fly_brain.py --trace LC10a/L DNa02/L           # strongest wiring routes between two populations
+    python fly_brain.py --inputs MN9 --outputs GNG232     # strongest partners of a population
+    python fly_brain.py --sweep "LB3b,LB3c:0:200:9" --watch MN9      # dose-response curve
+    python fly_brain.py --lesion "Sugar" --readout MN9 --candidates GNG232,DNg67,DNge080
+    python fly_brain.py --profile pure --json results.json
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+import time
+
+import numpy as np
+
+from . import experiments as E
+from .connectome import load_connectome
+from .pathways import relay_ranking, strongest_partners, trace
+from .settings import PROFILES, build_brain
+
+
+def parse_stim(text: str, default_hz: float = 80.0) -> list[tuple[str, float]]:
+    out = []
+    for item in filter(None, (x.strip() for x in text.split(";"))):
+        spec, sep, hz = item.rpartition(":")
+        try:
+            hz = float(hz)
+        except ValueError:                       # no rate given, e.g. --stim MDN
+            spec, hz = item, default_hz
+        if not sep:
+            spec = item
+        out.append((spec, hz))
+    return out
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description="Simulate the whole male fruit fly nervous system (MaleCNS v1.0).",
+                                 formatter_class=argparse.RawDescriptionHelpFormatter, epilog=__doc__)
+    ap.add_argument("--find", metavar="TEXT", help="list neuron types whose name contains TEXT")
+    ap.add_argument("--info", metavar="SPEC", help="describe the neurons matching SPEC (first 30)")
+    ap.add_argument("--stim", metavar="SPEC:HZ[;SPEC:HZ]", help='stimulate populations, e.g. "MDN:60" or "LC4/R,LPLC2/R:150"')
+    ap.add_argument("--watch", metavar="SPEC[;SPEC]", default="", help='populations to report, separated by ";" or ","')
+    ap.add_argument("--ms", type=float, default=500, help="how long to simulate with --stim (default 500 ms)")
+    ap.add_argument("--only", metavar="TEXT", help="run only experiments whose name or tag contains TEXT")
+    ap.add_argument("--seeds", type=int, default=1, help="repeat each experiment with this many random seeds")
+    ap.add_argument("--json", metavar="FILE", help="write experiment results (or --stim rates) as JSON")
+    ap.add_argument("--trace", nargs=2, metavar=("FROM", "TO"), help="strongest wiring routes between two populations")
+    ap.add_argument("--hops", type=int, default=4, help="maximum path length for --trace (default 4)")
+    ap.add_argument("--avoid", metavar="SPEC", help="route --trace around these types (a virtual lesion)")
+    ap.add_argument("--inputs", metavar="SPEC", help="strongest presynaptic types of a population")
+    ap.add_argument("--outputs", metavar="SPEC", help="strongest postsynaptic types of a population")
+    ap.add_argument("--sweep", metavar="SPEC:LO:HI:N", help="dose-response: stimulate SPEC at N rates from LO to HI Hz")
+    ap.add_argument("--lesion", metavar="EXPERIMENT", help="silence each --candidates population during this experiment")
+    ap.add_argument("--readout", metavar="SPEC", help="the readout to track for --lesion")
+    ap.add_argument("--candidates", metavar="SPEC[,SPEC]", default="",
+                    help="populations to lesion (default: relays found by --trace between the stimulus and the readout)")
+    ap.add_argument("--profile", choices=sorted(PROFILES), default="pure",
+                    help="model profile: pure (the paper, default here), game (what the game runs), brakes")
+    ap.add_argument("--dt", type=float, default=0.5, help="time step in ms (0.1 = the paper's Brian2 default, slower)")
+    ap.add_argument("--gain", type=float, default=None, help="global synaptic gain (default 0.65)")
+    ap.add_argument("--kenyon-gain", type=float, default=None, help="input gain of Kenyon cells (0.25 pure, 1.0 game)")
+    ap.add_argument("--fatigue", type=float, default=None, metavar="MV", help="threshold increase per spike, fading over 2 s")
+    ap.add_argument("--std", metavar="U:TAU_MS", help="short-term synaptic depression, e.g. 0.1:150")
+    ap.add_argument("--noise", metavar="HZ:MV", help="background kicks per neuron, e.g. 2:1.0")
+    ap.add_argument("--jitter", type=float, default=None, metavar="MV", help="per-neuron threshold jitter (sd, mV)")
+    ap.add_argument("--silence", metavar="SPEC", default="", help='block the output of a population, e.g. "class:ALLN" or "MN9"')
+    ap.add_argument("--modulate", metavar="SPEC:FACTOR", default="", help='scale the output of a population, e.g. "LB3b,LB3c:1.5"')
+    ap.add_argument("--record", metavar="FILE.npz", help="with --stim: save every spike (time_ms, neuron) to this file")
+    ap.add_argument("--top", type=int, default=15, help="how many rows to show in rankings")
+    ap.add_argument("--seed", type=int, default=0)
+    args = ap.parse_args(argv)
+
+    conn = load_connectome()
+    if args.find:
+        hits = conn.find_types(args.find)
+        for t, c in hits[:200]:
+            print(f"  {t:28} {c:6} neurons")
+        print(f"{len(hits)} types match '{args.find}'")
+        return
+    if args.info:
+        idx = check(conn, args.info)
+        for i in idx[:30]:
+            print(" ", conn.describe(i))
+        if idx.size > 30:
+            print(f"  ... {idx.size} neurons in total")
+        return
+    if args.inputs or args.outputs:
+        for spec, direction in ((args.inputs, "in"), (args.outputs, "out")):
+            if not spec:
+                continue
+            check(conn, spec)
+            rows = strongest_partners(conn, spec, direction, top=args.top)
+            title = "inputs of" if direction == "in" else "outputs of"
+            print(f"\nStrongest {title} {spec} ({conn.count(spec)} neurons):")
+            print(f"  {'type':28} {'synapses':>9} {'cells':>6} {'nt':14} {'share':>7}")
+            for r in rows:
+                name = f"{r['type']}/{r['side']}" if r["side"] else r["type"]
+                share = "" if r["fraction"] is None else f"{100 * r['fraction']:.1f}%"
+                print(f"  {name:28} {r['synapses']:9} {r['neurons']:6} {r['nt'] + (' (-)' if r['sign'] < 0 else ' (+)'):14} {share:>7}")
+        return
+    if args.trace:
+        src, dst = args.trace
+        check(conn, src), check(conn, dst)
+        t0 = time.time()
+        paths = trace(conn, src, dst, max_hops=args.hops, top=args.top, avoid=args.avoid)
+        print(f"\n{len(paths)} strongest routes from {src} to {dst} (up to {args.hops} hops, {time.time() - t0:.1f} s):")
+        for p in paths:
+            print("  " + p.describe())
+        relays = relay_ranking(paths)
+        if relays:
+            print("\nRelays carrying the most of these routes (lesion candidates):")
+            for name, score in relays[:10]:
+                print(f"  {name:28} {score:.4f}")
+        if args.json:
+            with open(args.json, "w") as f:
+                json.dump([p.to_dict() for p in paths], f, indent=1)
+        return
+
+    overrides = {"dt": args.dt, "seed": args.seed}
+    for key, val in (("gain", args.gain), ("kenyon_gain", args.kenyon_gain), ("fatigue_mv", args.fatigue),
+                     ("threshold_jitter", args.jitter)):
+        if val is not None:
+            overrides[key] = val
+    if args.std:
+        u, tau = (float(x) for x in args.std.split(":"))
+        overrides.update(std_u=u, std_tau_ms=tau)
+    if args.noise:
+        hz, mv = (float(x) for x in args.noise.split(":"))
+        overrides.update(noise_hz=hz, noise_mv=mv)
+    brain = build_brain(conn, args.profile, **overrides)
+    for spec in filter(None, (x.strip() for x in args.silence.split(";"))):
+        print(f"silencing {spec}: {brain.silence(check_spec(conn, spec))} neurons")
+    for item in filter(None, (x.strip() for x in args.modulate.split(";"))):
+        spec, _, factor = item.rpartition(":")
+        print(f"modulating {spec} x{float(factor):g}: {brain.modulate(check_spec(conn, spec), float(factor))} neurons")
+    watch = [w.strip() for w in args.watch.replace(";", ",").split(",") if w.strip()]
+
+    if args.stim:
+        for spec, hz in parse_stim(args.stim):
+            brain.stimulate(check_spec(conn, spec), hz)
+            print(f"stimulating {spec} ({conn.count(spec)} neurons) at {hz:g} Hz")
+        if args.record:
+            brain.start_recording()
+        t0 = time.time()
+        brain.run(args.ms)
+        print(f"simulated {args.ms:g} ms in {time.time() - t0:.1f} s; {brain.total_spikes:,} spikes in total")
+        rates = {}
+        for spec in watch:
+            rates[spec] = brain.rate(check_spec(conn, spec))
+            print(f"  {spec:28} {conn.count(spec):5} neurons  {rates[spec]:7.1f} Hz")
+        if not watch:
+            print("  most active cell types (mean Hz per neuron; stimulated ones excluded):")
+            for row in brain.top_types(args.top, exclude_stimulated=True):
+                name = f"{row['type']}/{row['side']}" if row["side"] else row["type"]
+                print(f"    {row['hz']:6.0f} Hz  {name:28} {row['active']}/{row['neurons']} neurons active")
+        if args.record:
+            t_ms, idx = brain.recording_arrays(brain.stop_recording())
+            np.savez_compressed(args.record, time_ms=t_ms, neuron=idx, body_id=conn.body_id[idx])
+            print(f"saved {idx.size:,} spikes to {args.record}")
+        if args.json:
+            with open(args.json, "w") as f:
+                json.dump({"stimulus": args.stim, "ms": args.ms, "rates": rates, "settings": brain.settings()}, f, indent=1)
+        return
+
+    if args.sweep:
+        spec, lo, hi, n = args.sweep.rsplit(":", 3)
+        check_spec(conn, spec)
+        rates = np.linspace(float(lo), float(hi), int(n))
+        if not watch:
+            raise SystemExit("--sweep needs --watch to say which populations to report")
+        rows = E.sweep(brain, spec, rates, watch, ms=args.ms)
+        print(f"\n  {'Hz in':>7}  " + "  ".join(f"{w:>12}" for w in watch))
+        for r in rows:
+            print(f"  {r['hz']:7.1f}  " + "  ".join(f"{r[w]:12.1f}" for w in watch))
+        if args.json:
+            with open(args.json, "w") as f:
+                json.dump(rows, f, indent=1)
+        return
+
+    if args.lesion:
+        exps = [e for e in E.all_experiments() if args.lesion.lower() in e.name.lower()]
+        if not exps:
+            raise SystemExit(f"no experiment matches '{args.lesion}'")
+        exp = exps[0]
+        readout = args.readout or exp.readouts[-1].spec
+        candidates = [c.strip() for c in args.candidates.split(",") if c.strip()]
+        if not candidates:
+            src = ",".join(exp.stimulus)
+            paths = trace(conn, src, readout, max_hops=args.hops, top=20)
+            candidates = [name for name, _ in relay_ranking(paths)[:10]]
+            print(f"lesion candidates from the wiring between the stimulus and {readout}: {', '.join(candidates)}")
+        rows = E.lesion_scan(brain, exp, candidates, readout, seed=args.seed)
+        print(f"\n{exp.name}: {readout} with each population silenced")
+        print(f"  {'silenced':28} {'neurons':>7} {'Hz':>8} {'change':>8}")
+        for r in rows:
+            print(f"  {r['silenced']:28} {r['neurons']:7} {r['hz']:8.1f} {100 * r['change']:+7.0f}%")
+        if args.json:
+            with open(args.json, "w") as f:
+                json.dump(rows, f, indent=1)
+        return
+
+    print(f"Running the validated experiments with the '{args.profile}' profile "
+          f"(every neuron simulated, nothing trained)...")
+    results = E.run_all(brain, only=args.only, seeds=tuple(range(args.seed, args.seed + args.seeds)),
+                        profile=args.profile)
+    bad = [r for r in results if not r.ok]
+    n_read = sum(len(r.readouts) for r in results)
+    n_ok = sum(sum(x.ok for x in r.readouts) for r in results)
+    print(f"\n{n_ok}/{n_read} readouts in the expected range ({len(results) - len(bad)}/{len(results)} experiments).")
+    if args.json:
+        E.save_json(results, args.json, brain)
+        print(f"wrote {args.json}")
+    if args.profile == "pure":
+        print("Try the game's settings: python fly_brain.py --profile game")
+    print("Then play: python fly_game.py")
+
+
+def check(conn, spec):
+    try:
+        idx = conn.select(spec)
+        if idx.size:
+            return idx
+        problem = f"No neurons match '{spec}'."
+    except ValueError as e:
+        problem = str(e).rstrip(".") + "."
+    word = spec.split(":")[-1].split("/")[0].split(",")[0]
+    raise SystemExit(f"{problem} Search for names with: python fly_brain.py --find {word}")
+
+
+def check_spec(conn, spec):
+    check(conn, spec)
+    return spec
+
+
+if __name__ == "__main__":
+    main()
