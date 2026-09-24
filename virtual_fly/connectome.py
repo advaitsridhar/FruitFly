@@ -205,6 +205,10 @@ class Connectome:
             regex:^LC1[0-2]      cell types matching a regular expression
             class:Kenyon_Cell    neuPrint class      (also superclass:, subclass:, nt:, nerve:,
                                                       neuromere:, dimorphism:, frudsx:)
+            gene:fru             neurons annotated as expressing fruitless (gene:dsx, gene:both,
+                                 gene:fru_high; or a transmitter gene: gene:VGlut, gene:Gad1, ...)
+            dimorphism:male      male-specific incl. 'potentially' (dimorphism:dimorphic, :any,
+                                 or an exact label such as dimorphism:sexually dimorphic)
             body:10783           one neuron by its neuPrint bodyId
             index:1234           one neuron by its index in this file
             hex:12:7             columnar visual neurons in medulla column (hex1, hex2)
@@ -291,10 +295,15 @@ class Connectome:
             else:
                 ok = np.array([bool(t) and (t.startswith(value) if key == "prefix" else value in t) for t in names])
             mask = ok[self.type_idx]
-        elif key in ("class", "superclass", "subclass", "nt", "nerve", "neuromere", "dimorphism", "frudsx"):
+        elif key == "gene":
+            from . import genetics
+            mask = genetics.gene_mask(self, value)
+        elif key == "dimorphism":
+            from . import genetics
+            mask = genetics.dimorphism_mask(self, value)
+        elif key in ("class", "superclass", "subclass", "nt", "nerve", "neuromere", "frudsx"):
             col = {"class": self.cls, "superclass": self.superclass, "subclass": self.subclass,
-                   "nt": self.nt, "nerve": self.nerve, "neuromere": self.neuromere,
-                   "dimorphism": self.dimorphism, "frudsx": self.frudsx}[key]
+                   "nt": self.nt, "nerve": self.nerve, "neuromere": self.neuromere, "frudsx": self.frudsx}[key]
             mask = col == value
         elif key == "body":
             mask = self.body_id == int(value)

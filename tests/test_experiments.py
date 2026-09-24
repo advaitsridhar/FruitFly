@@ -60,7 +60,9 @@ def test_run_all_with_only_filter(brain, capsys):
     assert len(both) == 2
     printed = capsys.readouterr().out
     assert "Experiment" in printed and "Synthetic loom" in printed and "Synthetic sugar" in printed
-    assert E.all_experiments() == E.CLASSIC + E.EXTENDED and len(E.CLASSIC) == 6
+    assert E.all_experiments() == E.CLASSIC + E.EXTENDED + E.GENETIC and len(E.CLASSIC) == 6
+    assert all(e.profile == "game" and "genetic" in e.tags for e in E.GENETIC) and len(E.GENETIC) == 5
+    assert E.run_all(brain, E.GENETIC, verbose=False, profile="pure") == []       # measured in the game profile
 
 
 def test_classic_silence_experiment_passes_on_synthetic_brain(brain):

@@ -28,6 +28,7 @@ Returned once at start-up (gzip-compressed if the client accepts it; ~2.4 MB raw
 | `retina` | `{L: {n_az, n_el, az[], el[]}, R: {...}}` facet directions (radians, fly frame; `az` + = left) |
 | `profile` | model profile name (`game`, `pure`, `brakes`) |
 | `settings` | brain settings dict (dt, backend `numpy`/`numba`, gain, fatigue, silenced, plasticity ...) |
+| `genetics` | `{expression: [{key, label, spec, n, high, types, gene, flybase}], transmitters: [{nt, spec, n, sign, synapse_share, genes: [{symbol, flybase}]}], unclear, genes: [...], readouts: {key: {n, fru, dsx, male, dimorphic, nt, tags}}, source}`; each `readouts[]` row also carries `genes` (its tags: `fru`, `dsx`, `♂`, `♂♀`) |
 | `decoder` | per decoder DN spec: motor synapses it reaches (`direct_motor_synapses`, `two_hop_motor_synapses_by_neuromere`) |
 | `columnar_vision` | bool: T4/T5 columns driven from the retina |
 | `whats_real` | `{wiring[], hand_built[], not_modelled[]}` text for the "What's real here?" dialog |
@@ -119,3 +120,28 @@ filaments, up to 300); `wind = {angle, speed}` (direction the wind blows *toward
 | `GET /api/decoder` | the decoder's DN→motor-pool table |
 | `GET /api/recording` | JSON download of the recorded frames |
 | `GET /api/spikes` | npz download of recorded spikes (`time_ms`, `neuron`, `body_id`) |
+
+### `GET /api/genes`
+
+The layout's `genetics` block on its own.
+
+### `GET /api/lines?spec=pIP10&n=4`
+
+Driver lines whose expression images match the population's neurons, from Janelia's NeuronBridge
+(needs internet; results are cached under `data/neuronbridge/`). At most `n` (1-8) neurons are
+searched, spread over the population. `{spec, n, sampled: [bodyId], unmatched: [bodyId],
+lines: [{line, library, score, neurons, split}], version}`; `score` is NeuronBridge's colour-depth
+match score, `neurons` how many of the searched neurons the line matched, `split` whether it is a
+split-GAL4 line. 400 for a bad spec, 502 when NeuronBridge cannot be reached.
+
+### `GET /api/driver?line=SS02385`
+
+MaleCNS neurons a driver line labels (its first `searched` images, brain images first, since a
+line can have dozens): `{line, library, images, searched, neurons: [{body, index,
+type, side, nb_type, score, in_kit}], spec, version}`. `nb_type` is the cell type NeuronBridge
+holds (an earlier MaleCNS version), `type` the kit's for the same body, `in_kit` whether the body
+exists in this data; `spec` (`body:...,body:...`) selects the best matches for `zap`, `silence` or
+`watch`. 400 for an unknown line, 502 when NeuronBridge cannot be reached.
+
+`GET /api/neuron` additionally returns `genes: [{symbol, flybase, why}]`: *fru* and *dsx* when the
+neuron is annotated as expressing them, and the synthesis/transport genes of its transmitter.

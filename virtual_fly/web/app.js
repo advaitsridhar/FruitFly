@@ -48,6 +48,7 @@ async function loadLayout() {
   panels.scenarios = new P.ScenariosPanel(L);
   panels.lab = new P.LabPanel(L);
   panels.paths = new P.PathwayPanel(brain, panels.lab);
+  panels.genetics = new P.GeneticsPanel(L, panels.lab);
   panels.events = new P.EventsPanel();
   panels.recording = new P.RecordingPanel();
   panels.model = new P.ModelPanel(L);
@@ -326,6 +327,7 @@ function wireBrain() {
         <span class="k">connections</span><span class="v">${n.n_inputs} in · ${n.n_outputs} out</span>
         <span class="k">firing now</span><span class="v">${fmt(n.rate_hz, 1)} Hz</span>
         <span class="k">region</span><span class="v">${esc(L.regions[L.region[i]] || "")}</span>
+        <span class="k">genes</span><span class="v">${(n.genes || []).length ? n.genes.map((g) => `<a href="${g.flybase}" target="_blank" rel="noopener" title="${esc(g.why)} · FlyBase">${esc(g.symbol)}</a>`).join(", ") : "none known here"}${n.dimorphism ? ` · ${esc(n.dimorphism)}` : ""}</span>
       </div>
       <b>strongest inputs</b><ul>${list(n.inputs || [])}</ul>
       <b>strongest outputs</b><ul>${list(n.outputs || [])}</ul>

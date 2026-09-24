@@ -217,6 +217,28 @@ def test_stream_sends_the_current_state_first(served):
     c.close()
 
 
+def test_genes_lines_and_driver_endpoints(served, conn, tmp_path):
+    from virtual_fly import genetics as G
+    from tests.test_genetics import make_fake
+    game, base = served
+    code, g = get_json(base, "/api/genes")
+    assert code == 200 and g["ok"] and {e["key"] for e in g["expression"]} == {"fru", "dsx", "both", "male", "dimorphic"}
+    assert g["readouts"]["pIP10"]["tags"] == ["fru", "♂"] and any(t["nt"] == "gaba" and t["sign"] == -1 for t in g["transmitters"])
+    fetch, calls, body, other = make_fake(conn)
+    game.neuronbridge = G.NeuronBridge(cache_dir=tmp_path, fetch=fetch)
+    code, r = get_json(base, "/api/lines?spec=pIP10/L")
+    assert code == 200 and r["ok"] and [l["line"] for l in r["lines"]] == ["SS00001", "R00A00"] and r["sampled"] == [body]
+    code, r = get_json(base, "/api/driver?line=SS00001")
+    assert code == 200 and r["ok"] and r["neurons"][0]["type"] == "pIP10" and r["spec"].startswith(f"body:{body}")
+    assert get_json(base, "/api/lines")[0] == 400 and get_json(base, "/api/driver")[0] == 400
+    assert get_json(base, "/api/lines?spec=NOPE")[0] == 400 and get_json(base, "/api/driver?line=SS99999")[0] == 400
+    game.neuronbridge = G.NeuronBridge(cache_dir=tmp_path / "off", fetch=lambda url, timeout: (_ for _ in ()).throw(OSError("down")))
+    code, r = get_json(base, "/api/lines?spec=pIP10")
+    assert code == 502 and "internet" in r["error"]
+    code, r = get_json(base, f"/api/neuron?index={int(conn.select('pIP10/L')[0])}")
+    assert code == 200 and [x["symbol"] for x in r["neuron"]["genes"]] == ["fru", "ChAT", "VAChT"]
+
+
 def test_static_files_and_404s(served):
     game, base = served
     code, headers, body = get(base, "/")

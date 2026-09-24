@@ -182,6 +182,26 @@
       <datalist id="typelist"></datalist>
     </div>
 
+    <div class="card" id="geneticsCard">
+      <h2><span>Genetics</span><span class="tag">from the data</span></h2>
+      <div class="feedback" id="geneIntro">Which neurons express <b>fruitless</b> and <b>doublesex</b>, the genes that make a male brain male, and which transmitter each neuron makes. Silence a population as a fly lab would with a driver line, or activate or watch it.</div>
+      <div class="genes" id="geneRows"></div>
+      <details class="decoder" id="ntGroups"><summary>transmitter genes: who makes what</summary><div class="genes" id="ntRows"></div></details>
+      <div class="lab" style="margin-top:8px">
+        <div class="row">
+          <input type="text" id="lineName" placeholder="driver line, e.g. SS02385, MB112C, R85B12" spellcheck="false" autocomplete="off">
+          <button class="btn" id="lineBtn" title="Which MaleCNS neurons does this line label? (NeuronBridge, needs internet)">Neurons of this line</button>
+        </div>
+        <div class="row">
+          <input type="text" id="linesSpec" list="typelist" placeholder="population, e.g. pIP10 or LC10a/L" spellcheck="false" autocomplete="off">
+          <button class="btn" id="linesBtn" title="Which driver lines label these neurons? (NeuronBridge, needs internet)">Lines for this population</button>
+        </div>
+        <div class="feedback" id="geneFeedback">Driver-line lookups ask Janelia's NeuronBridge (cached afterwards).</div>
+        <div class="nbresults" id="nbResults"></div>
+      </div>
+      <div class="feedback" id="geneSource"></div>
+    </div>
+
     <div class="card">
       <h2>Pathway explorer</h2>
       <div class="lab">

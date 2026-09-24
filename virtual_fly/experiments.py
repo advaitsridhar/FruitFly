@@ -53,6 +53,7 @@ class Experiment:
     tags: tuple[str, ...] = ()
     note: str = ""
     profile: str | None = None      # the model profile the expected ranges were measured with (None = any)
+    silence: tuple[str, ...] = ()   # populations whose output is blocked for the experiment (a genetic lesion)
 
 
 def R(spec, label, lo, hi, source=""):
@@ -104,8 +105,40 @@ EXTENDED: list[Experiment] = [
 ]
 
 
+# Genetic experiments: a population defined by gene expression (the MaleCNS fruitless/doublesex
+# annotation, see genetics.py) is silenced, as a fly lab does with tetanus toxin or Kir2.1 under a
+# driver, and the reflexes are re-measured. Ranges measured in the game profile, seeds 0 and 1.
+GENETIC = [
+    Experiment("Courtship command: song motor neurons", {"prefix:pC1_": 60}, 500,
+               [R("regex:^ps1", "ps1 song motor neurons", 20, 120, PROBE), R("regex:^hg", "hg1/hg2 song motor neurons", 20, 120, PROBE),
+                R("regex:^DLMn", "DLMn wing power motor neurons", 8, 60, PROBE)],
+               tags=("genetic", "courtship"), profile="game",
+               note="the intact fly, for comparison with the two lesions below"),
+    Experiment("Courtship command, fruitless neurons silenced", {"prefix:pC1_": 60}, 500,
+               [R("prefix:pC1_", "pC1 (driven; mostly dsx, not silenced)", 40, 90, PROBE),
+                R("pIP10", "pIP10 (fires, but its output is blocked)", 15, 80, PROBE),
+                R("regex:^ps1", "ps1 song motor neurons", 0, 3, PROBE), R("regex:^hg", "hg1/hg2 song motor neurons", 0, 3, PROBE),
+                R("regex:^DLMn", "DLMn wing power motor neurons", 0, 3, PROBE)],
+               tags=("genetic", "courtship"), profile="game", silence=("gene:fru",),
+               note="fruitless males do not sing (Demir & Dickson 2005): pIP10 and its route to the wing motor neurons are fru+"),
+    Experiment("Courtship command, doublesex neurons silenced", {"prefix:pC1_": 60}, 500,
+               [R("pIP10", "pIP10 song neuron", 0, 3, PROBE), R("regex:^ps1", "ps1 song motor neurons", 0, 3, PROBE),
+                R("regex:^hg", "hg1/hg2 song motor neurons", 0, 3, PROBE)],
+               tags=("genetic", "courtship"), profile="game", silence=("gene:dsx",),
+               note="pC1 itself is dsx+: with its output blocked nothing downstream moves"),
+    Experiment("Sugar on the mouthparts, fruitless neurons silenced", {"LB3b,LB3c": 120}, 500,
+               [R("GNG232", "G2N-1 taste interneuron", 15, 60, PROBE), R("MN9", "MN9 proboscis motor neuron", 15, 60, PROBE)],
+               tags=("genetic", "taste"), profile="game", silence=("gene:fru",),
+               note="control: feeding does not run through fruitless neurons"),
+    Experiment("Something looming on the right, fruitless neurons silenced", {"LC4/R,LPLC2/R": 150}, 400,
+               [R("DNp01", "giant fibre (escape)", 250, 400, PROBE), R("TTMn", "TTMn jump muscle motor neuron", 40, 100, PROBE)],
+               tags=("genetic", "escape"), profile="game", silence=("gene:fru",),
+               note="control: the escape circuit is not fruitless-dependent"),
+]
+
+
 def all_experiments() -> list[Experiment]:
-    return CLASSIC + EXTENDED
+    return CLASSIC + EXTENDED + GENETIC
 
 
 @dataclass
@@ -128,6 +161,7 @@ class ExperimentResult:
     after_note: str
     wall_s: float
     seeds: list[int]
+    silenced: list[str] = field(default_factory=list)   # populations whose output was blocked
 
     @property
     def ok(self) -> bool:
@@ -136,7 +170,7 @@ class ExperimentResult:
     def to_dict(self) -> dict:
         return {"name": self.name, "ok": self.ok, "after_spikes_per_s": self.after_sps, "after": self.after_note,
                 "wall_s": round(self.wall_s, 2), "seeds": self.seeds,
-                "readouts": [r.__dict__ for r in self.readouts]}
+                "readouts": [r.__dict__ for r in self.readouts], "silenced": list(self.silenced)}
 
 
 def in_range(hz: float, lo: float, hi: float) -> bool:
@@ -154,23 +188,29 @@ def run_experiment(brain: FlyBrain, exp: Experiment, seeds=(0,), after_ms: float
     per: dict[str, list[float]] = {r.label: [] for r in exp.readouts}
     t0 = time.time()
     after_sps = 0.0
-    for seed in seeds:
-        brain.rng = np.random.default_rng(seed)
-        brain.reset()
-        brain.clear_stimuli()
-        for spec, hz in exp.stimulus.items():
-            brain.stimulate(spec, hz)
-        brain.run(exp.settle_ms)                  # let activity spread, then measure
-        brain.reset_counts()
-        brain.run(exp.ms - exp.settle_ms)
-        for r in exp.readouts:
-            per[r.label].append(brain.rate(r.spec))
-        if exp.stimulus:                          # switch the stimulus off: does the brain calm down?
+    for spec in exp.silence:                      # the lesion: like expressing tetanus toxin in those cells
+        brain.silence(spec)
+    try:
+        for seed in seeds:
+            brain.rng = np.random.default_rng(seed)
+            brain.reset()
             brain.clear_stimuli()
-            brain.run(after_ms / 2)
+            for spec, hz in exp.stimulus.items():
+                brain.stimulate(spec, hz)
+            brain.run(exp.settle_ms)              # let activity spread, then measure
             brain.reset_counts()
-            brain.run(after_ms / 2)
-            after_sps = brain.spike_count.sum() / (after_ms / 2000.0)
+            brain.run(exp.ms - exp.settle_ms)
+            for r in exp.readouts:
+                per[r.label].append(brain.rate(r.spec))
+            if exp.stimulus:                      # switch the stimulus off: does the brain calm down?
+                brain.clear_stimuli()
+                brain.run(after_ms / 2)
+                brain.reset_counts()
+                brain.run(after_ms / 2)
+                after_sps = brain.spike_count.sum() / (after_ms / 2000.0)
+    finally:
+        for spec in exp.silence:
+            brain.unsilence(spec)
     wall = time.time() - t0
     results = []
     for r in exp.readouts:
@@ -181,7 +221,7 @@ def run_experiment(brain: FlyBrain, exp: Experiment, seeds=(0,), after_ms: float
     brain.clear_stimuli()
     brain.reset()
     res = ExperimentResult(exp.name, results, float(after_sps), after_note(after_sps) if exp.stimulus else "",
-                           wall, list(seeds))
+                           wall, list(seeds), silenced=list(exp.silence))
     if verbose:
         print(format_result(res))
     return res
@@ -193,6 +233,8 @@ def format_result(res: ExperimentResult) -> str:
         sd = f" ±{r.sd:4.1f}" if r.sd else ""
         flag = "ok" if r.ok else "<-- not the usual result"
         lines.append(f" {res.name if k == 0 else '':34} {r.label:32} {r.hz:6.1f}{sd:6} Hz  {r.lo:g}-{r.hi:g} Hz  {flag}")
+    if res.silenced:
+        lines.append(f" {'':34} (output blocked in {', '.join(res.silenced)})")
     if res.after_note:
         lines.append(f" {'':34} {'1 s after it stops':32} {res.after_sps:8,.0f} spikes/s  {res.after_note}")
     lines.append(f" {'':34} ({res.wall_s:.1f} s wall time, seeds {res.seeds})")
