@@ -243,16 +243,6 @@ def test_genome_endpoint(served):
     game, base = served
     code, r = get_json(base, "/api/genome")
     assert code == 200 and r["ok"] and r["level"] == "real" and [l["level"] for l in r["levels"]][0] == "real"
-    assert r["parts"] == {"on": False, "status": None}
-
-
-def test_parts_endpoint(served):
-    game, base = served
-    code, r = get_json(base, "/api/parts")
-    assert code == 200 and r["ok"] and r["on"] is False and r["status"] is None
-    assert [m["nt"] for m in r["tables"]["modulators"]] == ["dopamine", "octopamine", "serotonin"] and len(r["tables"]["graded"]) == 5
-    assert r["counts"]["modulatory_neurons"] == 16 and r["counts"]["graded_neurons"] > 100
-    assert all(m["receptors"] and m["why"] for m in r["counts"]["modulators"])
 
 
 def test_static_files_and_404s(served):

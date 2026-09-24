@@ -17,7 +17,6 @@ CONFIGS = {
     "noise": {"noise_hz": 5.0, "noise_mv": 1.0},
     "everything": {"fatigue_mv": 0.05, "std_u": 0.1, "threshold_jitter": 0.5, "noise_hz": 5.0, "kenyon_gain": 1.0},
     "fast": {"dt": 1.0, "fatigue_mv": 0.05},
-    "parts": {"parts": True, "fatigue_mv": 0.05},
 }
 
 
@@ -29,13 +28,9 @@ def _run(conn, backend, cfg, learning=False, seed=3):
     brain.stimulate("LC4/R,LPLC2/R", 150)
     rec = brain.run(120, record=True)
     brain.stimulate("LB1a,LB1b", 100)
-    if learning or cfg.get("parts"):
+    if learning:
         brain.stimulate("ORN_DM1", 100)
         brain.stimulate("PPL101", 60)
-    if cfg.get("parts"):                                        # graded cells and every modulator in play
-        brain.stimulate("Mi1/R,Mi9/R", 80)
-        brain.stimulate("T4a/R", 60)
-        brain.stimulate("prefix:JO-B", 100)
     rec += brain.run(120, record=True)
     brain.clear_stimuli()
     rec += brain.run(300, record=True)                          # runs down to rest (quiet path)
@@ -57,10 +52,6 @@ def test_numba_matches_numpy_spike_for_spike(conn, name):
     assert a.t == b.t and a.quiet == b.quiet
     if a.std_x is not None:
         assert np.array_equal(a.std_x, b.std_x) and np.array_equal(a.std_t, b.std_t)
-    if cfg.get("parts"):
-        assert np.array_equal(a._rel, b._rel) and np.array_equal(a._mod_level, b._mod_level) and a._mod_active == b._mod_active
-        assert a.parts_status() == b.parts_status() and a.parts_status()["tone"]["octopamine"]["mean"] > 0
-        assert a.spike_count[conn.select("T4b/R")].sum() > 0                  # graded events happened
 
 
 def test_numba_matches_numpy_with_learning(conn):

@@ -128,73 +128,18 @@ def lif_step(v, g, arriving, has_arriving, refr, decay_m, coupling, decay_s,
 
 
 @njit(cache=True, nogil=True)
-def graded_release(v, gidx, rel, c, sat, out):
-    """Graded cells (``gidx``, sorted) accumulate release in proportion to their depolarisation, up to
-    ``sat`` mV, and emit an event when a quantum is complete; writes the events to ``out`` (sorted)
-    and returns their number. Same float32 arithmetic as ``FlyBrain._graded_release``."""
-    zero = np.float32(0.0)
-    one = np.float32(1.0)
-    n_ev = 0
-    for j in range(gidx.shape[0]):
-        i = gidx[j]
-        vi = v[i]
-        if vi > zero:
-            if vi > sat:
-                vi = sat
-            r = rel[j] + vi * c
-            if r >= one:
-                r = r - one
-                out[n_ev] = i
-                n_ev += 1
-            rel[j] = r
-    return n_ev
-
-
-@njit(cache=True, nogil=True)
-def scale_arrivals(arriving, targets, gain):
-    """Neuromodulation: the tone on each modulated target scales what arrives at it this step (the
-    same float32 multiply as ``arriving[targets] *= gain`` in NumPy)."""
-    for j in range(targets.shape[0]):
-        t = targets[j]
-        arriving[t] = arriving[t] * gain[j]
-
-
-@njit(cache=True, nogil=True)
-def deposit_tone(spikes, mod_kind, row_ptr, post_idx, n_syn, out_scale, target_pos, synref, level):
-    """The modulatory neurons among ``spikes`` add to the tone on their targets, one synapse count
-    per connection scaled by the neuron's output scale (``FlyBrain._deposit`` in NumPy: the same
-    float32 operations, in the same order). Returns whether anything was deposited."""
-    hit = False
-    for k in range(spikes.shape[0]):
-        s = spikes[k]
-        kind = mod_kind[s]
-        if kind < 0:
-            continue
-        hit = True
-        sc = out_scale[s]
-        ref = synref[kind]
-        for e in range(row_ptr[s], row_ptr[s + 1]):
-            p = target_pos[post_idx[e]]
-            dose = np.float32(n_syn[e]) * sc / ref
-            level[kind, p] = level[kind, p] + dose
-    return hit
-
-
-@njit(cache=True, nogil=True)
 def fire_and_send(spikes, v, g, thr, fatigue_mv, spike_count, row_ptr, post_idx, w, target,
-                  use_std, std_x, std_t, t, dt, std_tau_ms, std_u, gmask):
-    """Reset the spiking neurons (graded cells, ``gmask``, keep their potential) and add their synaptic
-    kicks to ``target`` (a slot of the delay queue), connection by connection in the same order
-    ``np.add.at`` would."""
+                  use_std, std_x, std_t, t, dt, std_tau_ms, std_u):
+    """Reset the spiking neurons and add their synaptic kicks to ``target`` (a slot of the delay
+    queue), connection by connection in the same order ``np.add.at`` would."""
     zero = np.float32(0.0)
     one32 = np.float32(1.0)
     for k in range(spikes.shape[0]):
         s = spikes[k]
-        if not gmask[s]:
-            v[s] = zero
-            g[s] = zero
-            if fatigue_mv > zero:                     # fatigue_mv is float32, like NumPy's thr[s] += float32
-                thr[s] = thr[s] + fatigue_mv
+        v[s] = zero
+        g[s] = zero
+        if fatigue_mv > zero:                         # fatigue_mv is float32, like NumPy's thr[s] += float32
+            thr[s] = thr[s] + fatigue_mv
         spike_count[s] += 1
         a, b = row_ptr[s], row_ptr[s + 1]
         if use_std:                                   # Tsodyks-Markram: recover, then use some resource
@@ -216,20 +161,13 @@ def fire_and_send(spikes, v, g, thr, fatigue_mv, spike_count, row_ptr, post_idx,
 @njit(cache=True, nogil=True)
 def step_kernel(v, g, arriving, has_arriving, refr, decay_m, coupling, decay_s, thr, flush, do_flush,
                 forced, spk, cand, spikes_out, fatigue_mv, spike_count, row_ptr, post_idx, w, target,
-                use_std, std_x, std_t, t, dt, std_tau_ms, std_u, gidx, rel, gr_c, gr_sat, gmask, spk2):
-    """``lif_step``, the graded cells' release, then ``fire_and_send`` in one call (one dispatch per
-    step instead of three)."""
+                use_std, std_x, std_t, t, dt, std_tau_ms, std_u):
+    """``lif_step`` then ``fire_and_send`` in one call (one dispatch per step instead of two)."""
     n_spk = lif_step(v, g, arriving, has_arriving, refr, decay_m, coupling, decay_s, thr, flush, do_flush,
                      forced, spk, cand, spikes_out)
-    if gidx.shape[0] > 0:
-        n_ev = graded_release(v, gidx, rel, gr_c, gr_sat, cand)
-        if n_ev > 0:
-            n_spk = _merge_sorted(spikes_out[:n_spk], cand[:n_ev], spk2)
-            for k in range(n_spk):
-                spikes_out[k] = spk2[k]
     if n_spk:
         fire_and_send(spikes_out[:n_spk], v, g, thr, fatigue_mv, spike_count, row_ptr, post_idx, w, target,
-                      use_std, std_x, std_t, t, dt, std_tau_ms, std_u, gmask)
+                      use_std, std_x, std_t, t, dt, std_tau_ms, std_u)
     return n_spk
 
 
@@ -250,20 +188,11 @@ def warm_up():
     row_ptr = np.array([0, 1, 1, 1, 1], dtype=np.int64)
     post = np.array([1], dtype=np.int64)
     w = np.array([0.1], dtype=np.float32)
-    gmask = np.zeros(n, dtype=np.bool_)
-    gidx = np.array([2], dtype=np.int64)
-    graded_release(f32 + np.float32(3.0), gidx, np.ones(1, np.float32), np.float32(0.02), np.float32(7.0), cand)
-    scale_arrivals(f32.copy(), gidx, np.ones(1, np.float32))
-    deposit_tone(np.array([0], dtype=np.int64), np.zeros(n, np.int8), np.array([0, 1, 1, 1, 1], dtype=np.int64),
-                 np.array([1], dtype=np.int64), np.array([5], dtype=np.uint16), np.ones(n, np.float32),
-                 np.zeros(n, dtype=np.int64), np.ones(1, np.float32), np.zeros((1, 1), np.float32))
     for use_std in (False, True):
         fire_and_send(np.array([0], dtype=np.int64), f32.copy(), f32.copy(), f32.copy(), np.float32(0.05), np.zeros(n, np.int32),
                       row_ptr, post, w, f32.copy(), use_std, np.ones(n, np.float32), np.zeros(n, np.int64),
-                      3, 0.5, 500.0, 0.1, gmask)
-        for g_idx in (i64, gidx):
-            step_kernel(f32.copy(), f32.copy(), f32.copy(), True, i64, np.float32(0.9), np.float32(0.1), np.float32(0.9),
-                        f32 + np.float32(7.0), np.float32(1e-6), True, np.array([0], dtype=np.int64), spk, cand, out,
-                        np.float32(0.05), np.zeros(n, np.int32), row_ptr, post, w, f32.copy(), use_std,
-                        np.ones(n, np.float32), np.zeros(n, np.int64), 3, 0.5, 500.0, 0.1,
-                        g_idx, np.ones(g_idx.size, np.float32), np.float32(0.02), np.float32(7.0), gmask, out.copy())
+                      3, 0.5, 500.0, 0.1)
+        step_kernel(f32.copy(), f32.copy(), f32.copy(), True, i64, np.float32(0.9), np.float32(0.1), np.float32(0.9),
+                    f32 + np.float32(7.0), np.float32(1e-6), True, np.array([0], dtype=np.int64), spk, cand, out,
+                    np.float32(0.05), np.zeros(n, np.int32), row_ptr, post, w, f32.copy(), use_std,
+                    np.ones(n, np.float32), np.zeros(n, np.int64), 3, 0.5, 500.0, 0.1)

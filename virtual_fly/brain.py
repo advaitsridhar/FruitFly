@@ -22,11 +22,6 @@ in :mod:`virtual_fly.settings`:
   dopamine-gated depression of Kenyon-cell-to-MBON synapses, i.e. associative learning.
 * **Recording** of every spike, **monitors** of population rates over time, and **checkpoints**
   that capture the whole brain state so an experiment can be replayed or branched.
-* **A parts list** (``parts=True``, :mod:`virtual_fly.parts`): the genes decide what kind of machine
-  each neuron is. Dopamine, octopamine and serotonin neurons lose their fast synapses and instead
-  leave a slow tone on their targets that scales the targets' input gain; the optic lobe's graded
-  cell types release transmitter in proportion to their depolarisation instead of spiking; and a
-  per-type table can override the spike threshold.
 
 The integrator itself is the starter kit's dense NumPy loop (the fastest way to update 176k
 identical neurons in NumPy), plus one guard the starter lacks: values that have decayed below a
@@ -111,16 +106,13 @@ class FlyBrain:
     ``threshold_jitter``
         standard deviation (mV) of a fixed per-neuron threshold offset, so neurons are not all
         identical (seeded, so reproducible).
-    ``parts``
-        ``True`` (or a :class:`virtual_fly.parts.PartsList`) gives each neuron the machine its genes
-        say it is: slow modulators, graded cells, per-type thresholds (see :mod:`virtual_fly.parts`).
     """
 
     def __init__(self, conn: Connectome, dt: float = 0.5, gain: float = 0.65, kenyon_gain: float = 0.25,
                  fatigue_mv: float = 0.0, fatigue_ms: float = 2000.0,
                  std_u: float = 0.0, std_tau_ms: float = 500.0,
                  noise_hz: float = 0.0, noise_mv: float = 1.0, noise_spec: str = "all",
-                 threshold_jitter: float = 0.0, seed: int = 0, backend: str = "auto", parts=None):
+                 threshold_jitter: float = 0.0, seed: int = 0, backend: str = "auto"):
         self.conn = conn
         if backend not in ("auto", "numpy", "numba"):
             raise ValueError("backend must be 'auto', 'numpy' or 'numba'")
@@ -155,25 +147,6 @@ class FlyBrain:
         self._w_original = (conn.n_syn.astype(np.float32) * pre_sign * np.float32(MV_PER_SYNAPSE * gain)
                             * post_gain[conn.post_idx])
         self.row_ptr, self.post_idx = conn.row_ptr, conn.post_idx.astype(np.int64)
-        from .parts import as_parts                          # (parts imports this module's constants)
-        pl = as_parts(parts)
-        self._parts = pl.compile(conn) if pl is not None else None
-        self._gmask = np.zeros(n, dtype=np.bool_)            # graded cells: no reset, no refractory period
-        self._graded_idx = self._empty_i64 = np.zeros(0, dtype=np.int64)
-        self._mod_targets = self._empty_i64
-        if self._parts is not None:
-            cp = self._parts
-            self._w_original[conn.out_edges(cp.mod_neurons)] = 0.0       # modulators make no fast potentials
-            self._gmask, self._graded_idx = cp.graded_mask, cp.graded_idx
-            self._mod_targets = cp.mod_targets
-            self._mod_kind = cp.mod_kind
-            self._mod_decay_block = np.array([np.exp(-self._fatigue_block * dt / m.tau_ms) for m in pl.modulators], dtype=np.float32)
-            self._mod_gain_k = np.array([m.gain for m in pl.modulators], dtype=np.float32)
-            self._mod_half_k = np.array([m.half for m in pl.modulators], dtype=np.float32)
-            self._mod_synref_k = np.array([m.syn_ref for m in pl.modulators], dtype=np.float32)
-            self._n_syn = conn.n_syn
-            self._gr_c = np.float32(pl.graded_rate_hz * dt / 1000.0 / THETA)   # release per mV per step
-            self._gr_sat = np.float32(THETA)
         self.out_scale = np.ones(n, dtype=np.float32)       # per-neuron output multiplier (0 = silenced)
         self.silenced: dict[str, np.ndarray] = {}           # spec -> neuron indices
         self.modulated: dict[str, tuple[np.ndarray, float]] = {}   # spec -> (indices, factor)
@@ -193,7 +166,6 @@ class FlyBrain:
             self._spkflag = np.zeros(n, dtype=np.bool_)     # kernel scratch: crossed threshold this step
             self._cand = np.zeros(n, dtype=np.int64)        # kernel scratch: threshold crossings
             self._spk = np.zeros(n, dtype=np.int64)         # kernel scratch: spikes of the step
-            self._spk2 = np.zeros(n, dtype=np.int64)        # kernel scratch: spikes merged with graded events
         self.monitors: dict[str, Monitor] = {}
         self.recording: list | None = None
         self.on_spikes: list[Callable[[np.ndarray, int], None]] = []   # callbacks (spikes, t) each step
@@ -204,9 +176,6 @@ class FlyBrain:
                              ).clip(2.0, None).astype(np.float32)
         else:
             self._theta_i = np.full(n, THETA, dtype=np.float32)
-        if self._parts is not None:                         # per-type thresholds, and graded cells never cross theirs
-            over = self._parts.theta != np.float32(THETA)
-            self._theta_i[over] = self._parts.theta[over]
         self.reset()
 
     # ------------------------------------------------------------------ state
@@ -220,14 +189,9 @@ class FlyBrain:
         self._pending = np.zeros(self.n_slots, dtype=bool)     # does a queue slot hold input?
         self._recent = [self._empty] * (self.ref_steps - 1)   # who spiked in the last few steps
         self.thr = self._theta_i.copy()                        # current threshold incl. fatigue
-        self._thr_varies = self.fatigue_mv > 0 or self.threshold_jitter > 0 or self._parts is not None
+        self._thr_varies = self.fatigue_mv > 0 or self.threshold_jitter > 0
         self.std_x = np.ones(n, dtype=np.float32) if self.std_u > 0 else None   # synaptic resource
         self.std_t = np.zeros(n, dtype=np.int64)               # step at which std_x was last updated
-        self._rel = np.zeros(self._graded_idx.size, dtype=np.float32)       # graded cells' release accumulators
-        k = 0 if self._parts is None else self._parts.n_kinds
-        self._mod_level = np.zeros((k, self._mod_targets.size), dtype=np.float32)   # tone per modulator, per target
-        self._mod_gain = np.ones(self._mod_targets.size, dtype=np.float32)
-        self._mod_active = False
         self.spike_count = np.zeros(n, dtype=np.int32)
         self.window_ms = 0.0
         self.t = 0
@@ -375,8 +339,6 @@ class FlyBrain:
         if (self.quiet and not self._stim_idx.size and not self._pending[slot] and not self._noise_idx.size):
             if self.plasticity is not None:              # traces keep decaying, memories keep fading
                 self.plasticity.step(self, self._empty)
-            if self._mod_active and self.t % self._fatigue_block == 0:
-                self._mod_block()                        # the modulators' tone keeps fading too
             self.t += 1                                  # nothing is happening anywhere: skip the maths
             self.window_ms += self.dt
             self.last_spikes = self._empty
@@ -390,8 +352,6 @@ class FlyBrain:
             return self._step_numba(slot)
         if self._pending[slot]:
             arriving = self.queue[slot]
-            if self._mod_active:                         # neuromodulation: the tone scales what arrives
-                arriving[self._mod_targets] *= self._mod_gain
             g += arriving                                # synaptic kicks that were sent 1.8 ms ago
             arriving.fill(0.0)
             self._pending[slot] = False
@@ -412,8 +372,6 @@ class FlyBrain:
         if self.t % self._fatigue_block == 0:
             if self.fatigue_mv > 0:
                 self._fade_fatigue(self.decay_f ** self._fatigue_block)
-            if self._parts is not None:
-                self._mod_block()
             # Values that have decayed below a microvolt are snapped to zero. Left alone they drift
             # into the denormal float range, where the CPU slows every array operation several-fold
             # (a busy brain ran at half speed before this). A microvolt is 7,000x below threshold.
@@ -424,31 +382,22 @@ class FlyBrain:
             forced = self._stim_idx[self.rng.random(self._stim_idx.size) < self._stim_p]
             if forced.size:
                 spikes = np.union1d(spikes, forced)
-        if self._graded_idx.size:                        # graded cells release in proportion to their depolarisation
-            events = self._graded_release()
-            if events.size:
-                spikes = np.union1d(spikes, events)
-        resets = spikes
         if spikes.size:
-            if self._graded_idx.size:                    # a graded cell keeps its potential: no reset, no refractory period
-                resets = spikes[~self._gmask[spikes]]
-            v[resets] = 0.0
-            g[resets] = 0.0
+            v[spikes] = 0.0
+            g[spikes] = 0.0
             if self.fatigue_mv > 0:
-                self.thr[resets] += np.float32(self.fatigue_mv)
+                self.thr[spikes] += np.float32(self.fatigue_mv)
             self.spike_count[spikes] += 1
             self.total_spikes += spikes.size
             out = (self.t + self.delay_steps) % self.n_slots
             self._send(spikes, self.queue[out])
             self._pending[out] = True
-            if self._mod_targets.size:
-                self._deposit(spikes)
             if self.recording is not None:
                 self.recording.append((self.t, spikes.astype(np.int32)))
             for cb in self.on_spikes:
                 cb(spikes, self.t)
         if self._recent:
-            self._recent = [resets] + self._recent[:-1]
+            self._recent = [spikes] + self._recent[:-1]
         if self.plasticity is not None:
             self.plasticity.step(self, spikes)
         self.t += 1
@@ -460,83 +409,11 @@ class FlyBrain:
             self._check_quiet()
         return spikes
 
-    def _graded_release(self) -> np.ndarray:
-        """One step of graded transmission: every graded cell accumulates release in proportion to its
-        depolarisation (up to the spike threshold, where the release rate saturates) and emits one
-        event, the equivalent of a spike's worth of transmitter, each time a full quantum is reached."""
-        v = self.v[self._graded_idx]
-        inc = np.minimum(np.maximum(v, np.float32(0.0)), self._gr_sat) * self._gr_c
-        self._rel += inc
-        fire = self._rel >= np.float32(1.0)
-        if not fire.any():
-            return self._empty
-        self._rel[fire] -= np.float32(1.0)
-        return self._graded_idx[fire]
-
-    def _deposit(self, spikes):
-        """The modulatory neurons among the spikes raise the tone on their targets (per synapse, scaled
-        by the neuron's output scale so that silencing or modulating them works as for any neuron)."""
-        kinds = self._mod_kind[spikes]
-        hit = kinds >= 0
-        if not hit.any():
-            return
-        ms, kinds = spikes[hit], kinds[hit]
-        conn = self.conn
-        for k in np.unique(kinds):
-            edges = conn.out_edges(ms[kinds == k])
-            dose = conn.n_syn[edges].astype(np.float32) * self.out_scale[conn.pre_idx[edges]] / self._mod_synref_k[k]
-            np.add.at(self._mod_level[k], self._parts.target_pos[self.post_idx[edges]], dose)
-        self._mod_active = True
-
-    def _mod_block(self):
-        """Every block of 20 steps: the tone decays and the targets' input gain follows it,
-        ``1 + sum_k gain_k * level_k / (level_k + half_k)``."""
-        lvl = self._mod_level
-        if lvl.size == 0:
-            return
-        lvl *= self._mod_decay_block[:, None]
-        if (lvl.max(axis=1) > 0.01 * self._mod_half_k).any():     # some target still feels at least 1 % of an effect
-            gain = np.ones(lvl.shape[1], dtype=np.float32)
-            for k in range(lvl.shape[0]):
-                gain += self._mod_gain_k[k] * (lvl[k] / (lvl[k] + self._mod_half_k[k]))
-            self._mod_gain = gain
-            self._mod_active = True
-        else:
-            lvl.fill(0.0)
-            self._mod_gain.fill(1.0)
-            self._mod_active = False
-
-    @property
-    def parts(self):
-        """The compiled parts list (:class:`virtual_fly.parts.CompiledParts`), or None."""
-        return self._parts
-
-    def parts_status(self) -> dict | None:
-        """For the game: the tone of each modulator over its targets (0-1, the fraction of its full
-        effect) and how many graded cells are depolarised right now."""
-        if self._parts is None:
-            return None
-        lvl = self._mod_level
-        tone = {}
-        for k, m in enumerate(self._parts.parts.modulators):
-            own = self._parts.kind_targets[k]
-            if own.size:
-                sat = lvl[k, own] / (lvl[k, own] + self._mod_half_k[k])
-                tone[m.nt] = {"mean": round(float(sat.mean()), 4), "max": round(float(sat.max()), 3),
-                              "targets_on": int((sat > 0.05).sum())}
-            else:
-                tone[m.nt] = {"mean": 0.0, "max": 0.0, "targets_on": 0}
-        active = int((self.v[self._graded_idx] > np.float32(0.5)).sum()) if self._graded_idx.size else 0
-        return {"tone": tone, "graded_active": active, "graded": int(self._graded_idx.size),
-                "modulatory": int(self._parts.mod_neurons.size), "targets": int(self._mod_targets.size)}
-
     def _step_numba(self, slot: int) -> np.ndarray:
         """The same step as above, with the arithmetic in the compiled kernels of :mod:`fastbrain`."""
         v, g = self.v, self.g
         arriving = self.queue[slot]
         has_arriving = bool(self._pending[slot])
-        if has_arriving and self._mod_active:            # neuromodulation: the tone scales what arrives
-            fastbrain.scale_arrivals(arriving, self._mod_targets, self._mod_gain)
         if has_arriving and self._noise_idx.size:        # keep NumPy's order: arrival, then the noise kicks
             g += arriving
             arriving.fill(0.0)
@@ -551,8 +428,6 @@ class FlyBrain:
         do_flush = self.t % self._fatigue_block == 0
         if do_flush and self.fatigue_mv > 0:
             self._fade_fatigue(self.decay_f ** self._fatigue_block)
-        if do_flush and self._parts is not None:
-            self._mod_block()
         if self._stim_idx.size:
             forced = self._stim_idx[self.rng.random(self._stim_idx.size) < self._stim_p]
         else:
@@ -564,26 +439,17 @@ class FlyBrain:
                                       self._flush32, do_flush, forced, self._spkflag, self._cand, self._spk,
                                       self._fatigue32, self.spike_count, self.row_ptr, self.post_idx, self.w,
                                       self.queue[out], use_std, self.std_x if use_std else self._tmp, self.std_t,
-                                      self.t, self.dt, self.std_tau_ms, self.std_u,
-                                      self._graded_idx, self._rel, self._gr_c if self._parts is not None else np.float32(0.0),
-                                      self._gr_sat if self._parts is not None else np.float32(0.0), self._gmask, self._spk2)
+                                      self.t, self.dt, self.std_tau_ms, self.std_u)
         spikes = self._spk[:n_spk].copy() if n_spk else self._empty
-        resets = spikes
         if n_spk:
-            if self._graded_idx.size:
-                resets = spikes[~self._gmask[spikes]]
             self.total_spikes += n_spk
             self._pending[out] = True
-            if self._mod_targets.size:
-                if fastbrain.deposit_tone(spikes, self._mod_kind, self.row_ptr, self.post_idx, self._n_syn, self.out_scale,
-                                          self._parts.target_pos, self._mod_synref_k, self._mod_level):
-                    self._mod_active = True
             if self.recording is not None:
                 self.recording.append((self.t, spikes.astype(np.int32)))
             for cb in self.on_spikes:
                 cb(spikes, self.t)
         if self._recent:
-            self._recent = [resets] + self._recent[:-1]
+            self._recent = [spikes] + self._recent[:-1]
         if self.plasticity is not None:
             self.plasticity.step(self, spikes)
         self.t += 1
@@ -615,19 +481,18 @@ class FlyBrain:
         starts = self.row_ptr[spikes]
         lengths = self.row_ptr[spikes + 1] - starts
         total = int(lengths.sum())
-        if self.std_x is not None:                       # short-term depression (Tsodyks-Markram)
-            x = self.std_x[spikes]
-            elapsed = (self.t - self.std_t[spikes]) * self.dt
-            x = 1.0 - (1.0 - x) * np.exp(-elapsed / self.std_tau_ms)     # recovery since last spike
-            self.std_x[spikes] = x * (1.0 - self.std_u)                  # this spike used some resource
-            self.std_t[spikes] = self.t                                  # (booked even for a neuron with no outputs)
         if total == 0:
             return
         # positions of every outgoing connection of every spiking neuron, back to back
         edges = np.repeat(starts - np.cumsum(lengths) + lengths, lengths) + np.arange(total)
         weights = self.w[edges]
-        if self.std_x is not None:
+        if self.std_x is not None:                       # short-term depression (Tsodyks-Markram)
+            x = self.std_x[spikes]
+            elapsed = (self.t - self.std_t[spikes]) * self.dt
+            x = 1.0 - (1.0 - x) * np.exp(-elapsed / self.std_tau_ms)     # recovery since last spike
             weights = weights * np.repeat(x, lengths).astype(np.float32)
+            self.std_x[spikes] = x * (1.0 - self.std_u)                  # this spike used some resource
+            self.std_t[spikes] = self.t
         np.add.at(target, self.post_idx[edges], weights)
 
     def run(self, ms: float, record: bool = False):
@@ -765,8 +630,6 @@ class FlyBrain:
                 "pending": self._pending.copy(), "recent": [r.copy() for r in self._recent],
                 "thr": self.thr.copy(), "std_x": None if self.std_x is None else self.std_x.copy(),
                 "std_t": self.std_t.copy(), "spike_count": self.spike_count.copy(),
-                "rel": self._rel.copy(), "mod_level": self._mod_level.copy(), "mod_gain": self._mod_gain.copy(),
-                "mod_active": self._mod_active,
                 "window_ms": self.window_ms, "total_spikes": self.total_spikes,
                 "quiet": self.quiet, "quiet_since": self._quiet_since,
                 "rng": self.rng.bit_generator.state,
@@ -787,11 +650,6 @@ class FlyBrain:
             self.std_x[:] = snap["std_x"]
         self.std_t[:] = snap["std_t"]
         self.spike_count[:] = snap["spike_count"]
-        if "rel" in snap:
-            self._rel[:] = snap["rel"]
-            self._mod_level[:] = snap["mod_level"]
-            self._mod_gain[:] = snap["mod_gain"]
-            self._mod_active = snap["mod_active"]
         self.window_ms, self.total_spikes = snap["window_ms"], snap["total_spikes"]
         self.quiet, self._quiet_since = snap["quiet"], snap["quiet_since"]
         self.rng.bit_generator.state = snap["rng"]
@@ -812,9 +670,5 @@ class FlyBrain:
                 "std_u": self.std_u, "std_tau_ms": self.std_tau_ms,
                 "noise_hz": self.noise_hz, "noise_mv": self.noise_mv, "noise_spec": self.noise_spec,
                 "threshold_jitter": self.threshold_jitter, "seed": self.seed,
-                "parts": None if self._parts is None else {
-                    "graded_neurons": int(self._graded_idx.size), "modulatory_neurons": int(self._parts.mod_neurons.size),
-                    "modulated_targets": int(self._mod_targets.size),
-                    "modulators": [m.nt for m in self._parts.parts.modulators], "graded_rate_hz": self._parts.parts.graded_rate_hz},
                 "silenced": sorted(self.silenced), "modulated": {k: v[1] for k, v in self.modulated.items()},
                 "plasticity": None if self.plasticity is None else self.plasticity.settings()}

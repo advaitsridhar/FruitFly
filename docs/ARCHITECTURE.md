@@ -11,7 +11,6 @@ virtual_fly/
   experiments.py   validated protocols, seeds, sweeps, lesion scans, JSON export
   genetics.py      gene-expression populations (fru, dsx, transmitter genes), FlyBase links, NeuronBridge lookups
   wiring.py        the genome as a recipe: cell-type wiring rules, grown flies, the rank bottleneck
-  parts.py         the genes as a parts list: slow modulators (DA/OA/5-HT), graded cell types, per-type thresholds
   settings.py      named model profiles (pure / game / brakes)
   cli.py           `python fly_brain.py ...`
   world.py         the arena: food, posts, odour sources and plume puffs, wind, the drum, the female

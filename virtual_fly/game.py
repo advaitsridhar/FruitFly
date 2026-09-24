@@ -31,7 +31,6 @@ from .body import FlyBody, JUMP_TIME
 from .brain import FlyBrain
 from .plasticity import APPROACH_NTS, AVOID_NTS
 from . import genetics
-from . import parts as partslib
 from . import wiring
 from .experiments import survival as survival_report
 from .scenarios import SCENARIOS, ScenarioRunner
@@ -139,7 +138,6 @@ CHECKS = [
     ("silence", "Silence MN9, then offer sugar: it can taste, but can't eat"),
     ("genetics", "Silence the fruitless neurons (Genetics), then add a female: no chase, no song, as in fruitless mutants"),
     ("genome", "Grow a fly from its wiring rules (Genome): same neurons, new wiring; see which reflexes survive"),
-    ("parts", "Switch the parts list on (Genome): modulators become slow tones, the optic lobe's graded cells transmit below threshold; watch the tones"),
 ]
 
 
@@ -253,8 +251,6 @@ class Game:
         self._rules_cache: dict = {}
         self._survival_token = None
         self.genome: dict = {"level": "real", "seed": 0, "growing": None, "survival": None, "wiring": None, "rules": None, "error": None}
-        self.parts_on = brain.parts is not None          # the genes as each neuron's parts list (parts.py)
-        self._parts_counts: dict | None = None
         self.rng = random.Random(seed)
         self.seed = seed
         self.actions: queue.Queue = queue.Queue()
@@ -353,19 +349,10 @@ class Game:
     _BRAIN_KWARGS = ("dt", "gain", "kenyon_gain", "fatigue_mv", "fatigue_ms", "std_u", "std_tau_ms",
                      "noise_hz", "noise_mv", "noise_spec", "threshold_jitter", "seed", "backend")
 
-    def _default_brain_factory(self, conn, **extra):
+    def _default_brain_factory(self, conn):
         from .settings import build_brain
         kw = {k: v for k, v in self.brain.settings().items() if k in self._BRAIN_KWARGS}
-        kw.update(extra)
         return build_brain(conn, self.profile_name, **kw)
-
-    def parts_counts(self) -> dict:
-        """What the parts list finds in this connectome (compiled once; the same whether it is switched on)."""
-        if self.brain.parts is not None:
-            return self.brain.parts.counts
-        if self._parts_counts is None:
-            self._parts_counts = partslib.PartsList().compile(self.real_conn).counts
-        return self._parts_counts
 
     def _start_grow(self, level: str, seed: int):
         self.genome.update(growing={"level": level, "seed": seed, "t0": time.time()}, error=None)
@@ -376,32 +363,13 @@ class Game:
     def _grow_worker(self, level: str, seed: int):
         try:
             conn2, rules = wiring.grow_level(self.real_conn, level, seed, rules_cache=self._rules_cache)
-            brain2 = self.brain_factory(conn2, parts=self.parts_on)
+            brain2 = self.brain_factory(conn2)
             cmp = wiring.compare(self.real_conn, conn2) if conn2 is not self.real_conn else None
             self.actions.put({"type": "_swap_brain", "brain": brain2, "conn": conn2, "level": level, "seed": seed,
-                              "rules": rules.summary() if rules is not None else None, "wiring": cmp,
-                              "parts": self.parts_on, "reason": "grow"})
+                              "rules": rules.summary() if rules is not None else None, "wiring": cmp})
         except Exception as e:                       # a bad level, or out of memory: report, keep the old fly
             self.genome.update(growing=None, error=str(e))
             print("error growing a fly", repr(e))
-
-    def _start_rebuild(self, on: bool):
-        """Rebuild the current fly's brain with the parts list on or off (same wiring), in the background."""
-        self.genome.update(growing={"level": self.genome["level"], "seed": self.genome["seed"], "reason": "parts",
-                                    "parts": on, "t0": time.time()}, error=None)
-        self.events.add(self.t, "genome", f"rebuilding the brain with the parts list {'on' if on else 'off'}")
-        self.say("Giving each neuron its parts…" if on else "Back to identical neurons…", 4.0)
-        threading.Thread(target=self._rebuild_worker, args=(on,), daemon=True).start()
-
-    def _rebuild_worker(self, on: bool):
-        try:
-            brain2 = self.brain_factory(self.conn, parts=on)
-            self.actions.put({"type": "_swap_brain", "brain": brain2, "conn": self.conn, "level": self.genome["level"],
-                              "seed": self.genome["seed"], "rules": self.genome["rules"], "wiring": self.genome["wiring"],
-                              "parts": on, "reason": "parts"})
-        except Exception as e:
-            self.genome.update(growing=None, error=str(e))
-            print("error rebuilding the brain", repr(e))
 
     def _swap_brain(self, a: dict):
         old = self.brain
@@ -426,20 +394,9 @@ class Game:
             self.zaps = []
             self.runaway_s = 0.0
         level, seed = a["level"], a["seed"]
-        self.parts_on = bool(a.get("parts", self.parts_on))
         self.genome.update(level=level, seed=seed, growing=None, wiring=a["wiring"], rules=a["rules"], error=None,
                            survival={"running": True, "results": []})
-        if a.get("reason") == "parts":
-            if self.parts_on:
-                c = self.brain.parts.counts
-                self.events.add(self.t, "genome", f"parts list on: {c['modulatory_neurons']:,} modulatory neurons act through slow "
-                                f"tones on {c['modulated_targets']:,} targets, {c['graded_neurons']:,} cells transmit graded signals")
-                self.say("Each neuron now has its parts. Testing the reflexes…", 4.0)
-                self.done.add("parts")
-            else:
-                self.events.add(self.t, "genome", "parts list off: every neuron is the same machine again")
-                self.say("Every neuron is the same machine again. Testing the reflexes…", 4.0)
-        elif level == "real":
+        if level == "real":
             self.events.add(self.t, "genome", "back to the real wiring")
             self.say("The real wiring is back.", 3.0)
         else:
@@ -455,7 +412,7 @@ class Game:
     def _survival_worker(self, conn, token):
         """Run the validated experiments on a private copy of the grown brain (the game keeps going)."""
         try:
-            brain = self.brain_factory(conn, parts=self.parts_on)
+            brain = self.brain_factory(conn)
 
             def progress(rows):
                 if self._survival_token is token:
@@ -473,7 +430,6 @@ class Game:
         g = dict(self.genome)
         if g["growing"]:
             g["growing"] = {**g["growing"], "secs": round(time.time() - g["growing"]["t0"], 1)}
-        g["parts"] = {"on": self.parts_on, "status": self.brain.parts_status()}
         return g
 
     def say(self, text: str, secs: float = 3.0):
@@ -521,15 +477,6 @@ class Game:
             except (TypeError, ValueError):
                 return {"ok": False, "error": "seed must be a whole number"}
             self.genome.update(growing={"level": level, "seed": a["seed"], "t0": time.time()}, error=None)   # claimed now, one at a time
-        if kind == "parts":
-            if not isinstance(a.get("on"), bool):
-                return {"ok": False, "error": "'on' must be true or false"}
-            if self.genome["growing"]:
-                return {"ok": False, "error": "the brain is being rebuilt; wait for it"}
-            if a["on"] == self.parts_on:
-                return {"ok": False, "error": f"the parts list is already {'on' if a['on'] else 'off'}"}
-            self.genome.update(growing={"level": self.genome["level"], "seed": self.genome["seed"], "reason": "parts",
-                                        "parts": a["on"], "t0": time.time()}, error=None)                 # claimed now
         if kind == "_swap_brain":
             return {"ok": False, "error": "internal"}
         self.actions.put(a)
@@ -686,8 +633,6 @@ class Game:
                 self.events.add(self.t, "system", f"recording stopped ({len(self.recording or [])} frames)")
         elif kind == "grow":
             self._start_grow(a["level"], a["seed"])
-        elif kind == "parts":
-            self._start_rebuild(a["on"])
         elif kind == "_swap_brain":
             self._swap_brain(a)
         elif kind == "state":
@@ -1132,7 +1077,6 @@ class Game:
             "genetics": self.genetics,
             "genome": {"levels": [{"level": lv, "label": lb} for lv, lb in wiring.LEVELS],
                        "rules": {"type_groups": None}},
-            "parts": {"tables": partslib.PartsList().describe(), "counts": self.parts_counts()},
             "settings": self.brain.settings(),
             "decoder": self.decoder.dn_targets,
             "columnar_vision": self.columnar_on,
@@ -1154,7 +1098,6 @@ class Game:
                 "Wide-field motion → T4/T5 (driven column by column from the retina) → HS cells → DNa02 and DNp15 on the same side: the optomotor reflex.",
                 "Which neurons express fruitless and doublesex, and which are male-specific or dimorphic: the MaleCNS annotation, read from the data. Silencing the fruitless neurons stops the song (pIP10 and its route to the wing motor neurons are fru+) and leaves feeding and escape alone.",
                 "A grown fly (Genome card) keeps the connectome's cell-type wiring rules and nothing else: 9 of the 11 validated reflexes survive on type-level rules, none on class-level rules.",
-                "The parts list (Genome card): which neurons make dopamine, octopamine or serotonin is the MaleCNS transmitter prediction; that these act only through slow receptors, and that photoreceptors, L1-L5, the medulla inputs to T4/T5, T4/T5 and HS/VS signal without spikes, is the literature (parts.py cites it).",
             ],
             "hand_built": [
                 "The retina (which facet sees what) and the feature computations that turn retinal images into LC4/LPLC2/LC10a/T4/T5 rates.",
@@ -1170,7 +1113,7 @@ class Game:
             ],
             "not_modelled": [
                 "Real neuron shapes and individual properties, hormones, electrical synapses, most neuromodulation, development.",
-                "Genes beyond two transcription factors' expression labels and the transmitter each neuron makes. With the parts list on, three transmitters act slowly and five cell-type groups signal without spikes; still no ion-channel differences, no receptor identity per target (so one net sign per modulator), no peptides, no development from the genome.",
+                "Genes beyond two transcription factors' expression labels and the transmitter each neuron makes: no ion-channel or receptor differences between cell types, no development from the genome.",
                 "Absolute firing rates shouldn't be trusted, only which neurons respond. Nothing here is conscious.",
             ],
         }

@@ -228,10 +228,6 @@ aside { display: flex; flex-direction: column; gap: 10px; min-height: 0; overflo
 
 /* genome */
 #genomeLevel { max-width: 150px; }
-.partsbox { margin-top: 6px; }
-.tones { display: grid; grid-template-columns: 78px 1fr 40px; gap: 3px 8px; align-items: center; font-size: 11px; margin-top: 6px; }
-.tones .lbl { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.tones .n { color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; }
 .survival { display: flex; flex-direction: column; gap: 3px; font-size: 12px; margin-top: 6px; }
 .survival:empty { display: none; }
 .survival .head { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .6px; margin-top: 4px; display: flex; justify-content: space-between; }
