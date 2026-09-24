@@ -240,7 +240,7 @@ let drumDrag = false;
   const cnt = $("stripesCount"), sp = $("drumSpeed"); let t = 0;
   const send = (now) => { hold("drum"); const a = { type: "stripes", count: parseInt(cnt.value), drum_speed: parseFloat(sp.value) }; clearTimeout(t); if (now) post(a); else t = setTimeout(() => post(a), 60); };
   const label = () => setText($("drumVal"), Math.abs(parseFloat(sp.value)) < 0.05 ? "still" : `${fmt(parseFloat(sp.value), 1)} rad/s`);
-  cnt.onchange = () => { if (parseInt(cnt.value) > 0 && Math.abs(parseFloat(sp.value)) < 0.05) { sp.value = 1; label(); } send(true); };
+  cnt.onchange = () => { if (parseInt(cnt.value) > 0 && Math.abs(parseFloat(sp.value)) < 0.05) { sp.value = 1; label(); } send(true); cnt.blur(); };
   sp.addEventListener("pointerdown", () => (drumDrag = true));
   sp.addEventListener("input", () => { if (parseInt(cnt.value) === 0 && Math.abs(parseFloat(sp.value)) >= 0.05) cnt.value = "16"; label(); send(false); });
   sp.addEventListener("change", () => { drumDrag = false; send(true); });

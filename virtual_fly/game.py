@@ -268,6 +268,10 @@ class Game:
         self.user_silenced: set[str] = set()
         self.user_modulated: dict[str, float] = {}
         self.has_soma = ~np.isnan(self.conn.soma[:, 0])
+        # build the input index and the cell-type graph now (a second or two), so that the first
+        # pathway trace or neuron lookup from the browser does not stall behind the game loop
+        self.conn.col_ptr
+        self.conn.type_graph()
         self.layout_json = self._make_layout()
         self.state_json = b"{}"
         self.state_dict: dict = {}
