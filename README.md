@@ -183,10 +183,12 @@ Scanning hundreds of sensory cell types on the real connectome (the experiments 
 ## 5. Things to try
 
 **Make room for the fly.** The **Panels** menu in the header hides the side panels altogether
-(keyboard `H`, so the dish takes the whole width), or ticks exactly the panels you want. Every
-panel can be dragged by its title: up or down to reorder the sidebar, or out over the dish to
-float it anywhere on the screen (the ⧉ button does the same; ⇤ docks it again, × hides it). The
-arrangement is remembered by your browser; "Reset the layout" puts everything back. The mouse
+(keyboard `H`: the dish takes the whole width, and the toolbar rows stop wrapping so it grows
+taller too), or ticks exactly the panels you want. Every panel can be dragged by its title, with
+the mouse or a finger: up or down to reorder the sidebar, or out of the sidebar to float it
+anywhere on the screen (hover a title for its buttons: ⧉ pops it out over the dish, ⇤ docks it
+again, × hides it; ▲ ▼ in the menu reorder by keyboard). The arrangement is remembered by your
+browser; "Reset the layout" puts everything back. Zoom is what uses the extra width: the mouse
 wheel over the dish, the 🔍 button or `+` / `−` zoom in on the fly (the view follows it).
 
 **In the game** there is a checklist: feed it, offer bitter food, lure it, scare it, dust it, watch

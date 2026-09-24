@@ -32,19 +32,30 @@ aside { display: flex; flex-direction: column; gap: 10px; min-height: 0; overflo
 body.nosidebar main { grid-template-columns: minmax(0, 1fr); }
 body.nosidebar aside { display: none; }
 .card { position: relative; }
-.card > h2 { position: relative; cursor: grab; user-select: none; -webkit-user-select: none; }
-/* the hide / pop-out buttons appear when the pointer is over the card (always on a floating one), so a
-   docked card's title keeps its full width */
-.card > h2 .pctl { position: absolute; right: -6px; top: -4px; display: flex; gap: 1px; cursor: default; background: var(--panel); border-radius: 4px; padding-left: 4px; opacity: 0; transition: opacity .12s; }
-.card:hover > h2 .pctl, .card.floating > h2 .pctl, .card.dragging > h2 .pctl { opacity: 1; }
-.card.floating > h2 { padding-right: 40px; }
-.pctl button { background: none; border: 0; color: var(--muted); cursor: pointer; font-size: 13px; line-height: 1; padding: 3px 4px; border-radius: 4px; }
+.card > h2 { position: relative; cursor: grab; user-select: none; -webkit-user-select: none; touch-action: none; }
+.card > h2 > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* the hide / pop-out buttons sit in the title row after its last element (never on top of it), and show
+   when the pointer is over the card, always on a floating card, and always without a pointer (touch) */
+.card > h2 .pctl { display: flex; flex: 0 0 auto; gap: 0; margin-left: 6px; cursor: default; visibility: hidden; }
+.card > h2 > :nth-child(2) { margin-left: auto; }
+.card:hover > h2 .pctl, .card.floating > h2 .pctl, .card.dragging > h2 .pctl, .card > h2 .pctl:focus-within { visibility: visible; }
+@media (hover: none) { .card > h2 .pctl { visibility: visible; } }
+.pctl button { background: none; border: 0; color: var(--muted); cursor: pointer; font-size: 14px; line-height: 1; padding: 0 3px; border-radius: 4px; touch-action: auto; }
 .pctl button:hover { background: var(--panel2); color: var(--ink); }
 .card.dragging { opacity: .9; box-shadow: 0 10px 30px rgba(0,0,0,.55); border-color: var(--accent); }
 .card.floating { position: fixed; z-index: 30; width: 400px; min-width: 260px; min-height: 60px; max-width: calc(100vw - 16px); max-height: calc(100vh - 16px);
   overflow: auto; resize: both; box-shadow: 0 14px 40px rgba(0,0,0,.6); border-color: #2c3e57; scrollbar-width: thin; }
+/* a tall floating card scrolls inside, with its title (the handle and its buttons) pinned at the top */
+.card.floating > h2 { position: sticky; top: -10px; margin: -10px -12px 8px; padding: 10px 12px 6px; background: var(--panel); z-index: 1; }
+.linkbtn.dim { border-style: dashed; }
+.menu .prow { display: flex; align-items: center; }
+.menu .prow label { flex: 1; }
+.menu .mv { background: none; border: 0; color: var(--muted); cursor: pointer; font-size: 9px; padding: 2px 4px; border-radius: 4px; }
+.menu .mv:hover { color: var(--ink); background: var(--panel2); }
+/* without the sidebar the toolbar rows stop wrapping and the hint goes, so the dish gets the height too */
+body.nosidebar .toolbar, body.nosidebar .controls { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: thin; }
+body.nosidebar .hint { display: none; }
 body.dragging, body.dragging * { cursor: grabbing !important; }
-.linkbtn.dim { color: var(--muted); }
 .menu.right { left: auto; right: 0; }
 .menu label { display: flex; gap: 8px; align-items: center; padding: 4px 8px; cursor: pointer; white-space: nowrap; font-size: 13px; border-radius: 6px; }
 .menu label:hover { background: var(--panel2); }
@@ -85,7 +96,7 @@ body.dragging, body.dragging * { cursor: grabbing !important; }
 .mini:hover { color: var(--ink); border-color: var(--accent); }
 .mini.on { color: var(--ink); border-color: var(--accent); background: #10261f; }
 .menuwrap { position: relative; }
-.menu { position: absolute; top: 100%; left: 0; z-index: 5; margin-top: 4px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 4px; display: flex; flex-direction: column; min-width: 130px; box-shadow: 0 8px 24px rgba(0,0,0,.5); }
+.menu { position: absolute; top: 100%; left: 0; z-index: 1000; margin-top: 4px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 4px; display: flex; flex-direction: column; min-width: 130px; box-shadow: 0 8px 24px rgba(0,0,0,.5); }
 .menu button { background: none; border: none; text-align: left; padding: 6px 10px; border-radius: 6px; cursor: pointer; }
 .menu button:hover { background: var(--panel2); }
 
@@ -283,7 +294,8 @@ body.dragging, body.dragging * { cursor: grabbing !important; }
 
 /* events */
 .events { list-style: none; margin: 0; padding: 0; height: 190px; overflow-y: auto; overflow-anchor: none; font-size: 12px; display: flex; flex-direction: column; gap: 2px; scrollbar-width: thin; }
-.events li { display: grid; grid-template-columns: 8px 44px 1fr; gap: 6px; align-items: baseline; }
+.events li { display: grid; grid-template-columns: 8px 56px 1fr; gap: 6px; align-items: baseline; }
+.events li .t { white-space: nowrap; }
 .events li i { width: 7px; height: 7px; border-radius: 50%; display: inline-block; background: var(--muted); position: relative; top: -1px; }
 .events li .t { color: var(--muted); font-variant-numeric: tabular-nums; }
 .events li.sense i { background: var(--accent); } .events li.world i { background: #5b8cff; } .events li.learning i { background: var(--green); }
@@ -308,7 +320,7 @@ dialog li { margin: 3px 0; }
 dialog .close { float: right; }
 .keys td { padding: 3px 10px 3px 0; vertical-align: top; }
 kbd { border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; background: var(--panel2); font: 12px ui-monospace, monospace; }
-.overlay { position: fixed; inset: 0; background: rgba(5,8,12,.85); display: grid; place-items: center; z-index: 10; text-align: center; }
+.overlay { position: fixed; inset: 0; background: rgba(5,8,12,.85); display: grid; place-items: center; z-index: 2000; text-align: center; }
 .overlay div { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 20px 26px; max-width: 460px; }
 .overlay h3 { margin: 0 0 8px; }
 .overlay p { margin: 0; color: var(--muted); }

@@ -14,7 +14,7 @@ let S = null, Sprev = null, Stime = 0, Sgap = 25, lastSeq = 0, lastStateAt = 0, 
 let tool = "lure", odourFood = "", pointer = null, lastSent = 0, sees = false;
 let arena = null, brain = null, retina = null, layout = null;
 const panels = {};
-const ZOOMS = [1, 1.5, 2, 3];
+const ZOOMS = [1, 1.5, 2, 3, 4];
 let toolOrder = ["lure", "hand", "sugar", "bitter", "water", "dust", "shock", "post"];
 const HINTS = {
   lure: "Wiggle the lure slowly beside the fly: it turns toward small moving things (a courtship-chase circuit).",
@@ -220,9 +220,15 @@ function setZoom(z) {
 function zoomStep(dir) {
   if (!arena) return;
   const z = arena.zoom, next = dir > 0 ? ZOOMS.find((v) => v > z + 1e-6) : [...ZOOMS].reverse().find((v) => v < z - 1e-6);
-  setZoom(next == null ? (dir > 0 ? ZOOMS[ZOOMS.length - 1] : ZOOMS[0]) : next);
+  setZoom(next == null ? z : next);                     // already past the last step: stay there
 }
-arenaEl.addEventListener("wheel", (e) => { if (!arena) return; e.preventDefault(); setZoom(arena.zoom * (e.deltaY < 0 ? 1.12 : 1 / 1.12)); }, { passive: false });
+// the wheel is claimed only when it changes the zoom, so a horizontal swipe or scrolling at 1x keeps working
+arenaEl.addEventListener("wheel", (e) => {
+  if (!arena || !e.deltaY) return;
+  const z = Math.max(1, Math.min(4, arena.zoom * (e.deltaY < 0 ? 1.12 : 1 / 1.12)));
+  if (z === arena.zoom) return;
+  e.preventDefault(); setZoom(z);
+}, { passive: false });
 $("zoomBtn").onclick = () => { if (!arena) return; const z = arena.zoom, i = ZOOMS.findIndex((v) => v > z + 1e-6); setZoom(i < 0 ? 1 : ZOOMS[i]); };
 arenaEl.addEventListener("pointerdown", (e) => {
   if (!arena) return;
@@ -369,7 +375,9 @@ $("keysBtn").onclick = () => $("keysDlg").showModal();
 document.querySelectorAll("[data-close]").forEach((b) => (b.onclick = () => b.closest("dialog").close()));
 window.addEventListener("keydown", (e) => {
   const tag = e.target.tagName;
-  if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA" || e.ctrlKey || e.metaKey) return;
+  const typing = (tag === "INPUT" && !/^(checkbox|radio|range|button)$/.test(e.target.type)) || tag === "SELECT" || tag === "TEXTAREA";
+  if (typing || e.ctrlKey || e.metaKey) return;
+  if (e.key === " " && e.target.closest("button, a, input, select, summary, [role=button]")) return;   // Space activates a focused control
   if (!L) return;
   if (/^[0-9]$/.test(e.key)) { const k = e.key === "0" ? 9 : parseInt(e.key) - 1; if (toolOrder[k]) setTool(toolOrder[k]); return; }
   switch (e.key) {
