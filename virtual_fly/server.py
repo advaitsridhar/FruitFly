@@ -15,6 +15,9 @@ engine, a notebook, a robot) can drive the fly:
     GET  /api/trace?from=LC10a/L&to=DNa02/L&hops=4   strongest wiring routes
     GET  /api/history?keys=MN9,GF     rate histories of readouts (one value per tick)
     GET  /api/learning                per-MBON synaptic strengths and dopamine
+    GET  /api/genes                   the gene-expression populations, transmitter groups, FlyBase links
+    GET  /api/lines?spec=pIP10        driver lines matching a population (NeuronBridge; needs internet)
+    GET  /api/driver?line=SS02385     MaleCNS neurons a driver line labels (NeuronBridge; needs internet)
     GET  /api/recording               the recorded session (JSON), if recording
     GET  /api/spikes                  the recorded spikes (npz) when recording with spikes
 """
@@ -34,6 +37,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import numpy as np
+
+from . import genetics
 
 from .pathways import relay_ranking, strongest_partners, trace
 
@@ -107,6 +112,7 @@ def make_handler(game):
                     info["rate_hz"] = float(game.brain.spike_count[i]) / max(game.brain.window_ms, 1) * 1000.0
                     info["inputs"] = conn.inputs_of(f"index:{i}", top=8)
                     info["outputs"] = conn.outputs_of(f"index:{i}", top=8)
+                    info["genes"] = genetics.genes_of(conn, i)
                     return self._json({"ok": True, "neuron": info})
                 if path == "/api/partners":
                     spec = get("spec", "")
@@ -151,6 +157,29 @@ def make_handler(game):
                         return self._json({"ok": True, "learning": None})
                     return self._json({"ok": True, "learning": pl.summary(conn), "settings": pl.settings(),
                                        "depressed_fraction": pl.depressed_fraction()})
+                if path == "/api/genes":
+                    return self._json({"ok": True, **game.genetics})
+                if path == "/api/lines":
+                    spec = get("spec", "").strip()
+                    if not spec:
+                        return self._error("spec is required")
+                    try:
+                        n = max(1, min(8, int(get("n", "4"))))
+                        return self._json({"ok": True, **game.neuronbridge.lines_for(conn, spec, max_neurons=n)})
+                    except ValueError as e:
+                        return self._error(str(e))
+                    except genetics.NeuronBridgeError as e:
+                        return self._error(str(e), 502)
+                if path == "/api/driver":
+                    line = get("line", "").strip()
+                    if not line:
+                        return self._error("line is required")
+                    try:
+                        return self._json({"ok": True, **game.neuronbridge.neurons_for_line(conn, line)})
+                    except ValueError as e:
+                        return self._error(str(e))
+                    except genetics.NeuronBridgeError as e:
+                        return self._error(str(e), 502)
                 if path == "/api/decoder":
                     return self._json({"ok": True, "targets": game.decoder.dn_targets})
                 if path == "/api/recording":

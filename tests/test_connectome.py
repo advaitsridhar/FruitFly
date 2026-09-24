@@ -49,10 +49,13 @@ def test_rejects_non_flyb_and_wrong_version(tmp_path):
     ("MN9", 2), ("prefix:LC1", 28), ("prefix:LC10", 20), ("contains:C10", 20), ("regex:^LC1[01]", 28),
     ("class:Kenyon_Cell", 60), ("superclass:descending_neuron", lambda c: (c.superclass == "descending_neuron").sum()),
     ("nt:gaba", lambda c: (c.nt == "gaba").sum()), ("subclass:wind_gravity", 24), ("nerve:ADMN", 12),
-    ("neuromere:T2", lambda c: (c.neuromere == "T2").sum()), ("dimorphism:sexually dimorphic", 10), ("frudsx:fru", 10),
+    ("neuromere:T2", lambda c: (c.neuromere == "T2").sum()), ("dimorphism:sexually dimorphic", 2), ("frudsx:fru_high", 2),
     ("LB3b,LB3c", 20), ("MN9/L", 1), ("GNG_M1/M", 2), ("prefix:LC10/R", 10), ("class:DAN/L", 6),
     ("class:Kenyon_Cell&subclass:gamma", 40), ("class:Kenyon_Cell&nt:gaba", 0), ("superclass:sensory&nerve:AN/L", lambda c: ((c.superclass == "sensory") & (c.nerve == "AN") & (c.side == "L")).sum()),
     ("prefix:LC1,!LC10a", 8), ("class:MBON,!nt:glutamate", 6), ("!MN9", 0), ("all", None), ("", 0), (" MN9 , , LB3b ", 12),
+    ("gene:fru", 30), ("gene:dsx", 10), ("gene:both", 8), ("gene:fru_high", 2), ("gene:fruitless&class:descending", 2),
+    ("gene:VGlut", lambda c: (c.nt == "glutamate").sum()), ("gene:gad1", lambda c: (c.nt == "gaba").sum()),
+    ("dimorphism:male", 10), ("dimorphism:dimorphic", 2), ("dimorphism:any", 12), ("dimorphism:male-specific", 10),
 ])
 def test_select_specs(conn, spec, expected):
     idx = conn.select(spec)
@@ -92,6 +95,11 @@ def test_select_accepts_arrays_and_iterables(conn):
     assert conn.select(arr) is arr or np.array_equal(conn.select(arr), arr)
     assert conn.select([5, 6]).tolist() == [5, 6]
     assert conn.select(range(3)).tolist() == [0, 1, 2]
+
+
+def test_unknown_gene_raises(conn):
+    with pytest.raises(ValueError, match="unknown gene"):
+        conn.select("gene:notagene")
 
 
 def test_select_unknown_filter_raises(conn):

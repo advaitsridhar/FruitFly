@@ -207,6 +207,25 @@ aside { display: flex; flex-direction: column; gap: 10px; min-height: 0; overflo
 .silenced button { background: none; border: none; color: inherit; cursor: pointer; padding: 0 0 0 4px; }
 .links a { font-size: 12.5px; }
 
+/* genetics */
+.genes { display: grid; grid-template-columns: 1fr auto; gap: 4px 8px; font-size: 12.5px; align-items: center; margin-top: 6px; }
+.genes .g { display: flex; flex-direction: column; min-width: 0; }
+.genes .g b { font-weight: 600; }
+.genes .g small { color: var(--muted); font-size: 11px; }
+.genes .g a { color: var(--accent); text-decoration: none; font-size: 11px; margin-left: 4px; }
+.genes .acts { display: flex; gap: 4px; }
+.genes .acts button { background: none; border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; font-size: 11.5px; cursor: pointer; color: var(--muted); }
+.genes .acts button:hover { color: var(--ink); border-color: var(--accent); }
+.genes .acts button.on { color: #ffb3b3; border-color: #5a3b3b; }
+.gtag { display: inline-block; border: 1px solid #4b3f6b; color: #d2c2ff; border-radius: 4px; padding: 0 4px; font-size: 9.5px; line-height: 13px; margin-left: 4px; vertical-align: middle; }
+.nbresults { font-size: 12px; display: flex; flex-direction: column; gap: 3px; }
+.nbresults:empty { display: none; }
+.nbresults .nb { display: grid; grid-template-columns: 1fr auto; gap: 6px; align-items: center; border: 1px solid var(--line); border-radius: 6px; padding: 3px 7px; }
+.nbresults .nb small { color: var(--muted); }
+.nbresults .nb .sc { color: var(--muted); font-variant-numeric: tabular-nums; }
+.nbresults .nbhead { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 4px; }
+.nbresults .nbhead .btn { padding: 2px 8px; font-size: 12px; }
+
 /* pathways */
 .paths { display: flex; flex-direction: column; gap: 5px; }
 .path { border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px; cursor: pointer; font-size: 12px; }

@@ -30,6 +30,7 @@ import numpy as np
 from .body import FlyBody, JUMP_TIME
 from .brain import FlyBrain
 from .plasticity import APPROACH_NTS, AVOID_NTS
+from . import genetics
 from .scenarios import SCENARIOS, ScenarioRunner
 from .senses.mechano import Antennae, Bristles
 from .senses.olfaction import ODOURS, Nose
@@ -133,6 +134,7 @@ CHECKS = [
     ("optomotor", "Paint stripes on the wall and spin them → T4/T5 → HS → the fly turns with them"),
     ("moonwalk", "Zap MDN → it walks backward"),
     ("silence", "Silence MN9, then offer sugar: it can taste, but can't eat"),
+    ("genetics", "Silence the fruitless neurons (Genetics), then add a female: no chase, no song, as in fruitless mutants"),
 ]
 
 
@@ -261,8 +263,12 @@ class Game:
         self.scenario = ScenarioRunner(self)
         self.readouts = {r[0]: self.conn.select(r[1]) for r in READOUTS}
         self.readouts.update({k: self.conn.select(v) for k, v in HIDDEN_READOUTS.items()})
-        self.readout_meta = [{"key": r[0], "spec": r[1], "label": r[2], "group": r[3], "max": r[4], "colour": r[5]}
+        c = self.conn
+        self.readout_meta = [{"key": r[0], "spec": r[1], "label": r[2], "group": r[3], "max": r[4], "colour": r[5],
+                              "genes": genetics.genotype(c, c.select(r[1]))["tags"]}
                              for r in READOUTS]
+        self.genetics = genetics.summary(c, self.readout_meta)
+        self.neuronbridge = genetics.NeuronBridge()
         self.custom_readouts: dict[str, str] = {}
         for r in READOUTS:
             self.brain.add_monitor(r[0], r[1], bin_ms=TICK_MS)
@@ -421,6 +427,8 @@ class Game:
                 n = self.brain.silence(a["spec"])
             self.user_silenced.add(a["spec"])
             self.done.add("silence")
+            if a["spec"].startswith(("gene:", "dimorphism:")):
+                self.done.add("genetics")
             self.say(f"Silenced {a['spec']} ({n} neurons): they still fire, but nothing hears them.", 3.0)
             self.events.add(self.t, "lab", f"silenced {a['spec']} ({n} neurons)")
         elif kind == "unsilence":
@@ -952,6 +960,7 @@ class Game:
             "scenarios": [{"id": k, "name": s.name, "description": s.description} for k, s in SCENARIOS.items()],
             "retina": self.retina.layout(),
             "profile": self.profile_name,
+            "genetics": self.genetics,
             "settings": self.brain.settings(),
             "decoder": self.decoder.dn_targets,
             "columnar_vision": self.columnar_on,
@@ -971,6 +980,7 @@ class Game:
                 "pC1 courtship neurons → pIP10 → wing motor neurons (song), and → DNp13; a female seen as a small moving object → LC10a → DNa02 (the chase).",
                 "A loud sound → Johnston's organ A/B neurons → the giant fibre (a startle jump), and wind on the antennae → grooming and backing neurons.",
                 "Wide-field motion → T4/T5 (driven column by column from the retina) → HS cells → DNa02 and DNp15 on the same side: the optomotor reflex.",
+                "Which neurons express fruitless and doublesex, and which are male-specific or dimorphic: the MaleCNS annotation, read from the data. Silencing the fruitless neurons stops the song (pIP10 and its route to the wing motor neurons are fru+) and leaves feeding and escape alone.",
             ],
             "hand_built": [
                 "The retina (which facet sees what) and the feature computations that turn retinal images into LC4/LPLC2/LC10a/T4/T5 rates.",
@@ -986,6 +996,7 @@ class Game:
             ],
             "not_modelled": [
                 "Real neuron shapes and individual properties, hormones, electrical synapses, most neuromodulation, development.",
+                "Genes beyond two transcription factors' expression labels and the transmitter each neuron makes: no ion-channel or receptor differences between cell types, no development from the genome.",
                 "Absolute firing rates shouldn't be trusted, only which neurons respond. Nothing here is conscious.",
             ],
         }

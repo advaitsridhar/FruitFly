@@ -943,6 +943,70 @@ measured from anything.
 
 ---
 
+### 6.6 Genetics: fruitless, doublesex, and the driver lines (v2.2)
+
+The genome cannot be loaded into the model; what can is gene expression per cell type, and the
+MaleCNS v1.0 file carries two kinds of it. The team registered light-microscopy images of
+*fruitless* and *doublesex* expression to the EM volume and marked matching neurons as expressing
+the gene with high or low confidence, and compared every cell type with a female connectome to
+label male-specific and sexually dimorphic neurons (Sexual dimorphism in the complete Drosophila
+male CNS connectome, Cell 2026). The counts in the kit's file match the paper exactly:
+
+| label | neurons | cell types |
+|---|---|---|
+| *fru* (high 2,611 + low 1,989 + both 258) | 4,858 | 870 |
+| *dsx* (high 138 + low 16 + both 258) | 412 | 119 |
+| both | 258 | |
+| male-specific (incl. potentially) | 1,420 | |
+| sexually dimorphic (incl. potentially) | 948 | |
+
+The transmitter of every neuron (acetylcholine 59.9 % of synapses, GABA 21.3 %, glutamate 16.1 %,
+histamine, serotonin, octopamine, dopamine; 10,900 neurons "unclear", counted excitatory) was
+predicted from synapse appearance; making a transmitter is the work of a few genes (ChAT/VAChT,
+Gad1/VGAT, VGlut, Hdc, Trh/SerT, ple/DAT, Tdc2/Tbh), which `genetics.py` names and links to
+FlyBase, because they are the genes the model's one physiological rule rests on.
+
+**What the courtship circuit expresses.** Every pIP10 song neuron is *fru*+ and male-specific,
+all 148 pC1 command neurons are *dsx*+ (88 also *fru*+) and male-specific, all 275 LC10a chase
+neurons are *fru*+, and 78 % of the PAM dopamine neurons carry a low-confidence *fru* label; MN9,
+the giant fibre, MDN, the Kenyon cells and PPL1 carry no label. So the classic result that
+*fruitless* males do not court can be run as a prediction. Measured in the game profile (seeds 0
+and 1; pC1 driven at 60 Hz for 500 ms; `gene:fru` = all 4,858 neurons' output blocked):
+
+| readout | intact | *fru* neurons silenced | *dsx* neurons silenced |
+|---|---|---|---|
+| pC1 | 63 Hz | 62 | 60 |
+| pIP10 | 79 | 45 (fires, output blocked) | 0 |
+| ps1 song motor neurons | 61 | 0 | 0 |
+| hg1/hg2 song motor neurons | 57 | 0 | 0 |
+| DLMn wing power motor neurons | 22 | 0 | 0 |
+| sugar → MN9 (control) | 27 | 34 | |
+| looming → DNp01 / TTMn (control) | 292 / 60 | 286 / 53 | |
+| vinegar → MBON14 (control) | 54 | 52 | |
+
+These are the five `GENETIC` experiments in `experiments.py` (ranges set from these numbers). In
+the game, silencing `gene:fru` also removes the chase, because LC10a is *fru*+, which matches the
+mutant phenotype (no courtship at all); the decoder only reads neurons whose output is not blocked.
+
+**Driver lines.** NeuronBridge (Janelia) matches expression images of split-GAL4 and GAL4 lines to
+EM neurons by colour-depth search, and its public data covers the MaleCNS brain and nerve cord
+(libraries `FlyEM_Male_CNS_Brain_v0.9` and `_VNC_v0.9`). Checked against the kit's v1.0 file for
+DNp01, pIP10, LC10a, MBON01, MDN, DNa02 and PAM01: the same body IDs exist with the same cell-type
+names (7 of 7; T4a has no entry, as optic-lobe intrinsic types are not in the colour-depth
+libraries). `genetics.NeuronBridge` fetches, for a population, the lines that match a sample of its
+neurons (each match file lists ~1,600 line images with scores; lines matching several of the
+sampled neurons rank first, split-GAL4 lines are flagged as the clean ones), and for a line the
+MaleCNS neurons its best images match, with NeuronBridge's cell-type name next to the kit's so a
+version difference is visible. Everything is cached on disk; without internet the lookups fail with
+one message and the rest of the kit is unaffected.
+
+**What this is not.** Two transcription factors and a transmitter identity are all the genes this
+data can speak for. Per-cell-type ion channels, receptors (which would fix the sign of the
+"unclear" neurons and the cases where glutamate excites) and neuromodulator receptors would need
+single-cell expression atlases matched to these cell types, which is mature only for the visual
+system, the olfactory projection neurons and the mushroom body; that is the next level, and it
+would ship as a separate profile judged by the validated experiments.
+
 ## 7. Honest limitations
 
 The starter kit's list, extended. These are the things a neuroscientist would point at first.

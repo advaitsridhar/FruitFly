@@ -69,7 +69,8 @@ export class KeyNeurons {
   addRow(r, custom) {
     const name = el("div", "name");
     const shown = custom ? r.key : r.key.replace(/(L|R)$/, " $1").replace(/^GF$/, "DNp01");
-    name.innerHTML = `<span>${esc(shown)} <small>${esc(r.label)}</small></span>` + (custom ? `<button title="stop watching">✕</button>` : "");
+    const tags = (r.genes || []).map((g) => `<span class="gtag" title="${g === "♂" ? "male-specific" : g === "♂♀" ? "sexually dimorphic" : "expresses " + g}">${esc(g)}</span>`).join("");
+    name.innerHTML = `<span>${esc(shown)} <small>${esc(r.label)}</small>${tags}</span>` + (custom ? `<button title="stop watching">✕</button>` : "");
     name.title = `${r.key}: ${r.spec}`;
     if (custom) name.querySelector("button").onclick = () => post({ type: "unwatch", key: r.key });
     const bar = el("div", "bar"), fill = document.createElement("div"); fill.style.background = r.colour; bar.appendChild(fill);
@@ -357,6 +358,97 @@ export class PathwayPanel {
     this.brain.pathNames = r.paths[i].nodes;
     this.brain.setPath(r.neurons[i]);
     this.brain.setView(true);
+  }
+}
+
+// ================================================================= 8b. Genetics
+export class GeneticsPanel {
+  constructor(L, lab) {
+    this.lab = lab; this.G = L.genetics || {}; this.buttons = {};
+    const rows = $("geneRows"); rows.innerHTML = "";
+    for (const g of this.G.expression || []) {
+      const info = el("div", "g");
+      const link = g.flybase ? `<a href="${g.flybase}" target="_blank" rel="noopener" title="FlyBase gene report">FlyBase ↗</a>` : "";
+      info.innerHTML = `<span><b>${esc(g.label)}</b>${link}</span><small>${g.n.toLocaleString()} neurons in ${g.types.toLocaleString()} types` +
+        (g.high != null ? ` · ${g.high.toLocaleString()} high confidence` : "") + ` · <code>${esc(g.spec)}</code></small>`;
+      rows.append(info, this.actions(g.spec, true));
+    }
+    const nt = $("ntRows"); nt.innerHTML = "";
+    for (const t of this.G.transmitters || []) {
+      const info = el("div", "g");
+      const genes = t.genes.map((x) => `<a href="${x.flybase}" target="_blank" rel="noopener" title="FlyBase gene report">${esc(x.symbol)} ↗</a>`).join("");
+      info.innerHTML = `<span><b>${esc(t.nt)}</b> <span class="${t.sign > 0 ? "pos" : "neg"}" style="color:${t.sign > 0 ? "var(--green)" : "var(--orange)"}">${t.sign > 0 ? "excites" : "inhibits"}</span>${genes}</span>` +
+        `<small>${t.n.toLocaleString()} neurons · ${(100 * t.synapse_share).toFixed(1)} % of synapses · <code>${esc(t.spec)}</code></small>`;
+      nt.append(info, this.actions(t.spec, false));
+    }
+    setText($("geneSource"), (this.G.source || "") + (this.G.unclear ? ` ${this.G.unclear.toLocaleString()} neurons have no confident transmitter prediction and count as excitatory.` : ""));
+    $("lineBtn").onclick = () => this.neuronsOfLine();
+    $("lineName").addEventListener("keydown", (e) => { if (e.key === "Enter") this.neuronsOfLine(); });
+    $("linesBtn").onclick = () => this.linesFor();
+    $("linesSpec").addEventListener("keydown", (e) => { if (e.key === "Enter") this.linesFor(); });
+  }
+  actions(spec, activatable) {
+    const box = el("div", "acts");
+    const sil = el("button", "", "silence"); sil.title = `Block the output of ${spec} (like tetanus toxin under a driver)`;
+    sil.onclick = () => (sil.classList.contains("on") ? post({ type: "unsilence", spec }) : post({ type: "silence", spec }));
+    box.appendChild(sil); this.buttons[spec] = sil;
+    if (activatable) {
+      const zap = el("button", "", "activate"); zap.title = `Make ${spec} fire at 30 spikes/s for 2 s (like CsChrimson under a driver)`;
+      zap.onclick = async () => { const r = await post({ type: "zap", spec, hz: 30, secs: 2 }); this.say(r.ok ? `Activating ${spec}: ${r.n.toLocaleString()} neurons.` : r.error, !r.ok); };
+      box.appendChild(zap);
+    }
+    const w = el("button", "", "watch"); w.title = `Add ${spec} as a bar under Key neurons`;
+    w.onclick = async () => { const r = await post({ type: "watch", spec }); this.say(r.ok ? `Watching ${spec}.` : r.error, !r.ok); };
+    box.appendChild(w);
+    return box;
+  }
+  say(text, err) { setText($("geneFeedback"), text); setClass($("geneFeedback"), "err", !!err); }
+  update(S) {
+    const sil = new Set(S.silenced || []);
+    for (const spec in this.buttons) { const b = this.buttons[spec], on = sil.has(spec); setClass(b, "on", on); setText(b, on ? "restore" : "silence"); }
+  }
+  async neuronsOfLine() {
+    const line = $("lineName").value.trim(); if (!line) { this.say("Type a driver line name, e.g. SS02385.", true); return; }
+    this.say(`Asking NeuronBridge which MaleCNS neurons ${line} labels…`);
+    const r = await getJSON(`api/driver?line=${encodeURIComponent(line)}`);
+    if (!r || !r.ok) { this.say((r && r.error) || "no answer", true); return; }
+    const box = $("nbResults"); box.innerHTML = "";
+    const inKit = r.neurons.filter((n) => n.in_kit);
+    this.say(`${line} (${esc(r.library)}): ${r.neurons.length} matching neurons from ${r.searched} of ${r.images} images; ${inKit.length} are in this data. Scores are NeuronBridge colour-depth match scores.`);
+    if (r.spec) {
+      const head = el("div", "nbhead");
+      head.innerHTML = `<span>the ${Math.min(20, inKit.length)} best matches:</span>`;
+      for (const [label, act] of [["⚡ zap", "zap"], ["🚫 silence", "silence"], ["👁 watch", "watch"]]) {
+        const b = el("button", "btn", label);
+        b.onclick = async () => { const a = act === "zap" ? { type: "zap", spec: r.spec, hz: 60, secs: 2 } : { type: act, spec: r.spec, key: act === "watch" ? line.slice(0, 24) : undefined }; const x = await post(a); this.say(x.ok ? `${act}: ${x.n} neurons of ${line}.` : x.error, !x.ok); };
+        head.appendChild(b);
+      }
+      box.appendChild(head);
+    }
+    for (const n of r.neurons.slice(0, 20)) {
+      const d = el("div", "nb");
+      const t = n.in_kit ? `<b>${esc(n.type || "?")}${n.side ? "/" + n.side : ""}</b>` : `<b>${esc(n.nb_type || "?")}</b> <small>(not in this data)</small>`;
+      const warn = n.in_kit && n.nb_type && n.nb_type !== n.type ? ` <small title="NeuronBridge holds an earlier MaleCNS version">NeuronBridge: ${esc(n.nb_type)}</small>` : "";
+      d.innerHTML = `<span>${t}${warn} <small>body ${n.body}</small></span><span class="sc">${Math.round(n.score).toLocaleString()}</span>`;
+      box.appendChild(d);
+    }
+  }
+  async linesFor() {
+    const spec = $("linesSpec").value.trim() || $("spec").value.trim(); if (!spec) { this.say("Type a population first, e.g. pIP10.", true); return; }
+    this.say(`Asking NeuronBridge which driver lines label ${spec}…`);
+    const r = await getJSON(`api/lines?spec=${encodeURIComponent(spec)}`);
+    if (!r || !r.ok) { this.say((r && r.error) || "no answer", true); return; }
+    const box = $("nbResults"); box.innerHTML = "";
+    this.say(`${spec}: ${r.n.toLocaleString()} neurons, ${r.sampled.length} searched (bodies ${r.sampled.join(", ")})` + (r.unmatched.length ? `, ${r.unmatched.length} not in NeuronBridge` : "") + `. Split-GAL4 lines are the clean ones; Gen1 lines label many types.`);
+    for (const l of r.lines) {
+      const d = el("div", "nb");
+      d.innerHTML = `<span><b>${esc(l.line)}</b> <small>${esc(l.library)}${l.neurons > 1 ? ` · matches ${l.neurons} of the searched neurons` : ""}</small></span><span class="sc">${Math.round(l.score).toLocaleString()}</span>`;
+      d.title = "Click to look up the neurons this line labels";
+      d.style.cursor = "pointer";
+      d.onclick = () => { $("lineName").value = l.line; this.neuronsOfLine(); };
+      box.appendChild(d);
+    }
+    if (!r.lines.length) box.innerHTML = `<div class="nb"><span>no matching lines</span></div>`;
   }
 }
 

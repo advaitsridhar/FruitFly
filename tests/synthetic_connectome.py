@@ -45,8 +45,8 @@ SUBCLASSES = ["", "sugar", "bitter", "water", "wind_gravity", "grooming", "gamma
 NTS = ["", "acetylcholine", "gaba", "glutamate", "dopamine", "unclear"]
 SIGN_OF_NT = {"": 1, "acetylcholine": 1, "gaba": -1, "glutamate": -1, "dopamine": 1, "unclear": 1}
 SIDES = ["", "L", "R", "M"]
-DIMORPHISMS = ["", "isomorphic", "sexually dimorphic"]
-FRUDSX = ["", "fru", "dsx"]
+DIMORPHISMS = ["", "isomorphic", "sexually dimorphic", "potentially sexually dimorphic", "male-specific", "potentially male-specific"]
+FRUDSX = ["", "fru_high", "fru_low", "dsx_high", "dsx_low", "coexpress_high", "coexpress_low"]   # the MaleCNS labels
 NEUROMERES = ["", "CB", "GNG", "T1", "T2", "T3"]
 NERVES = ["", "ADMN", "LN", "PrN", "AN"]
 
@@ -209,7 +209,7 @@ def build_synthetic(path: Path | str, seed: int = 7) -> Path:
     lplc2 = both("LPLC2", 8, "visual_projection", "visual", ACH, soma=(255000, 200000, 105000))
     dnp01 = both("DNp01", 1, "descending_neuron", "descending", ACH, soma=(30000, 230000, 150000))
     ttmn = both("TTMn", 1, "vnc_motor", "motor", ACH, neuromere="T2", soma=(20000, 300000, 400000))
-    lc10a = both("LC10a", 10, "visual_projection", "visual", ACH, soma=(240000, 190000, 95000))
+    lc10a = both("LC10a", 10, "visual_projection", "visual", ACH, frudsx="fru_low", soma=(240000, 190000, 95000))
     lc11 = both("LC11", 4, "visual_projection", "visual", ACH, soma=(245000, 195000, 98000))
     aotu019 = both("AOTU019", 4, "cb_intrinsic", "interneuron", ACH, soma=(120000, 180000, 90000))
     aotu025 = both("AOTU025", 2, "cb_intrinsic", "interneuron", ACH, soma=(118000, 182000, 92000))
@@ -296,11 +296,12 @@ def build_synthetic(path: Path | str, seed: int = 7) -> Path:
     lglg1a = both("LgLG1a", 2, S, "gustatory", ACH, subclass="leg", neuromere="T1", nerve="LN")
     lglg1b = both("LgLG1b", 2, S, "gustatory", ACH, subclass="leg", neuromere="T1", nerve="LN")
     vab3 = both("vAB3", 2, "ascending_neuron", "interneuron", ACH, neuromere="T1", soma=(30000, 320000, 380000))
-    pc1_1a = both("pC1_1a", 4, "cb_intrinsic", "courtship", ACH, dimorphism="sexually dimorphic", frudsx="fru",
+    pc1_1a = both("pC1_1a", 4, "cb_intrinsic", "courtship", ACH, dimorphism="male-specific", frudsx="coexpress_high",
                   soma=(100000, 170000, 85000))
-    pc1_2a = both("pC1_2a", 1, "cb_intrinsic", "courtship", ACH, dimorphism="sexually dimorphic", frudsx="dsx",
+    pc1_2a = both("pC1_2a", 1, "cb_intrinsic", "courtship", ACH, dimorphism="sexually dimorphic", frudsx="dsx_high",
                   soma=(102000, 172000, 85000))
-    pip10 = both("pIP10", 1, "descending_neuron", "descending", ACH, frudsx="fru", soma=(45000, 230000, 150000))
+    pip10 = both("pIP10", 1, "descending_neuron", "descending", ACH, frudsx="fru_high", dimorphism="male-specific",
+                 soma=(45000, 230000, 150000))
     wing_mn = both("MNwm35", 2, "vnc_motor", "motor", ACH, neuromere="T2", soma=(15000, 310000, 410000))
     jo_a = both("JO-A1", 6, S, "mechanosensory", ACH, subclass="auditory", nerve="AN")
     jo_b = both("JO-B1", 6, S, "mechanosensory", ACH, subclass="auditory", nerve="AN")

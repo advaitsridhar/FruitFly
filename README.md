@@ -44,6 +44,7 @@ Compared with the small starter it grew from, it adds:
 | **Internal state** | hunger and thirst rise with time and change what the fly does and tastes | hand-built |
 | **A better model** | short-term synaptic depression, background noise, per-population output modulation, threshold heterogeneity, checkpoints, spike recording, rate monitors, a `--fast` 1 ms step; the integrator is the starter's (identical spikes), or the same step as compiled numba kernels when numba is installed (about twice as fast, still identical spikes) | the mechanisms are documented physiology; the parameters are chosen by hand |
 | **Tools** | a pathway tracer ("how does the eye reach the steering neurons?"), lesion scans, dose-response sweeps, seeds, JSON export, scenarios (conditioning protocols, courtship, plume following, escape), a 3-D brain map, an event log, session recording | analysis, not model |
+| **Genetics** | the neurons that express *fruitless* and *doublesex* (the genes that make a male brain male) and the male-specific and dimorphic ones, as populations to silence, activate or watch; the transmitter genes behind every neuron's sign; a lookup of which real driver lines label a population and which neurons a line labels (NeuronBridge); five genetic experiments | the expression labels are the MaleCNS annotation read from the data; the lookups are Janelia's; nothing is hand-built, but only two transcription factors and the transmitter identity are known here |
 
 Everything on screen says which of the two it is; the **"What's real here?"** button lists it all.
 
@@ -213,6 +214,17 @@ rates and learning state, and `POST /api/action` accepts commands such as
 `{"type": "zap", "spec": "MDN", "hz": 60}`, `{"type": "drop", "kind": "vinegar", "x": 10, "y": 5, "food": "sugar"}`
 or `{"type": "stripes", "count": 16, "drum_speed": 1.5}`. `docs/API.md` has the whole contract; anything
 that can make HTTP requests (a game engine, a notebook, a robot) can drive a fly from it.
+
+**Genetics.** The Genetics card lists the neurons annotated as expressing *fruitless* (4,858) and
+*doublesex* (412), the male-specific and sexually dimorphic ones, and the transmitter genes behind
+every neuron's sign, each linked to its FlyBase report. Silence the fruitless neurons, then add a
+female: no chase and no song, as in *fruitless* mutants, while feeding and escape work as before
+(`python fly_brain.py --profile game --only genetic` runs the five genetic experiments). Type a
+published driver line such as `SS02385` and the kit asks Janelia's NeuronBridge which of these
+neurons it labels, so a real line can be zapped or silenced here; or ask which lines label a
+population. `python fly_brain.py --genes`, `--lines pIP10` and `--driver MB112C` do the same
+from the terminal. The selectors are `gene:fru`, `gene:dsx`, `gene:both`, `gene:VGlut` and so on,
+and `dimorphism:male` / `dimorphism:dimorphic`.
 
 ## 6. Honest limitations
 

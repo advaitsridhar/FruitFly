@@ -77,6 +77,10 @@ def main(argv=None):
     ap.add_argument("--silence", metavar="SPEC", default="", help='block the output of a population, e.g. "class:ALLN" or "MN9"')
     ap.add_argument("--modulate", metavar="SPEC:FACTOR", default="", help='scale the output of a population, e.g. "LB3b,LB3c:1.5"')
     ap.add_argument("--record", metavar="FILE.npz", help="with --stim: save every spike (time_ms, neuron) to this file")
+    ap.add_argument("--genes", action="store_true",
+                    help="list the gene-expression populations in the data (fruitless, doublesex, transmitter genes) with FlyBase links")
+    ap.add_argument("--lines", metavar="SPEC", help="driver lines whose expression images match these neurons (NeuronBridge; needs internet)")
+    ap.add_argument("--driver", metavar="LINE", help="MaleCNS neurons a driver line labels, e.g. SS02385 (NeuronBridge; needs internet)")
     ap.add_argument("--top", type=int, default=15, help="how many rows to show in rankings")
     ap.add_argument("--seed", type=int, default=0)
     args = ap.parse_args(argv)
@@ -94,6 +98,43 @@ def main(argv=None):
             print(" ", conn.describe(i))
         if idx.size > 30:
             print(f"  ... {idx.size} neurons in total")
+        return
+    if args.genes:
+        from .genetics import summary
+        g = summary(conn)
+        print("\nGene expression in the data (the MaleCNS annotation):")
+        for e in g["expression"]:
+            high = f"{e['high']:,} high confidence" if e["high"] is not None else ""
+            print(f"  {e['label']:26} {e['n']:7,} neurons in {e['types']:5,} types  {high:24} {e['spec']:22} {e['flybase'] or ''}")
+        print("\nTransmitter genes (the transmitter is predicted from the synapses' appearance):")
+        for t in g["transmitters"]:
+            print(f"  {t['nt']:14} {t['n']:8,} neurons  {100 * t['synapse_share']:5.1f} % of synapses  {'excites ' if t['sign'] > 0 else 'inhibits'}  "
+                  + ", ".join(f"{x['symbol']} {x['flybase']}" for x in t["genes"]))
+        print(f"\n  {g['unclear']:,} neurons have no confident transmitter prediction and count as excitatory.\n  {g['source']}")
+        return
+    if args.lines or args.driver:
+        from .genetics import NeuronBridge, NeuronBridgeError
+        nb = NeuronBridge()
+        try:
+            if args.lines:
+                r = nb.lines_for(conn, check_spec(conn, args.lines))
+                print(f"\nDriver lines matching {r['spec']} ({r['n']:,} neurons; {len(r['sampled'])} searched: bodies "
+                      f"{', '.join(map(str, r['sampled']))}; NeuronBridge data {r['version']}):")
+                for l in r["lines"]:
+                    more = f"matches {l['neurons']} of them" if l["neurons"] > 1 else ""
+                    print(f"  {l['line']:12} score {l['score']:9,.0f}  {more:22} {l['library']}")
+                if r["unmatched"]:
+                    print(f"  (not in NeuronBridge: bodies {', '.join(map(str, r['unmatched']))})")
+            if args.driver:
+                r = nb.neurons_for_line(conn, args.driver)
+                print(f"\nMaleCNS neurons matching line {r['line']} ({r['library']}; {r['searched']} of {r['images']} images searched):")
+                for n in r["neurons"][:args.top]:
+                    kit = (n["type"] + ("/" + n["side"] if n["side"] else "")) if n["in_kit"] else "(not in this data)"
+                    print(f"  body {n['body']:>9}  score {n['score']:9,.0f}  {kit:22} NeuronBridge type {n['nb_type'] or '?'}")
+                if r["spec"]:
+                    print(f"  spec for --stim / --silence: {r['spec']}")
+        except NeuronBridgeError as e:
+            raise SystemExit(str(e))
         return
     if args.inputs or args.outputs:
         for spec, direction in ((args.inputs, "in"), (args.outputs, "out")):

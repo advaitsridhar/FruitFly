@@ -17,7 +17,7 @@ STATE_KEYS = {"seq", "t", "rtf", "speed", "fly", "world", "autopilot", "paused",
               "done", "state", "learning", "events", "event_seq", "scenario", "recording"}
 LAYOUT_KEYS = {"n", "w", "h", "d", "x", "y", "z", "region", "regions", "arena_r", "fly_half", "tick_ms", "presets",
                "types", "edges", "synapses", "readouts", "checks", "odours", "scenarios", "retina", "profile", "settings",
-               "decoder", "columnar_vision", "whats_real"}
+               "decoder", "columnar_vision", "whats_real", "genetics"}
 FLY_KEYS = {"x", "y", "h", "v", "w", "mode", "prob", "legs", "groom", "wingL", "wingR", "abdomen", "jump", "hx", "hy", "dist"}
 
 
@@ -49,7 +49,7 @@ def test_layout_matches_the_documented_schema(game, conn):
     assert lay["region"][int(conn.select("DNp01")[0])] == 2 and lay["region"][int(conn.select("TTMn")[0])] == 5
     assert lay["arena_r"] == 50 and lay["tick_ms"] == TICK_MS and lay["profile"] == "game"
     assert [r["key"] for r in lay["readouts"]] == [r[0] for r in READOUTS]
-    assert set(lay["readouts"][0]) == {"key", "spec", "label", "group", "max", "colour"}
+    assert set(lay["readouts"][0]) == {"key", "spec", "label", "group", "max", "colour", "genes"}
     assert lay["types"][0] == "KCg-m" and len(lay["types"]) == len(conn.type_counts())
     assert lay["edges"] == conn.n_edges and lay["synapses"] == int(conn.n_syn.sum())
     assert [c["id"] for c in lay["checks"]] == [c[0] for c in CHECKS]
@@ -434,9 +434,23 @@ def test_motor_decoder(conn):
 def test_checks_and_whats_real(game):
     ids = {c[0] for c in CHECKS}
     assert ids == {"feed", "bitter", "lure", "escape", "groom", "wall", "smell", "learn", "court", "wind", "sound",
-                   "optomotor", "moonwalk", "silence"}
+                   "optomotor", "moonwalk", "silence", "genetics"}
     real = game.whats_real()
     assert len(real["wiring"]) >= 5 and len(real["hand_built"]) >= 5 and len(real["not_modelled"]) >= 1
+
+
+def test_genetics_in_the_layout_and_the_check(game, conn):
+    lay = json.loads(game.layout_json)
+    g = lay["genetics"]
+    assert {e["key"] for e in g["expression"]} == {"fru", "dsx", "both", "male", "dimorphic"}
+    assert g["readouts"]["pIP10"]["tags"] == ["fru", "♂"] and g["readouts"]["MN9"]["tags"] == []
+    by_key = {r["key"]: r for r in lay["readouts"]}
+    assert by_key["pIP10"]["genes"] == ["fru", "♂"] and by_key["pC1"]["genes"] == ["fru", "dsx", "♂"] and by_key["MN9"]["genes"] == []
+    assert game.action({"type": "silence", "spec": "gene:fru"}) == {"ok": True, "n": 30}
+    state = ticks(game, 1)
+    assert "genetics" in state["done"] and "gene:fru" in state["silenced"]
+    game.action({"type": "unsilence", "spec": "gene:fru"})
+    assert "gene:fru" not in ticks(game, 1)["silenced"]
 
 
 def test_columnar_vision_shares_the_rendered_eyes_and_fires_t4_t5(conn):
