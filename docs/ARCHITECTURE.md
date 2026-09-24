@@ -10,6 +10,7 @@ virtual_fly/
   pathways.py      static analysis: strongest routes between populations, lesion candidates
   experiments.py   validated protocols, seeds, sweeps, lesion scans, JSON export
   genetics.py      gene-expression populations (fru, dsx, transmitter genes), FlyBase links, NeuronBridge lookups
+  wiring.py        the genome as a recipe: cell-type wiring rules, grown flies, the rank bottleneck
   settings.py      named model profiles (pure / game / brakes)
   cli.py           `python fly_brain.py ...`
   world.py         the arena: food, posts, odour sources and plume puffs, wind, the drum, the female

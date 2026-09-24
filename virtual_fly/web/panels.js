@@ -452,6 +452,55 @@ export class GeneticsPanel {
   }
 }
 
+// ================================================================= 8c. Genome
+export class GenomePanel {
+  constructor(L) {
+    this.L = L; this.lastKey = "";
+    const sel = $("genomeLevel"); sel.innerHTML = "";
+    for (const lv of (L.genome && L.genome.levels) || []) {
+      const o = document.createElement("option"); o.value = lv.level; o.textContent = lv.level; o.title = lv.label; sel.appendChild(o);
+    }
+    sel.value = "type";
+    $("growBtn").onclick = () => this.grow(sel.value);
+    $("realBtn").onclick = () => this.grow("real");
+  }
+  async grow(level) {
+    const seed = parseInt($("genomeSeed").value) || 0;
+    const r = await post({ type: "grow", level, seed });
+    if (!r.ok) { setText($("genomeStatus"), r.error); setClass($("genomeStatus"), "err", true); }
+  }
+  update(S) {
+    const g = S.genome; if (!g) return;
+    const st = $("genomeStatus"), box = $("survival");
+    setClass(st, "err", !!g.error);
+    $("growBtn").disabled = !!g.growing;
+    if (g.error) setText(st, `Could not grow: ${g.error}`);
+    else if (g.growing) setText(st, `growing a fly from its ${g.growing.level} wiring rules (seed ${g.growing.seed})… ${fmt(g.growing.secs, 0)} s (the game keeps running)`);
+    else if (g.level === "real") setText(st, "the real wiring");
+    else {
+      const w = g.wiring || {}, r = g.rules || {};
+      setText(st, `${g.level} rules, seed ${g.seed}: ${(w.edges_grown || 0).toLocaleString()} connections, ${Math.round(100 * (w.shared_connections_fraction || 0))} % shared with the real wiring` +
+        (r.groups ? ` · ${r.groups.toLocaleString()} groups, ${r.pairs.toLocaleString()} rules, ${(r.numbers / 1e6).toFixed(1)} M numbers` : ""));
+    }
+    const sv = g.survival;
+    const key = sv ? `${g.level}|${g.seed}|${sv.running}|${sv.results.length}|${(sv.results[sv.results.length - 1] || {}).ok}` : "none";
+    if (key === this.lastKey) return;
+    this.lastKey = key;
+    box.innerHTML = "";
+    if (!sv) return;
+    const head = el("div", "head");
+    head.innerHTML = `<span>reflexes that survive</span><span>${sv.running ? "testing…" : `${sv.ok} / ${sv.tested}`}</span>`;
+    box.appendChild(head);
+    for (const r of sv.results) {
+      const d = el("div", "sv " + (r.ok === null ? "na" : r.ok ? "ok" : "bad"));
+      const bad = (r.readouts || []).filter((x) => !x.ok).map((x) => `${x.label} ${x.hz} Hz (want ${x.lo}-${x.hi})`).join(", ");
+      const n = r.ok === null ? "n/a" : `${(r.readouts || []).filter((x) => x.ok).length} / ${(r.readouts || []).length}`;
+      d.innerHTML = `<i></i><span>${esc(r.name)}${bad ? ` <small>${esc(bad)}</small>` : ""}</span><span class="n">${n}</span>`;
+      box.appendChild(d);
+    }
+  }
+}
+
 // ================================================================= 9. Event log
 export class EventsPanel {
   constructor() { this.lastId = 0; this.count = 0; this.queue = []; this.ul = $("events"); $("eventsClear").onclick = () => { this.ul.innerHTML = ""; this.count = 0; }; }

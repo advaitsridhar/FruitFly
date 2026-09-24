@@ -16,6 +16,7 @@ engine, a notebook, a robot) can drive the fly:
     GET  /api/history?keys=MN9,GF     rate histories of readouts (one value per tick)
     GET  /api/learning                per-MBON synaptic strengths and dopamine
     GET  /api/genes                   the gene-expression populations, transmitter groups, FlyBase links
+    GET  /api/genome                  the genome levels and the current fly's growth / survival status
     GET  /api/lines?spec=pIP10        driver lines matching a population (NeuronBridge; needs internet)
     GET  /api/driver?line=SS02385     MaleCNS neurons a driver line labels (NeuronBridge; needs internet)
     GET  /api/recording               the recorded session (JSON), if recording
@@ -38,7 +39,7 @@ from pathlib import Path
 
 import numpy as np
 
-from . import genetics
+from . import genetics, wiring
 
 from .pathways import relay_ranking, strongest_partners, trace
 
@@ -82,6 +83,7 @@ def make_handler(game):
             self.end_headers()
 
         def do_GET(self):
+            conn = game.conn                          # a grown fly swaps the wiring in
             url = urllib.parse.urlparse(self.path)
             path, q = url.path, urllib.parse.parse_qs(url.query)
             get = lambda k, d=None: q.get(k, [d])[0]
@@ -157,6 +159,8 @@ def make_handler(game):
                         return self._json({"ok": True, "learning": None})
                     return self._json({"ok": True, "learning": pl.summary(conn), "settings": pl.settings(),
                                        "depressed_fraction": pl.depressed_fraction()})
+                if path == "/api/genome":
+                    return self._json({"ok": True, "levels": [{"level": lv, "label": lb} for lv, lb in wiring.LEVELS], **game.genome_status()})
                 if path == "/api/genes":
                     return self._json({"ok": True, **game.genetics})
                 if path == "/api/lines":

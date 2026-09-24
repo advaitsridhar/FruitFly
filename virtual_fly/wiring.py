@@ -273,6 +273,28 @@ def grow(conn: Connectome, rules: Rules, seed: int = 0) -> Connectome:
     return grown
 
 
+LEVELS = [
+    ("real", "the real wiring: every neuron-to-neuron connection as reconstructed"),
+    ("type", "rules per cell type and side: which types connect, how often and how strongly; the neurons are rewired at random within them"),
+    ("bottleneck:256", "the type rules squeezed to a 256-number code per group"),
+    ("bottleneck:64", "the type rules squeezed to a 64-number code per group"),
+    ("bottleneck:16", "the type rules squeezed to a 16-number code per group"),
+    ("class", "rules per class and side only: no cell-type identity at all"),
+]
+
+
+def valid_level(level: str) -> bool:
+    level = str(level).strip().lower()
+    if level in ("real", "type", "class"):
+        return True
+    if level.startswith("bottleneck:"):
+        try:
+            return 1 <= int(level.split(":", 1)[1]) <= 2048
+        except ValueError:
+            return False
+    return False
+
+
 def grow_level(conn: Connectome, level: str, seed: int = 0, rules_cache: dict | None = None) -> tuple[Connectome, Rules]:
     """``level`` is ``type``, ``class`` or ``bottleneck:K`` (``real`` returns the connectome itself)."""
     level = level.strip().lower()

@@ -41,6 +41,9 @@ def main(argv=None):
     ap.add_argument("--fast", action="store_true", help="same as --dt 1.0: for computers that run the brain below real time")
     ap.add_argument("--backend", choices=("auto", "numpy", "numba"), default="auto",
                     help="brain integrator: the compiled numba kernels when numba is installed (auto), or plain NumPy")
+    ap.add_argument("--grow", metavar="LEVEL", default=None,
+                    help="start with a fly grown from its wiring rules: type, class or bottleneck:K (the Genome card does the same)")
+    ap.add_argument("--grow-seed", type=int, default=1, help="which individual to grow (any whole number)")
     ap.add_argument("--seed", type=int, default=0)
     args = ap.parse_args(argv)
 
@@ -63,9 +66,14 @@ def main(argv=None):
     if args.no_learning and brain.plasticity is not None:
         brain.plasticity.enabled = False
     game = Game(brain, autopilot=not args.no_autopilot, seed=args.seed, columnar=not args.no_columnar,
-                profile_name=profile)
+                profile_name=profile, brain_factory=lambda c: build_brain(c, profile, **overrides))
     if args.no_learning:
         game.learning_on = False
+    if args.grow:
+        r = game.action({"type": "grow", "level": args.grow, "seed": args.grow_seed})
+        if not r["ok"]:
+            raise SystemExit(r["error"])
+        print(f"Growing a fly from its {args.grow} wiring rules (seed {args.grow_seed}) in the background...", file=sys.stderr)
     serve(game, port=args.port, open_browser=not args.no_browser, host=args.host)
 
 

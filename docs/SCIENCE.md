@@ -388,7 +388,7 @@ The pure model's code is "sparse" only in count: the same KCs fire for every odo
 KC subtypes are recruited very unevenly (probe-game, kenyon_gain 0.75, MIX): KCab-m 22 %,
 KCa'b'-m 19 %, KCab-c 12 %, KCab-s 8 %, KCg-m 4 %, KCa'b'-ap2 2 %; KCg-d, KCab-p and KCa'b'-ap1
 never fire. This is unlike real flies, where the γ lobe (KCg-m, 1,342 cells here) is the main
-site of short-term memory, and it biases which compartments can learn (section 7).
+site of short-term memory, and it biases which compartments can learn (section 8).
 
 ### 4.4 Which dopamine neurons teach which output neuron: read from the wiring
 
@@ -1007,7 +1007,74 @@ single-cell expression atlases matched to these cell types, which is mature only
 system, the olfactory projection neurons and the mushroom body; that is the next level, and it
 would ship as a separate profile judged by the validated experiments.
 
-## 7. Honest limitations
+## 7. The genome as a wiring recipe (v2.3)
+
+A genome of some 140 million letters cannot list the fly's 90 million synapses; it holds rules
+that build the wiring during development. `wiring.py` asks how much of the fly's behaviour lives
+in such rules, using the connectome itself as the only source: the rules are learned from the
+wiring, a new fly is grown from the rules alone, and the validated experiments are run on it.
+
+**Rules.** For every pair of *(cell type, side)* groups, the number of connected neuron pairs and
+the log-normal shape of their synapse counts. MaleCNS v1.0 has 23,078 such groups and 1,704,511
+connected pairs, i.e. 5.1 M numbers stand in for 6.3 M connections. **Growing** keeps every neuron
+and draws its connections afresh within the rules: a dense pair (most of two small groups wired
+together) is decided connection by connection with the pair's probability, a sparse pair is
+sampled, synapse counts come from the pair's distribution, and duplicates merge. A grown fly has
+the same number of connections and synapses (6.26 M / 91 M against 6.29 M / 90 M) and shares
+36 % of its individual connections with the real one; the rest are new neuron-to-neuron pairings
+of the same types. **The bottleneck** approximates the rule matrix at rank K with a randomized SVD
+(each group gets a K-number output code and a K-number input code; a rule is their product),
+re-thresholded to the original number of rules and rescaled to the original number of connections.
+**Class rules** use only superclass:class and side (125 groups, 2,665 rules).
+
+**What survives** (game profile; each grown fly tested with all eleven validated experiments;
+`fly-brain --genome-sweep`):
+
+| experiment | real | type, seed 1 | type, seed 2 | bottleneck 256 | bottleneck 64 | bottleneck 16 | class |
+|---|---|---|---|---|---|---|---|
+| Silence (no input) | ok | ok | ok | ok | ok | ok | ok |
+| Sugar on the mouthparts | ok | ok | 3/4 | 1/4 | 1/4 | 1/4 | 1/4 |
+| Bitter taste | ok | ok | ok | 1/2 | 1/2 | 1/2 | 1/2 |
+| Sugar + bitter together | ok | ok | ok | ok | ok | ok | ok |
+| Something looming on the right | ok | ok | ok | 0/2 | 0/2 | 0/2 | 0/2 |
+| Dust on the antennae | ok | ok | ok | 0/2 | 0/2 | 0/2 | 0/2 |
+| Smell of vinegar | ok | 3/4 | 3/4 | 0/4 | 2/4 | 0/4 | 0/4 |
+| Bitter taste → punishment dopamine | ok | ok | ok | 1/2 | 1/2 | 1/2 | 1/2 |
+| A loud sound | ok | ok | ok | 0/1 | 0/1 | 0/1 | 0/1 |
+| Courtship command | ok | ok | ok | ok | ok | 0/2 | 0/2 |
+| Wide-field motion, right eye | ok | 3/4 | ok | 1/4 | 1/4 | 1/4 | 1/4 |
+| **experiments passed** | **11** | **9** | **9** | **3** | **3** | **2** | **2** |
+| connections shared with the real fly | 100 % | 36 % | 36 % | 13 % | | | 0.4 % |
+| numbers in the genome | 12.6 M | 5.1 M | 5.1 M | 11.9 M | 3.0 M | 0.8 M | 8 k |
+
+Three findings:
+
+1. **Nine of eleven reflexes live in the type-level rules.** Feeding, bitter suppression, looming
+   escape, grooming, the smell code, punishment dopamine, the startle and the courtship command
+   all work in a fly whose neurons were never individually wired, and the two failures are
+   marginal: MBON11's specific Kenyon-cell input (0 Hz instead of 1-60) and, in one individual,
+   the Fudog taste interneuron or a 27 Hz leak into the wrong DNa02 during right-eye motion. The
+   two individuals differ in which marginal readout they miss, which is what individual
+   variation looks like here.
+2. **Class-level rules carry nothing.** With cell-type identity removed every reflex is gone;
+   the sugar relay, the giant fibre and the song neuron sit silent because their inputs are
+   spread over a whole class.
+3. **The rule matrix is not low-rank.** A rank-256 code holds *more* numbers than the rule table
+   (11.9 M against 5.1 M) yet keeps only three experiments, and a rank-64 code the same three
+   (courtship survives because its 148 command neurons in many types form a broad block; feeding
+   dies because LB3b → GNG232 → MN9 is one specific rule per link). Specificity, not volume, is
+   what this genome has to encode, which is why the SVD is a weak bottleneck and why the genomic
+   bottleneck literature learns its codes with a network rather than a factorisation. A learned
+   bottleneck is the natural next experiment on this data.
+
+What growth destroys, by construction, is neuron-level structure inside a type: the retinotopic
+column-to-column wiring of the optic lobe (the columnar looming path and the LPLC2 outward
+arrangement of section 5.3), the Kenyon cells' individual glomerular samples, and any left/right
+pairing finer than the side label. The experiments that inject T4a/T5a or LC4/LPLC2 as
+populations do not test that structure; a grown fly's eyes work in the game because the retina
+still drives the real columns, but what those columns feed is rewired.
+
+## 8. Honest limitations
 
 The starter kit's list, extended. These are the things a neuroscientist would point at first.
 
@@ -1068,7 +1135,7 @@ The starter kit's list, extended. These are the things a neuroscientist would po
 
 ---
 
-## 8. References
+## 9. References
 
 * Aso Y, Hattori D, Yu Y, Johnston RM, Iyer NA, Ngo T-TB, Dionne H, Abbott LF, Axel R, Tanimoto H,
   Rubin GM (2014a). The neuronal architecture of the mushroom body provides a logic for associative

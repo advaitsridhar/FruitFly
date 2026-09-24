@@ -29,6 +29,7 @@ Returned once at start-up (gzip-compressed if the client accepts it; ~2.4 MB raw
 | `profile` | model profile name (`game`, `pure`, `brakes`) |
 | `settings` | brain settings dict (dt, backend `numpy`/`numba`, gain, fatigue, silenced, plasticity ...) |
 | `genetics` | `{expression: [{key, label, spec, n, high, types, gene, flybase}], transmitters: [{nt, spec, n, sign, synapse_share, genes: [{symbol, flybase}]}], unclear, genes: [...], readouts: {key: {n, fru, dsx, male, dimorphic, nt, tags}}, source}`; each `readouts[]` row also carries `genes` (its tags: `fru`, `dsx`, `♂`, `♂♀`) |
+| `genome` | `{levels: [{level, label}]}`: the wiring levels the `grow` action accepts |
 | `decoder` | per decoder DN spec: motor synapses it reaches (`direct_motor_synapses`, `two_hop_motor_synapses_by_neuromere`) |
 | `columnar_vision` | bool: T4/T5 columns driven from the retina |
 | `whats_real` | `{wiring[], hand_built[], not_modelled[]}` text for the "What's real here?" dialog |
@@ -67,6 +68,7 @@ One JSON object per tick (40 per second at real time). Same schema on both endpo
 | `events[]` | the last 12 events `{id, t, kind, text}`; `event_seq` is the newest id |
 | `scenario` | `null` or `{id, name, step, steps, caption, left, measure{}}` |
 | `recording` | `null` or `{frames, spikes, active}` (after `record off` the frames are kept for download, `active` is false, until the next `record on`) |
+| `genome` | `{level, seed, growing: {level, seed, secs} or null, survival: {running, results: [{name, ok, readouts: [{label, hz, lo, hi, ok}]}], ok, tested} or null, wiring: {edges_grown, synapses_grown, shared_connections_fraction} or null, rules: {level, groups, pairs, numbers, rank} or null, error}`: the current fly's genome (see `grow`) |
 
 `world` fields: `food[] = {id, kind (sugar|bitter|water), x, y, r, amount}`; `obstacles[] = {id, x, y, r}`;
 `odours[] = {id, odour, x, y, strength, food}` (sources); `puffs[] = [x, y, r, c, odour]` (plume
@@ -93,6 +95,7 @@ filaments, up to 300); `wind = {angle, speed}` (direction the wind blows *toward
 | `silence` / `unsilence` | `spec` (unsilence: omit for all) | block / restore a population's output |
 | `modulate` | `spec, factor` | scale a population's output (1 = normal) |
 | `watch` / `unwatch` | `spec[, key]` / `key` | add / remove a custom readout (appears in `hz`). A `key` that names a built-in readout (`MN9`, `GF`, `DNp15L`, ...) is refused, since the decoder reads those; without a `key` the spec is the name, prefixed `watch:` if it collides. `unwatch` only removes custom watches. |
+| `grow` | `level[, seed]` | grow a fly from the wiring rules (`type`, `class`, `bottleneck:K`) or go back to `real`; runs in the background (`state.genome.growing`), swaps the brain in when done and then tests every validated experiment on a private copy (`state.genome.survival` fills in) |
 | `clear` | `[what]` | `all`, `food`, `odours`, `obstacles` |
 | `reset` | | new fly, fresh brain (learned synapses kept) |
 | `calm` | | reset the brain's activity to rest |
@@ -120,6 +123,10 @@ filaments, up to 300); `wind = {angle, speed}` (direction the wind blows *toward
 | `GET /api/decoder` | the decoder's DN→motor-pool table |
 | `GET /api/recording` | JSON download of the recorded frames |
 | `GET /api/spikes` | npz download of recorded spikes (`time_ms`, `neuron`, `body_id`) |
+
+### `GET /api/genome`
+
+The genome levels plus the current `state.genome` block.
 
 ### `GET /api/genes`
 

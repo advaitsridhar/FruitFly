@@ -3,6 +3,7 @@
 import base64
 import json
 import math
+import time
 
 import numpy as np
 import pytest
@@ -14,10 +15,10 @@ from virtual_fly.settings import build_brain
 
 STATE_KEYS = {"seq", "t", "rtf", "speed", "fly", "world", "autopilot", "paused", "senses", "retina", "hz", "motor",
               "driver", "mode", "spikes", "sps", "stims", "calms", "msg", "silenced", "baseline", "modulated", "custom",
-              "done", "state", "learning", "events", "event_seq", "scenario", "recording"}
+              "done", "state", "learning", "events", "event_seq", "scenario", "recording", "genome"}
 LAYOUT_KEYS = {"n", "w", "h", "d", "x", "y", "z", "region", "regions", "arena_r", "fly_half", "tick_ms", "presets",
                "types", "edges", "synapses", "readouts", "checks", "odours", "scenarios", "retina", "profile", "settings",
-               "decoder", "columnar_vision", "whats_real", "genetics"}
+               "decoder", "columnar_vision", "whats_real", "genetics", "genome"}
 FLY_KEYS = {"x", "y", "h", "v", "w", "mode", "prob", "legs", "groom", "wingL", "wingR", "abdomen", "jump", "hx", "hy", "dist"}
 
 
@@ -434,7 +435,7 @@ def test_motor_decoder(conn):
 def test_checks_and_whats_real(game):
     ids = {c[0] for c in CHECKS}
     assert ids == {"feed", "bitter", "lure", "escape", "groom", "wall", "smell", "learn", "court", "wind", "sound",
-                   "optomotor", "moonwalk", "silence", "genetics"}
+                   "optomotor", "moonwalk", "silence", "genetics", "genome"}
     real = game.whats_real()
     assert len(real["wiring"]) >= 5 and len(real["hand_built"]) >= 5 and len(real["not_modelled"]) >= 1
 
@@ -451,6 +452,44 @@ def test_genetics_in_the_layout_and_the_check(game, conn):
     assert "genetics" in state["done"] and "gene:fru" in state["silenced"]
     game.action({"type": "unsilence", "spec": "gene:fru"})
     assert "gene:fru" not in ticks(game, 1)["silenced"]
+
+
+def _wait(game, cond, secs=60):
+    t0 = time.time()
+    while time.time() - t0 < secs:
+        game.tick()
+        if cond():
+            return True
+        time.sleep(0.01)
+    return False
+
+
+def test_grow_a_fly_swaps_the_wiring_and_tests_its_reflexes(game, conn):
+    assert game.action({"type": "grow", "level": "hemilineage"})["ok"] is False
+    assert game.action({"type": "grow", "level": "type", "seed": "x"})["ok"] is False
+    game.action({"type": "watch", "spec": "GNG232", "key": "relay"})
+    game.action({"type": "silence", "spec": "MN9"})
+    ticks(game, 1)
+    real_brain = game.brain
+    assert game.action({"type": "grow", "level": "type", "seed": 3}) == {"ok": True}
+    assert game.action({"type": "grow", "level": "type", "seed": 4})["ok"] is False        # one at a time
+    assert _wait(game, lambda: game.genome["growing"] is None and game.brain is not real_brain)
+    assert game.conn is not game.real_conn and game.brain.conn is game.conn and game.genome["level"] == "type"
+    assert game.genome["seed"] == 3 and game.genome["wiring"]["edges_grown"] > 0 and game.genome["rules"]["level"] == "type"
+    assert set(game.brain.monitors) >= {"MN9", "GF", "relay"} and "MN9" in game.brain.silenced   # watches and lesions carried over
+    state = ticks(game, 1)
+    assert state["genome"]["level"] == "type" and "genome" in state["done"]
+    assert any(e["text"].startswith("a fly grown from its type wiring rules") for e in game.events.items)
+    assert _wait(game, lambda: game.genome["survival"] and not game.genome["survival"]["running"], secs=120)
+    sv = game.genome["survival"]
+    assert sv["results"] and all(r["ok"] in (True, False, None) for r in sv["results"]) and sv["tested"] <= len(sv["results"])
+    assert sv["ok"] <= sv["tested"]
+    # back to the real wiring
+    assert game.action({"type": "grow", "level": "real"})["ok"]
+    assert _wait(game, lambda: game.genome["growing"] is None and game.conn is game.real_conn)
+    assert game.genome["level"] == "real" and game.brain.conn is game.real_conn
+    lay = json.loads(game.layout_json)
+    assert [l["level"] for l in lay["genome"]["levels"]][:2] == ["real", "type"]
 
 
 def test_columnar_vision_shares_the_rendered_eyes_and_fires_t4_t5(conn):

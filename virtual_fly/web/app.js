@@ -49,6 +49,7 @@ async function loadLayout() {
   panels.lab = new P.LabPanel(L);
   panels.paths = new P.PathwayPanel(brain, panels.lab);
   panels.genetics = new P.GeneticsPanel(L, panels.lab);
+  panels.genome = new P.GenomePanel(L);
   panels.events = new P.EventsPanel();
   panels.recording = new P.RecordingPanel();
   panels.model = new P.ModelPanel(L);
