@@ -17,6 +17,8 @@ header h1 { font-size: 17px; margin: 0; font-weight: 650; letter-spacing: .2px; 
 header .sub { color: var(--muted); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 header .stats { margin-left: auto; display: flex; gap: 14px; color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 header .stats b { color: var(--ink); font-weight: 600; }
+header .stats .num { display: inline-block; text-align: right; }   /* fixed widths: a changing digit count must not shove the labels about */
+header .stats .w6 { min-width: 6ch; } header .stats .w7 { min-width: 7ch; } header .stats .w8 { min-width: 9ch; }
 .linkbtn { background: none; border: 1px solid var(--line); border-radius: 999px; padding: 4px 11px; cursor: pointer; color: var(--ink); white-space: nowrap; }
 .linkbtn:hover { border-color: var(--accent); }
 .linkbtn.round { width: 28px; height: 28px; padding: 0; }
@@ -24,7 +26,7 @@ header .stats b { color: var(--ink); font-weight: 600; }
 /* ---------------------------------------------------------------- layout */
 main { display: grid; grid-template-columns: minmax(0, 1fr) 400px; gap: 14px; padding: 12px 16px 16px; height: calc(100% - 50px); }
 .left { display: flex; flex-direction: column; min-height: 0; gap: 8px; }
-aside { display: flex; flex-direction: column; gap: 10px; min-height: 0; overflow-y: auto; padding-right: 2px; scrollbar-width: thin; }
+aside { display: flex; flex-direction: column; gap: 10px; min-height: 0; overflow-y: auto; padding-right: 2px; scrollbar-width: thin; scrollbar-gutter: stable; }
 
 /* ---------------------------------------------------------------- toolbar + controls */
 .toolbar, .controls { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
@@ -46,6 +48,7 @@ aside { display: flex; flex-direction: column; gap: 10px; min-height: 0; overflo
 .slider { display: inline-flex; gap: 6px; align-items: center; color: var(--muted); font-size: 12.5px; white-space: nowrap; }
 .slider input[type=range] { width: 90px; accent-color: var(--accent); margin: 0; }
 .slider b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; min-width: 42px; }
+#windVal { min-width: 58px; } #drumVal { min-width: 64px; }   /* "20 mm/s", "-2.5 rad/s": the row must not move when they change */
 .slider select { background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; padding: 3px 4px; }
 .wind { display: inline-flex; gap: 6px; align-items: center; }
 #windDial { border-radius: 50%; cursor: pointer; background: var(--panel); border: 1px solid var(--line); }
@@ -75,7 +78,7 @@ aside { display: flex; flex-direction: column; gap: 10px; min-height: 0; overflo
 .retlabels { display: flex; justify-content: space-between; font-size: 10px; color: var(--muted); padding: 0 2px; }
 
 /* ---------------------------------------------------------------- cards */
-.card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; flex-shrink: 0; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; flex-shrink: 0; contain: layout paint; }
 .card h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .8px; color: var(--muted); margin: 0 0 8px; font-weight: 600; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .card h2 .tag { text-transform: none; letter-spacing: 0; font-weight: 500; border: 1px solid var(--line); border-radius: 999px; padding: 0 8px; font-size: 11px; }
 .feedback { font-size: 12px; color: var(--muted); min-height: 16px; }
@@ -102,10 +105,15 @@ aside { display: flex; flex-direction: column; gap: 10px; min-height: 0; overflo
 .popover ul li b { color: var(--ink); font-weight: 500; }
 .popover .pos { color: var(--green); } .popover .neg { color: var(--orange); }
 
-/* why */
-.why { font-size: 13px; }
-.why .mode { display: inline-block; font-weight: 650; padding: 1px 8px; border-radius: 999px; margin-right: 6px; background: #1c2633; }
+/* why: everything in this card has a fixed height, because it changes forty times a second and sits
+   above every other panel */
+.why { font-size: 13px; display: flex; align-items: center; gap: 6px; height: 24px; white-space: nowrap; }
+.why .mode { display: inline-block; font-weight: 650; padding: 1px 8px; border-radius: 999px; background: #1c2633; flex: none; width: 7.6em; text-align: center; }   /* wide enough for "backing up" */
+.why #driver { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+.sensedetail { margin-top: 6px; font-size: 12px; color: var(--ink); height: 34px; line-height: 17px; overflow: hidden;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow-wrap: anywhere; }
+.sensedetail:empty::before { content: "nothing in particular"; color: var(--muted); }
 .chip { border: 1px solid var(--line); border-radius: 999px; padding: 2px 9px; font-size: 12px; color: var(--muted); }
 .chip.on { color: var(--ink); border-color: var(--accent); background: #10261f; }
 .chip.sugar.on { border-color: var(--sugar); background: #2a2210; }
@@ -129,7 +137,8 @@ aside { display: flex; flex-direction: column; gap: 10px; min-height: 0; overflo
 .rows .name button:hover { color: var(--danger); }
 .bar { height: 8px; background: #0b1016; border-radius: 4px; overflow: hidden; }
 .bar.thin { height: 5px; }
-.bar > div { height: 100%; width: 0; background: var(--accent); border-radius: 4px; transition: width .12s linear; }
+.bar > div { height: 100%; width: 100%; transform: scaleX(0); transform-origin: 0 50%; background: var(--accent); border-radius: 4px;
+  transition: transform .12s linear; will-change: transform; }
 .rows .val { text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); }
 .spark { display: block; width: 64px; height: 16px; }
 
@@ -153,8 +162,9 @@ aside { display: flex; flex-direction: column; gap: 10px; min-height: 0; overflo
 .mbonkey i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 4px; background: var(--green); }
 .mbonkey i.av { background: var(--orange); }
 .gauge { margin: 4px 0 6px; }
-.gaugelbl { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); }
-.gaugelbl #gaugeText { color: var(--ink); }
+.gaugelbl { display: flex; justify-content: space-between; gap: 8px; font-size: 11px; color: var(--muted); height: 16px; white-space: nowrap; }
+.gaugelbl #gaugeText { color: var(--ink); overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+#learnText { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .gaugebar { position: relative; height: 8px; border-radius: 4px; background: linear-gradient(90deg, #ff9f6b33, #0b1016 50%, #9be15d33); border: 1px solid var(--line); margin-top: 3px; }
 .gaugebar .mid { position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: var(--line); }
 .gaugebar .needle { position: absolute; top: -3px; width: 4px; height: 12px; border-radius: 2px; background: var(--accent); left: 50%; transform: translateX(-50%); transition: left .2s; }
@@ -176,8 +186,8 @@ aside { display: flex; flex-direction: column; gap: 10px; min-height: 0; overflo
 .scn-head span { color: var(--muted); }
 .scn-head .mini { margin-left: auto; }
 .scenario .bar { margin: 6px 0; }
-.scn-caption { margin-bottom: 4px; }
-.scn-left { color: var(--muted); font-size: 11.5px; margin-bottom: 4px; }
+.scn-caption { margin-bottom: 4px; height: 34px; line-height: 17px; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.scn-left { color: var(--muted); font-size: 11.5px; margin-bottom: 4px; height: 16px; white-space: nowrap; }
 
 /* lab */
 .lab { display: flex; flex-direction: column; gap: 7px; }
@@ -214,7 +224,7 @@ aside { display: flex; flex-direction: column; gap: 10px; min-height: 0; overflo
 .relay .sc { color: var(--muted); font-variant-numeric: tabular-nums; margin-left: auto; }
 
 /* events */
-.events { list-style: none; margin: 0; padding: 0; max-height: 190px; overflow-y: auto; font-size: 12px; display: flex; flex-direction: column; gap: 2px; scrollbar-width: thin; }
+.events { list-style: none; margin: 0; padding: 0; height: 190px; overflow-y: auto; overflow-anchor: none; font-size: 12px; display: flex; flex-direction: column; gap: 2px; scrollbar-width: thin; }
 .events li { display: grid; grid-template-columns: 8px 44px 1fr; gap: 6px; align-items: baseline; }
 .events li i { width: 7px; height: 7px; border-radius: 50%; display: inline-block; background: var(--muted); position: relative; top: -1px; }
 .events li .t { color: var(--muted); font-variant-numeric: tabular-nums; }

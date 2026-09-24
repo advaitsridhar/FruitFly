@@ -106,13 +106,22 @@ function gotState(s) {
   onState(s);
 }
 
-// ---------------------------------------------------------------- per-tick UI update (kept cheap: text and widths only when they change)
+// ---------------------------------------------------------------- per-tick ingestion (cheap) and per-frame rendering
+// The server sends 40 ticks a second. Every tick is taken in (spike flashes, sparkline history,
+// the event log), but the page is written only once per animation frame, from the latest tick:
+// when a machine draws 30 frames a second it no longer tries to lay the panels out 40 times.
+let renderPending = false;
 function onState(s) {
   const now = performance.now();
   if (S) Sgap = Math.min(200, Math.max(15, 0.7 * Sgap + 0.3 * (now - Stime)));
   Sprev = S; S = s; Stime = now; lastStateAt = now;
-  if (!firstState) { firstState = true; setShown($("loading"), false); }
   brain.setSpikes(s.spikes, now / 1000);
+  panels.keys.ingest(s);
+  panels.events.ingest(s);
+  renderPending = true;
+}
+function renderState(s) {
+  if (!firstState) { firstState = true; setShown($("loading"), false); }
   setText($("stSps"), (s.sps || 0).toLocaleString());
   setText($("stRtf"), s.paused ? "paused" : (s.rtf >= 0.97 ? "real time" : fmt(s.rtf, 2) + "×") + (s.speed !== 1 ? ` (×${fmt(s.speed, 2)})` : ""));
   setText($("stT"), fmt(s.t, 1));
@@ -360,6 +369,7 @@ let last = performance.now();
 function frame(now) {
   const dt = Math.min(0.1, (now - last) / 1000); last = now;
   if (L && arena) {
+    if (renderPending && S) { renderPending = false; renderState(S); }
     const pose = S ? flyPose() : null, female = S ? femalePose() : null;
     arena.draw(dt, { S, pose, female, pointer, tool, sees, handAng: S ? serverHandAngle() : 0, stripes: S ? stripesNow() : null });
     brain.frame(dt, now / 1000);

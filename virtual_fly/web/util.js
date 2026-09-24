@@ -5,10 +5,12 @@ export const $ = (id) => document.getElementById(id);
 
 /** Set an element's text only when it changed (the state handler runs 40 times a second). */
 export function setText(el, s) { if (el && el.__t !== s) { el.__t = s; el.textContent = s; } }
-/** Set a bar's width in percent, rounded to half a percent, only when it changed. */
+/** Set a bar fill's length in percent, rounded to half a percent, only when it changed.
+ *  The fill is scaled with a transform rather than resized: a transform is animated by the
+ *  compositor and never makes the page lay itself out again (thirty bars did, forty times a second). */
 export function setWidth(el, pct) {
   const v = Math.max(0, Math.min(100, Math.round(pct * 2) / 2));
-  if (el && el.__w !== v) { el.__w = v; el.style.width = v + "%"; }
+  if (el && el.__w !== v) { el.__w = v; el.style.transform = `scaleX(${v / 100})`; }
 }
 export function setClass(el, cls, on) { if (el && el.__c?.[cls] !== !!on) { (el.__c ??= {})[cls] = !!on; el.classList.toggle(cls, !!on); } }
 export function setShown(el, on) { if (el && el.__s !== !!on) { el.__s = !!on; el.hidden = !on; } }

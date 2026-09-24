@@ -30,19 +30,23 @@ export class WhyPanel {
       ["", "zap", "zap", (f) => "zap: " + f.zap],
     ];
     const box = $("senses"); box.innerHTML = "";
+    // the chip's label never changes (a chip that grew a few words every tick re-wrapped the row and
+    // moved every card below it); the details go on one fixed-height line underneath
     this.chips = this.defs.map(([cls, key, off, on]) => { const e = el("span", "chip " + cls, esc(off)); e.__t = off; box.appendChild(e); return { e, key, off, on }; });
+    this.detail = $("senseDetail");
   }
   update(S) {
     const m = $("mode"), mode = S.mode || (S.fly && S.fly.mode) || "idle";
     setText(m, MODE_TEXT[mode] || mode);
     if (m.__bg !== mode) { m.__bg = mode; m.style.background = MODE_COLOR[mode] || "#1c2633"; }
     setText($("driver"), S.driver || "");
-    const f = S.senses || {};
+    const f = S.senses || {}, details = [];
     for (const ch of this.chips) {
       const on = ch.key in f && f[ch.key] !== false && f[ch.key] !== "" && f[ch.key] != null;
       setClass(ch.e, "on", on);
-      setText(ch.e, on ? ch.on(f) : ch.off);
+      if (on) { const d = ch.on(f); if (d !== ch.off) details.push(d); }
     }
+    setText(this.detail, details.join(" · "));
   }
 }
 
@@ -83,7 +87,9 @@ export class KeyNeurons {
     for (const k of keys) { const arr = h.history[k]; if (!arr) continue; const H = this.hist[k]; if (!H || H.n > 40) continue; for (const v of arr) this.push(H, v); }
   }
   push(H, v) { H.a[H.i] = v; H.i = (H.i + 1) % HIST; if (H.n < HIST) H.n++; }
-  update(S) {
+  /** Called for every state tick (cheap): keep the sparkline history complete even when the page
+   *  draws fewer frames than the server sends ticks. */
+  ingest(S) {
     const hz = S.hz || {}, custom = S.custom || {};
     const ck = Object.keys(custom).join("|");
     if (ck !== this.customKeys) {                       // watches added or removed: rebuild only those rows
@@ -92,9 +98,14 @@ export class KeyNeurons {
       for (const k of Object.keys(custom)) if (!this.rows[k]) this.addRow({ key: k, spec: custom[k], label: custom[k], max: 50, colour: "#c792ff" }, true);
       this.customGrp.hidden = !ck;
     }
+    for (const k in this.rows) this.push(this.hist[k], hz[k] || 0);
+  }
+  /** Called once per animation frame with the latest state: the DOM writes. */
+  update(S) {
+    const hz = S.hz || {};
+    if (this.customKeys !== Object.keys(S.custom || {}).join("|")) this.ingest(S);
     for (const k in this.rows) {
       const r = this.rows[k], v = hz[k] || 0;
-      this.push(this.hist[k], v);
       if (r.custom) r.peak = Math.max(r.peak * 0.999, v, 5), r.max = r.peak;
       setWidth(r.fill, (100 * v) / r.max);
       setText(r.val, String(Math.round(v)));
@@ -351,19 +362,23 @@ export class PathwayPanel {
 
 // ================================================================= 9. Event log
 export class EventsPanel {
-  constructor() { this.lastId = 0; this.count = 0; this.ul = $("events"); $("eventsClear").onclick = () => { this.ul.innerHTML = ""; this.count = 0; }; }
+  constructor() { this.lastId = 0; this.count = 0; this.queue = []; this.ul = $("events"); $("eventsClear").onclick = () => { this.ul.innerHTML = ""; this.count = 0; }; }
+  /** Every tick: remember the events not seen yet (the DOM is written once per frame). */
+  ingest(S) {
+    for (const e of S.events || []) { if (e.id > this.lastId) { this.lastId = e.id; this.queue.push(e); } }
+  }
   update(S) {
-    const evs = S.events || []; if (!evs.length) return;
+    if (!this.queue.length) { if (S.events && S.events.length && !this.lastId) this.ingest(S); if (!this.queue.length) return; }
     const ul = this.ul, atBottom = ul.scrollHeight - ul.scrollTop - ul.clientHeight < 24;
-    let added = false;
-    for (const e of evs) {
-      if (e.id <= this.lastId) continue;
-      this.lastId = e.id;
+    const frag = document.createDocumentFragment();
+    for (const e of this.queue) {
       const li = el("li", e.kind, `<i></i><span class="t">${fmt(e.t, 1)} s</span><span>${esc(e.text)}</span>`);
-      li.title = e.kind; ul.appendChild(li); added = true; this.count++;
+      li.title = e.kind; frag.appendChild(li); this.count++;
     }
+    this.queue.length = 0;
+    ul.appendChild(frag);
     while (this.count > 200) { ul.firstChild.remove(); this.count--; }
-    if (added && atBottom) ul.scrollTop = ul.scrollHeight;
+    if (atBottom) ul.scrollTop = ul.scrollHeight;
   }
 }
 
