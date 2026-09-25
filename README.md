@@ -89,6 +89,9 @@ Step by step:
 On macOS or Linux, use `python3` instead of `py`. To install the package with its console scripts
 and the test tools: `pip install -e ".[dev]"` then `fly-game`, `fly-brain`, `pytest`.
 
+**The female fly** needs one more package, `py -m pip install pyarrow`, and the first `--female` run
+downloads about 130 MB (FlyWire's connectivity table and annotations) and builds a 45 MB file in `data/`.
+
 **If something goes wrong**
 
 | Problem | Fix |
@@ -201,6 +204,14 @@ name and adds it to the readouts; the **Pathway explorer** asks the wiring how o
 reaches another and highlights the route in the 3-D brain map, with a one-click lesion of each
 relay. The **Learning** panel shows every MBON's remaining synaptic strength and the learned bias
 for the odour being smelled. **Record** saves the session (and, optionally, every spike).
+
+**Switch to the female fly.** `py fly_game.py --female` and `py fly_brain.py --female` run the same
+kit on FlyWire, the whole female brain the published model was built on (Dorkenwald et al. 2024), with
+the model exactly as published: every connection, and 0.275 mV per synapse. The experiments and senses
+find her cells under the male names (`MN9` is FlyWire's `CB0701`, and so on). Cells she doesn't have
+come out as n/a, never as 0 Hz: she has no nerve cord, and no male-specific cells such as pIP10. Sugar
+drives her MN9 and bitter wins over it, as in the paper. Most readouts differ from the male's, and
+`docs/SCIENCE.md` section 9 says why most of those differences are not yet sex differences.
 
 **In code**, start with `my_first_fly.py`: poke, wait, listen, in three lines. Then:
 
@@ -361,6 +372,13 @@ These are the things the critics point at, so it's worth knowing them:
   University of Cambridge / MRC LMB, Google Research. Licensed
   [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Project site:
   [male-cns.janelia.org](https://male-cns.janelia.org/).
+- **The female fly:** FlyWire connectome, release 783: Dorkenwald S et al. *Neuronal wiring diagram of
+  an adult brain.* Nature 634:124-138 (2024), [doi:10.1038/s41586-024-07558-y](https://doi.org/10.1038/s41586-024-07558-y);
+  annotations Schlegel P et al., Nature 634:139-152 (2024), [doi:10.1038/s41586-024-07686-5](https://doi.org/10.1038/s41586-024-07686-5),
+  extended with Berg et al. ([flyconnectome/flywire_annotations](https://github.com/flyconnectome/flywire_annotations));
+  connectivity table from the published model's repository ([philshiu/Drosophila_brain_model](https://github.com/philshiu/Drosophila_brain_model), MIT).
+  Both files are fetched from their sources on your machine (pinned, checked by SHA-256) and are not
+  redistributed here; see each source for its terms.
 - **Neuron model:** Shiu PK, et al. *A Drosophila computational brain model reveals sensorimotor
   processing.* Nature 634:210-219 (2024), [doi:10.1038/s41586-024-07763-9](https://doi.org/10.1038/s41586-024-07763-9).
 - **Learning rule:** Aso Y et al., eLife 2014 (MBON valence, compartments); Hige T et al., Neuron

@@ -256,7 +256,7 @@ Two things made single verdicts less trustworthy than they looked.
   summary lists them. Five seeds cost about 3 s per experiment with the compiled integrator.
 
 The ranges are unchanged. The model's absolute rates are not comparable with recordings
-(section 9), so there is no measured value to move most of them to; the fragile mark says where a
+(section 10), so there is no measured value to move most of them to; the fragile mark says where a
 range edge sits inside the model's own spread instead. The tables elsewhere in this document were
 measured on seed 0 and are left as they were measured.
 
@@ -1497,7 +1497,109 @@ the antennal-lobe local neurons are silenced in the game profile. The dense code
 from DPM itself. Its fast GABA onto APL (3,521 synapses) follows the curated transmitter, but DPM is
 a spiking point here and has no resting activity, which a real DPM does.
 
-## 9. Honest limitations
+## 9. The female fly (v2.8)
+
+The published model (Shiu et al. 2024) ran on FlyWire, the whole brain of an adult **female** fly
+(Dorkenwald et al. 2024; annotations Schlegel et al. 2024). `load_connectome(female=True)`,
+`python fly_brain.py --female` and `python fly_game.py --female` run the whole kit on it.
+
+### 9.1 What the female fly is
+
+`virtual_fly/flywire.py` builds it on first use from two public files, each pinned to one commit and
+checked by SHA-256: the connectivity table the published model itself uses (`Connectivity_783.parquet`,
+philshiu/Drosophila_brain_model) and FlyWire's neuron annotations (`Supplemental_file1_neuron_annotations.tsv`,
+flyconnectome/flywire_annotations). Neither is redistributed; the built file is about 45 MB. Reading
+the parquet file needs `pyarrow` (`pip install -e ".[female]"`).
+
+* **The published model as published.** The female file keeps every connection (15,091,983 pairs,
+  54,492,922 synapses, 139,262 neurons), because the published model uses all of them and its
+  0.275 mV per synapse was fitted on them. The kit's male file keeps only connections of 5 or more
+  synapses, and its gain of 0.65 is a calibration for the male data (section 1.3). So the default
+  gain follows the connectome: 0.65 for the male, **1.0** (the paper's value) for the female
+  (`brain.DEFAULT_GAIN`). `build_female(min_synapses=5)` builds a file cut like the male one.
+* **Signs** come from each neuron's predicted transmitter in the annotations, the same rule as for
+  the male. They agree with the published model's own `Excitatory` column on 98.9 % of the
+  connections of 5 or more synapses (the annotations' predictions are newer).
+* **Classes** are translated into the male data's vocabulary (e.g. FlyWire's `central` →
+  `cb_intrinsic`), so `class:Kenyon_Cell`, `class:ALLN`, `class:DAN` and the profiles work unchanged.
+  fru/dsx labels are FlyWire's `fru`, `dsx` and `coexpress` (no confidence grade), and
+  `dimorphism:female` selects the 363 female-specific or potentially female-specific neurons.
+* **Missing:** FlyWire has no ventral nerve cord, so there are no leg, wing or neck motor neurons (TTMn,
+  ps1, hg, DLMn), and male-specific cells such as pIP10 do not exist. The annotations have no medulla
+  column coordinates, so the computed column-by-column motion vision (section 5.3) switches itself
+  off, and the hand-built feature detectors still drive LC4, LPLC2 and LC10a.
+
+### 9.2 The kit's names in FlyWire
+
+The experiments and senses are written with MaleCNS cell-type names. Where FlyWire calls a cell
+something else, `flywire.ALIASES` maps the name, and the table is stored in the female file, where
+`Connectome.select` reads it. A real cell type of the same name always wins over an alias.
+
+| kit name | in FlyWire | from |
+|---|---|---|
+| `MN9` | `CB0701` | FBbt_00111298, whose VFB synonyms include both names; it is the published model's MN9 cell |
+| `GNG232` (G2N-1) | `CB0616` | FBbt_00051850 (VFB synonyms G2N-1, GNG232, CB0616); it is the published model's G2N-1 |
+| `GNG087` | `CB0219` | FBbt_20004033 (VFB synonyms GNG087, CB0219) |
+| `LB3b`, `LB3c` (sugar) | the 20 sugar cells of the published model | FlyWire types all 122 labellar sugar and water cells as `LB3`; the published model's list is one side |
+| `LB1a`, `LB1d` | `LB1a,LB1d` | one FlyWire type |
+| `LB2a`, `LB2b` | `LB2a-b` | one FlyWire type |
+| `prefix:pC1_` | `prefix:pC1` (pC1a-e, 10 cells) | the doublesex pC1 cluster; the male's 148 `pC1_` cells include the male-specific P1 |
+
+### 9.3 Experiments on a fly without some of their neurons
+
+`rate()` of a population that does not exist is 0 Hz, which would pass "MN9 stays silent" without
+testing anything. So `run_experiment` checks every population first. A missing stimulus population is
+left out (the female has no leg sugar cells, `LgLG3`). A missing readout is reported as n/a and does
+not count. The experiment cannot be done (n/a) when its whole stimulus is missing, when a population
+it silences is, or when the only readouts left are the stimulated cells themselves. In the female,
+three experiments are n/a (the two song-motor ones and the doublesex lesion) and TTMn and pIP10 are
+n/a readouts. In the game, gauges for cells the fly lacks are not shown.
+
+### 9.4 What the female fly does
+
+Five seeds each, the male numbers from the same code (parts list off). The ranges are the male fly's
+validated results, so on the female they are a comparison, not a test:
+
+| experiment | readout | male | female | range |
+|---|---|---|---|---|
+| sugar (pure) | G2N-1 | 36.6 | 38.0 | 20-60 |
+| sugar (pure) | MN9 | 69.6 | **77.6** | 30-90 |
+| sugar (pure) | Fudog | 20.0 | 1.8 | 10-40 |
+| bitter (pure) | Scapula / MN9 | 290 / 0 | 130 / **0** | 100-400 / 0-5 |
+| sugar + bitter (pure) | MN9 | 0.0 | **3.0** | 0-5 |
+| looming (pure) | giant fibre | 342 | 219 | 250-400 |
+| dust (pure) | aDN1 / aDN2 | 186 / 136 | 5.6 / 5.8 | 100-260 / 80-200 |
+| vinegar (game) | DM1 PN / KC / MBON14 / MBON11 | 289 / 2.0 / 38 / 1.6 | 216 / 2.1 / 57 / 9.8 | all in range |
+| bitter → punishment (game) | PPL101 | 82 | 0.0 | 30-150 |
+| loud sound (game) | giant fibre | 66 | 7.7 | 20-150 |
+| wide-field motion (game) | HS / DNp15 / DNa02 R / DNa02 L | 442 / 180 / 158 / 0 | 348 / 162 / 87 / 44 | ... / 0-20 |
+| courtship command (game) | DNp13 | 31.5 | 0.0 | 5-90 |
+| sugar, fru silenced (game) | MN9 | 34.5 | 80.8 | 15-60 |
+
+The published model's headline results come out on the female: sugar drives MN9, bitter keeps
+it silent, and bitter wins over sugar (pure profile). The antennal grooming route works too with the
+published model's own protocol (its 145 Johnston's-organ cells on one side at 220 Hz): its aDN1 fires
+at 34 Hz. The kit's "dust" stimulus drives both antennae, and in FlyWire the two sides cancel (one
+side alone: aDN1 22 Hz on one side; both: 6 Hz).
+
+Most of the differences are not yet sex differences. The two datasets were reconstructed and their
+synapses detected differently: the median neuron has 200 input synapses in FlyWire, all
+connections counted, against 344 in the male data, counting only connections of 5 or more synapses.
+The giant fibre has 4,300-5,100 input synapses in FlyWire against 19,000-25,000. The sugar cells are
+chosen differently (the published model's one-sided list against LB3b and LB3c): they send Fudog 41
+synapses, against 195 in the male. The female pC1 cluster is 10 cells against the male's 148, and it
+sends DNp13 5 synapses against 1,571. That last one is at least partly biology, since female pC1
+lacks the male's P1 cells. Taking a difference between the two flies for biology would need these
+confounds removed first. The kit gives both flies, not that answer.
+
+Checked, pure profile: the time step (at 0.1 ms, the paper's Brian2 value: MN9 80, giant fibre 211, aDN1
+5.5 Hz), the sign rule (above), and a file cut at 5 synapses like the male's. At gain 0.65 every drive
+is weaker there (MN9 46, Scapula 91, giant fibre 167, aDN1 0 Hz); at gain 1.0 it is close to the full
+file (giant fibre 208, aDN1 8.8 Hz), except that bitter no longer wins over sugar (MN9 9.8 Hz).
+
+---
+
+## 10. Honest limitations
 
 The starter kit's list, extended. These are the things a neuroscientist would point at first.
 
@@ -1544,7 +1646,7 @@ The starter kit's list, extended. These are the things a neuroscientist would po
    axes are calibrated from the data but are approximations (the lattice is treated as flat and
    uniform; a and c axes are 97° apart, not 90°). Photoreceptors and the lamina do nothing.
 10. **Courtship is primed by hand.** The pheromone route to pC1 is real but ~8x too weak here, so
-    tapping the female also drives pC1 directly (section 6.1). The female has no brain.
+    tapping the female also drives pC1 directly (section 6.1). The female the male courts in the game has no brain.
 11. **Wind is a whisper**, deliberately: the wind-sensing neurons drive grooming and backing in
     this model and no descending neuron encodes wind direction (section 6.4), so upwind search is
     hand-built.
@@ -1556,9 +1658,10 @@ The starter kit's list, extended. These are the things a neuroscientist would po
     optomotor cases, one depression grid point) the picture held, but rates moved by ±10-20 Hz and
     the pure sugar experiment can flip into a runaway on a different draw. MBON30 is bistable
     across seeds.
-14. **One brain.** Left/right asymmetries (e.g. the DNa02 right-side bias under bilateral MBON
+14. **One brain of each sex.** Left/right asymmetries (e.g. the DNa02 right-side bias under bilateral MBON
     drive, the right-only wind-responsive DNs) may be features of this individual, its
-    reconstruction, or the 5-synapse threshold, not of flies.
+    reconstruction, or the 5-synapse threshold, not of flies. The female fly is another individual,
+    reconstructed differently, so a male-female difference is not yet a sex difference (section 9.4).
 15. **Not modelled at all:** hormones, neuropeptides (the ontology names the peptidergic types;
     nothing is done with them), neuromodulation beyond the tones and the two hand-built cases
     (hunger on the sugar neurons, dopamine gating), electrical synapses (the ontology knows the
@@ -1567,7 +1670,7 @@ The starter kit's list, extended. These are the things a neuroscientist would po
 
 ---
 
-## 10. References
+## 11. References
 
 * Ache JM, Polsky J, Alghailani S, Parekh R, Breads P, Peek MY, Bock DD, von Reyn CR, Card GM
   (2019). Neural basis for looming size and velocity encoding in the *Drosophila* giant fiber
@@ -1618,6 +1721,8 @@ The starter kit's list, extended. These are the things a neuroscientist would po
 * Dacks AM, Green DS, Root CM, Nighorn AJ, Wang JW (2009). Serotonin modulates olfactory processing
   in the antennal lobe of *Drosophila*. *Journal of Neurogenetics* 23(4):366-377.
   doi:10.3109/01677060903085722
+* Dorkenwald S, Matsliah A, Sterling AR, Schlegel P, Yu SC, et al. (2024). Neuronal wiring diagram of an
+  adult brain. *Nature* 634:124-138. doi:10.1038/s41586-024-07558-y (FlyWire, the female fly)
 * El-Kholy S, Stephano F, Li Y, Bhandari A, Fink C, Roeder T (2015). Expression analysis of
   octopamine and tyramine receptors in *Drosophila*. *Cell and Tissue Research* 361(3):669-684.
   doi:10.1007/s00441-015-2137-4
@@ -1712,6 +1817,8 @@ The starter kit's list, extended. These are the things a neuroscientist would po
 * Schnell B, Joesch M, Forstner F, Raghu SV, Otsuna H, Ito K, Borst A, Reiff DF (2010). Processing
   of horizontal optic flow in three visual interneurons of the *Drosophila* brain. *Journal of
   Neurophysiology* 103(3):1646-1657. doi:10.1152/jn.00950.2009
+* Schlegel P, Yin Y, Bates AS, Dorkenwald S, Eichler K, et al. (2024). Whole-brain annotation and
+  multi-connectome cell typing of *Drosophila*. *Nature* 634:139-152. doi:10.1038/s41586-024-07686-5
 * Shiu PK, Sterne GR, Spiller N, Blumenthal E, et al. (2024). A *Drosophila* computational brain
   model reveals sensorimotor processing. *Nature* 634:210-219. doi:10.1038/s41586-024-07763-9
 * Stensmyr MC, Dweck HKM, Farhan A, Ibba I, Strutz A, Mukunda L, Linz J, Grabe V, Steck K,

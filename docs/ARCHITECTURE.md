@@ -3,7 +3,9 @@
 ```
 fly_brain.py / fly_game.py / my_first_fly.py     thin entry points (kept from the starter kit)
 virtual_fly/
-  connectome.py    the data: FLYB reader, population specs, input/output indices, cell-type graph
+  connectome.py    the data: FLYB reader, population specs (and a file's name aliases), input/output indices, cell-type graph
+  flywire.py       the female fly: builds FlyWire 783 in the FLYB format from its public sources, with the table of
+                   the kit's MaleCNS names for FlyWire's cells (load_connectome(female=True))
   brain.py         the simulation: LIF network, optional brakes/noise/modulation, monitors, checkpoints
   fastbrain.py     the same integration step as compiled numba kernels (optional, same spikes, ~2x faster)
   plasticity.py    mushroom-body learning: dopamine-gated depression of KC->MBON synapses
