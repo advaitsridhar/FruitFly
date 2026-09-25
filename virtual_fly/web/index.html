@@ -16,6 +16,10 @@
     <span title="how fast the brain runs compared with real time">sim speed <b id="stRtf" class="num w8">–</b></span>
     <span title="time the fly has lived">fly time <b id="stT" class="num w6">0.0</b> s</span>
   </div>
+  <span class="menuwrap">
+    <button class="linkbtn" id="panelsBtn" title="Hide the side panels so the dish takes the screen, choose which panels show, or drag a panel by its title to move it">Panels ▾</button>
+    <div class="menu right" id="panelMenu" hidden></div>
+  </span>
   <button class="linkbtn" id="realBtn">What's real here?</button>
   <button class="linkbtn round" id="keysBtn" title="Keyboard shortcuts">?</button>
 </header>
@@ -58,6 +62,7 @@
         </div>
       </span>
       <button class="btn" id="resetBtn" title="New fly, fresh brain (learned synapses are kept)">New fly</button>
+      <button class="btn" id="zoomBtn" title="Zoom the dish: the mouse wheel over it, this button, or + and −; above 1× the view follows the fly">🔍 1×</button>
       <span class="sep"></span>
       <label class="slider" title="Time scale of the simulation">speed <input type="range" id="speed" min="0.25" max="2" step="0.05" value="1"> <b id="speedVal">1.00×</b></label>
       <span class="sep"></span>
@@ -88,7 +93,7 @@
 
   <aside id="aside">
     <div class="card" id="brainCard">
-      <h2><span>Brain: every neuron, live</span><span id="brainCount"></span></h2>
+      <h2><span>Brain: every neuron</span><span id="brainCount"></span></h2>
       <div class="brainwrap">
         <canvas id="brain"></canvas>
         <canvas id="brainOverlay"></canvas>
@@ -103,19 +108,19 @@
       <div class="feedback" id="brainHint">Drag to rotate, wheel to zoom, click a dot to look up that neuron.</div>
     </div>
 
-    <div class="card">
-      <h2>Why it's doing that</h2>
+    <div class="card" id="whyCard">
+      <h2><span>Why it's doing that</span></h2>
       <div class="why"><span class="mode" id="mode">idle</span><span id="driver">…</span></div>
       <div class="chips" id="senses"></div>
       <div class="sensedetail" id="senseDetail"></div>
     </div>
 
-    <div class="card">
+    <div class="card" id="keysCard">
       <h2><span>Key neurons</span><span>spikes/s · last 6 s</span></h2>
       <div class="rows" id="rows"></div>
     </div>
 
-    <div class="card">
+    <div class="card" id="stateCard">
       <h2><span>Internal state</span><span class="tag">hand-built</span></h2>
       <div class="drives" id="drives">
         <div class="drive"><span class="name">hunger</span><div class="bar"><div id="hungerBar" style="background:#f2b134"></div></div><span class="val" id="hungerVal">0</span><input type="range" id="hungerSet" min="0" max="1" step="0.01" title="set hunger"></div>
@@ -143,13 +148,13 @@
       <div class="feedback" id="learnOff" hidden>Plasticity is off in this profile.</div>
     </div>
 
-    <div class="card">
+    <div class="card" id="checksCard">
       <h2><span>Experiments to try</span><span id="checksDone"></span></h2>
       <ul class="checks" id="checks"></ul>
     </div>
 
-    <div class="card">
-      <h2>Scenarios</h2>
+    <div class="card" id="scenariosCard">
+      <h2><span>Scenarios</span></h2>
       <div class="scenario" id="scenarioStatus" hidden>
         <div class="scn-head"><b id="scnName"></b><span id="scnStep"></span><button class="mini" id="scnStop">Stop</button></div>
         <div class="bar thin"><div id="scnProgress" style="background:var(--accent)"></div></div>
@@ -160,11 +165,11 @@
       <div class="scenarios" id="scenarios"></div>
     </div>
 
-    <div class="card">
-      <h2>Neuron lab</h2>
+    <div class="card" id="labCard">
+      <h2><span>Neuron lab</span></h2>
       <div class="lab">
         <div class="row">
-          <input type="text" id="spec" list="typelist" placeholder="neuron type, e.g. MDN, LC10a/L or prefix:LC10" spellcheck="false" autocomplete="off">
+          <input type="text" id="spec" list="typelist" placeholder="neuron type, e.g. MDN, LC10a/L, prefix:LC10 or fbbt:lobula columnar neuron" spellcheck="false" autocomplete="off">
           <input type="number" id="hz" value="80" min="1" max="500" title="spikes per second"><span class="unit">Hz</span>
         </div>
         <div class="row wrap">
@@ -175,6 +180,10 @@
           <button class="btn" id="watchBtn" title="Add these neurons as a bar in 'Key neurons'">👁 Watch</button>
         </div>
         <div class="presets" id="presets"></div>
+        <div class="row" id="ontoRow" hidden>
+          <input type="text" id="ontoQ" placeholder="or an anatomy-ontology class: lobula columnar, descending, dopaminergic…" spellcheck="false" autocomplete="off" title="Virtual Fly Brain's ontology: pick a class and every cell type below it becomes the population (fbbt:…)">
+        </div>
+        <div class="ontohits" id="ontoHits"></div>
         <div class="silenced" id="silenced"></div>
         <div class="silenced" id="modulated"></div>
         <div class="feedback" id="feedback">Zap = make them fire. Silence = they still fire, but nothing downstream hears them.</div>
@@ -187,6 +196,10 @@
       <div class="feedback" id="geneIntro">Which neurons express <b>fruitless</b> and <b>doublesex</b>, the genes that make a male brain male, and which transmitter each neuron makes. Silence a population as a fly lab would with a driver line, or activate or watch it.</div>
       <div class="genes" id="geneRows"></div>
       <details class="decoder" id="ntGroups"><summary>transmitter genes: who makes what</summary><div class="genes" id="ntRows"></div></details>
+      <details class="decoder" id="vfbBox" hidden><summary id="vfbSummary">what the literature says (Virtual Fly Brain)</summary>
+        <div class="feedback" id="vfbIntro"></div>
+        <div class="genes" id="vfbRows"></div>
+      </details>
       <div class="lab" style="margin-top:8px">
         <div class="row">
           <input type="text" id="lineName" placeholder="driver line, e.g. SS02385, MB112C, R85B12" spellcheck="false" autocomplete="off">
@@ -212,11 +225,18 @@
         <button class="btn" id="realBtn" title="Back to the real wiring">Real wiring</button>
       </div>
       <div class="feedback" id="genomeStatus">the real wiring</div>
+      <div class="partsbox">
+        <div class="row wrap">
+          <button class="btn" id="partsBtn" title="Give each neuron the machine its genes say it is: dopamine, octopamine and serotonin neurons act through slow tones instead of fast synapses (all their receptors are slow), and the optic lobe's graded cell types transmit below the spike threshold">Parts list: off</button>
+          <span class="feedback" id="partsInfo">every neuron is the same machine (Shiu et al. 2024)</span>
+        </div>
+        <div class="tones" id="tones" hidden></div>
+      </div>
       <div class="survival" id="survival"></div>
     </div>
 
-    <div class="card">
-      <h2>Pathway explorer</h2>
+    <div class="card" id="pathsCard">
+      <h2><span>Pathway explorer</span></h2>
       <div class="lab">
         <div class="row">
           <input type="text" id="traceFrom" list="typelist" value="LC10a/L" placeholder="from" spellcheck="false" autocomplete="off">
@@ -233,13 +253,13 @@
       </div>
     </div>
 
-    <div class="card">
+    <div class="card" id="eventsCard">
       <h2><span>Event log</span><button class="mini" id="eventsClear">clear</button></h2>
       <ul class="events" id="events"></ul>
     </div>
 
-    <div class="card">
-      <h2>Recording</h2>
+    <div class="card" id="recordingCard">
+      <h2><span>Recording</span></h2>
       <div class="lab">
         <div class="row">
           <button class="btn" id="recBtn">● Record</button>
@@ -253,7 +273,7 @@
       </div>
     </div>
 
-    <div class="card">
+    <div class="card" id="modelCard">
       <h2><span>Model</span><span id="modelProfile" class="tag"></span></h2>
       <div class="kv" id="modelKv"></div>
       <details class="decoder">
@@ -289,6 +309,9 @@
     <tr><td><kbd>E</kbd></td><td>toggle the eye (retina) inset</td></tr>
     <tr><td><kbd>W</kbd></td><td>toggle the walking urge</td></tr>
     <tr><td><kbd>N</kbd></td><td>new fly</td></tr>
+    <tr><td><kbd>H</kbd></td><td>hide / show the side panels (the Panels menu picks which ones)</td></tr>
+    <tr><td><kbd>+</kbd> / <kbd>−</kbd>, wheel over the dish</td><td>zoom the dish (the view follows the fly)</td></tr>
+    <tr><td>drag a panel's title (mouse or finger)</td><td>reorder it in the sidebar, or drag it out of the sidebar to float it over the dish; ▲ ▼ in the Panels menu reorder by keyboard</td></tr>
     <tr><td><kbd>Enter</kbd> in the lab</td><td>zap the typed population</td></tr>
     <tr><td><kbd>Esc</kbd></td><td>close dialogs, hide the neuron popover</td></tr>
     <tr><td><kbd>Shift</kbd> + click with an odour</td><td>drop the odour together with sugar (<kbd>Alt</kbd>: with bitter)</td></tr>

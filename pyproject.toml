@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "virtual-fly"
-version = "2.3.0"
+version = "2.5.0"
 description = "A whole fruit-fly nervous system (MaleCNS v1.0 connectome) as a leaky integrate-and-fire simulator, plus a browser game driven by it"
 readme = "README.md"
 requires-python = ">=3.10"

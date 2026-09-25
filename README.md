@@ -46,6 +46,8 @@ Compared with the small starter it grew from, it adds:
 | **Tools** | a pathway tracer ("how does the eye reach the steering neurons?"), lesion scans, dose-response sweeps, seeds, JSON export, scenarios (conditioning protocols, courtship, plume following, escape), a 3-D brain map, an event log, session recording | analysis, not model |
 | **Genetics** | the neurons that express *fruitless* and *doublesex* (the genes that make a male brain male) and the male-specific and dimorphic ones, as populations to silence, activate or watch; the transmitter genes behind every neuron's sign; a lookup of which real driver lines label a population and which neurons a line labels (NeuronBridge); five genetic experiments | the expression labels are the MaleCNS annotation read from the data; the lookups are Janelia's; nothing is hand-built, but only two transcription factors and the transmitter identity are known here |
 | **The genome as a recipe** | grow a new fly from the connectome's cell-type wiring rules alone (same neurons, new wiring) and see which reflexes survive; a bottleneck dial squeezes the rules; seeds are individuals | the rules are learned from the data; growth is random within them; 9 of 11 validated reflexes survive type-level rules, none survive class-level rules |
+| **What the literature says** | every cell type joined to its class in the FlyBase anatomy ontology (Virtual Fly Brain): `fbbt:lobula columnar neuron` or `fbbt:dopaminergic neuron` as populations, an ontology search in the Neuron lab, a neuron's popover says what its type is (definition, lineage, peptides, curated transmitter, a VFB link); with the parts list on, the literature's transmitter wins over the prediction for the modulators and the tone's sign on each target follows the receptors its type expresses in the adult scRNA-seq atlases | the join is by name (offline, checked against VFB's own MaleCNS names); the transmitters are the ontology's curated assertions; the receptor fractions are Fly Cell Atlas and other atlases as VFB serves them; the rule that turns receptors into a sign is the kit's |
+| **The genes as a parts list** | a switch that gives each neuron the machine its genes make: the 979 dopamine, octopamine and serotonin neurons lose their fast synapses and leave slow tones on their targets instead (all their receptors are slow), and 43,000 optic-lobe cells that do not spike in real flies release transmitter in proportion to their depolarisation; three tone gauges; a per-type table for thresholds | which neurons make which transmitter is the data; that these three act slowly and that those cell types are graded is the literature (cited in `parts.py`); the strength and time constant of each tone are chosen by hand; 15 of 16 validated experiments still pass |
 
 Everything on screen says which of the two it is; the **"What's real here?"** button lists it all.
 
@@ -96,6 +98,7 @@ and the test tools: `pip install -e ".[dev]"` then `fly-game`, `fly-brain`, `pyt
 | Download blocked by a firewall | Download [the file](https://raw.githubusercontent.com/blendi-remade/fly-brain-minecraft/6cfa30175003ef25da68a237d5eda958f8047b82/src/main/resources/connectome/malecns-v1.0.flyb.gz) in your browser and put it in `data/`. |
 | "Could not find a free port" | `py fly_game.py --port 9000` |
 | The game says it's running below real time | Your computer is simulating 176k neurons slower than real time; the fly's world slows down to keep up. First make sure numba is installed (`py -m pip install numba`; the terminal says "Brain integrator: compiled (numba)" at start-up): with it, a 4-core laptop-class machine manages about 1.5x real time with a busy brain, without it about 0.7x. Then close other programs, or start it with `py fly_game.py --fast` (a 1 ms time step, about twice as fast again; every classic experiment still passes). |
+| The 3-D brain map goes dark while its yaw counter keeps ticking | Your browser took the graphics (WebGL) context away, for instance after a GPU driver reset, sleep and resume, or too many WebGL tabs (Firefox drops the least recently used one past 16). The page now asks for it back and redraws the map when it returns, and says "graphics reset, restoring…" in the map meanwhile; if it says to reload, reload the tab. A flat map with the note that WebGL is unavailable means the browser refused WebGL altogether (check its graphics settings). |
 
 ## 3. How it works (the whole idea)
 
@@ -180,6 +183,15 @@ Scanning hundreds of sensory cell types on the real connectome (the experiments 
 
 ## 5. Things to try
 
+**Make room for the fly.** The **Panels** menu in the header hides the side panels altogether
+(keyboard `H`: the dish takes the whole width, and the toolbar rows stop wrapping so it grows
+taller too), or ticks exactly the panels you want. Every panel can be dragged by its title, with
+the mouse or a finger: up or down to reorder the sidebar, or out of the sidebar to float it
+anywhere on the screen (hover a title for its buttons: ⧉ pops it out over the dish, ⇤ docks it
+again, × hides it; ▲ ▼ in the menu reorder by keyboard). The arrangement is remembered by your
+browser; "Reset the layout" puts everything back. Zoom is what uses the extra width: the mouse
+wheel over the dish, the 🔍 button or `+` / `−` zoom in on the fly (the view follows it).
+
 **In the game** there is a checklist: feed it, offer bitter food, lure it, scare it, dust it, watch
 it bump a wall, drop an odour, teach it, add a female, turn on the wind, clap, spin the drum, zap
 MDN, silence MN9. The **scenarios** run whole protocols for you: appetitive conditioning (odour +
@@ -252,20 +264,56 @@ prints the same table from the terminal, `--grow type` runs any experiment on a 
 `python fly_game.py --grow type` starts the game with one. The science and the numbers are in
 `docs/SCIENCE.md`, section 7.
 
+**The genes as a parts list.** The published model gives every neuron the same machine; the
+"Parts list" switch on the Genome card gives each the one its genes make. Dopamine, octopamine and
+serotonin have no fast receptors in the fly, so their 979 neurons stop making fast synaptic
+potentials and instead leave a *tone* on their targets that lingers for seconds and raises how
+strongly those targets respond to everything else (three gauges show the tones; a loud sound, for
+instance, raises the octopamine tone that sharpens the motion cells). Photoreceptors, the lamina
+cells, the medulla inputs to T4/T5, T4/T5 and the HS/VS cells do not spike in real flies, so here
+they transmit graded signals below the spike threshold. The reflexes are re-tested on the switch:
+15 of the 16 validated experiments still pass. `python fly_brain.py --parts` runs any experiment
+that way, `--part "class:Kenyon_Cell:theta=10"` overrides a type's threshold, and
+`python fly_game.py --parts` starts the game with the parts on. The parts cost about a third
+more brain time (the graded cells emit more events), so under heavy stimulation the game runs
+at 0.8-0.9 of real time on a laptop with the compiled integrator; `--fast` restores it. Section 8
+of `docs/SCIENCE.md` has the before/after table.
+
+**What the literature says (Virtual Fly Brain).** Each cell type is joined to its class in the
+FlyBase anatomy ontology, so `fbbt:lobula columnar neuron`, `fbbt:adult descending neuron` or
+`fbbt:dopaminergic neuron` name a population by what it *is* (the Neuron lab has a search box for
+the classes), and clicking a neuron on the brain map now says what its type is: the definition, the
+anatomical parents (each a click away as a population), the lineage, the peptides, the transmitter
+the literature has established and a link to Virtual Fly Brain. `rx:Dop2R` names the types whose
+adult single-cell cluster expresses a receptor. With the parts list on, the literature's word wins
+over the prediction where the parts model cares (Mi15 gains a dopamine tone, the DPM neuron is
+GABA + serotonin, "unclear" predictions with a curated transmitter get it), and the tone's sign on
+each target follows the receptors its type expresses (Gi-coupled ones lower the gain). The Genetics
+card lists where the literature and the prediction disagree. `python fly_brain.py --curated all`
+lets the literature win over confident fast predictions too (their signs flip, and types it calls
+purely modulatory lose their fast synapses), and `python fly_game.py --curated all` makes the
+Genome card's switch use that policy; section 8.1 of `docs/SCIENCE.md` has the numbers and the
+survival table.
+
 ## 6. Honest limitations
 
 These are the things the critics point at, so it's worth knowing them:
 
-- **Every neuron is identical.** Real neurons differ in size, threshold, timing and chemistry. The
-  absolute firing rates shouldn't be trusted, only which neurons respond. (`--jitter` adds
-  threshold heterogeneity if you want to see how fragile the numbers are.)
+- **Every neuron is identical** unless the parts list is on, and even then only three
+  transmitters' slow action, five cell-type groups' graded signalling and a threshold table
+  separate them. Real neurons differ in size, threshold, timing and chemistry. The absolute
+  firing rates shouldn't be trusted, only which neurons respond. (`--jitter` adds threshold
+  heterogeneity if you want to see how fragile the numbers are.)
 - **Runaway loops.** In the paper's pure model, bitter taste, dust and smells set off a seizure in
   the antennal lobe that never stops. The game's fixes are documented above; `--pure` shows the
   model without them. A small loop between `DNg33` and a few serotonin neurons can still keep
   firing after strong stimuli; it doesn't move the body.
 - **Dopamine is treated as a slow modulator.** The data label dopamine neurons excitatory; in the
   game their spikes gate plasticity but their fast synapses are muted, otherwise bitter taste would
-  drive the MBONs directly.
+  drive the MBONs directly. With the parts list on, octopamine and serotonin neurons are treated
+  the same way and all three leave a slow tone; its sign on a target follows the receptors the
+  target's cell type expresses only where an adult single-cell cluster exists (mostly the mushroom
+  body and the optic lobe), and is one guess per transmitter everywhere else.
 - **No spontaneous activity**, unless you switch on the (hand-built) background noise. The
   "walking urge", hunger, thirst and odour-guided steering are hand-built and can be switched off.
 - **Vision is computed, not grown.** The retina, the feature detectors and the correlator are our
@@ -317,4 +365,11 @@ These are the things the critics point at, so it's worth knowing them:
   neuron choices come from [fly-brain-minecraft](https://github.com/blendi-remade/fly-brain-minecraft)
   by blendi-remade (code MIT, data CC BY 4.0). The download is pinned to one version and checked
   with a SHA-256 hash.
+- **Anatomy ontology and Virtual Fly Brain:** the FlyBase anatomy ontology (FBbt; Costa M et al.,
+  J Biomed Semantics 2013), release 2026-07-09, [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/),
+  and Virtual Fly Brain (Court R et al., Front Physiol 2023; [virtualflybrain.org](https://virtualflybrain.org)),
+  whose MaleCNS name synonyms (Berg et al. 2025) and single-cell RNA-seq expression tables (Fly Cell
+  Atlas, Li H et al., Science 2022; Davie K et al., Cell 2018; and the other data sets named in
+  `data/vfb_receptors.json.gz`, all CC BY 4.0) were read once through the VFB connector and shipped
+  as the files in `data/`.
 - **This kit's code** is yours to use and change however you like.

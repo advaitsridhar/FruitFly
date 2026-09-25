@@ -6,13 +6,15 @@ import { Arena, lerpAngle } from "./arena.js";
 import { BrainView, REGION_COLORS } from "./brain3d.js";
 import { RetinaView } from "./retina.js";
 import * as P from "./panels.js";
+import { PanelManager } from "./layout.js";
 
 // ---------------------------------------------------------------- state
 let L = null;                       // layout (brain map, arena size, readouts, odours ...)
 let S = null, Sprev = null, Stime = 0, Sgap = 25, lastSeq = 0, lastStateAt = 0, firstState = false;
 let tool = "lure", odourFood = "", pointer = null, lastSent = 0, sees = false;
-let arena = null, brain = null, retina = null;
+let arena = null, brain = null, retina = null, layout = null;
 const panels = {};
+const ZOOMS = [1, 1.5, 2, 3, 4];
 let toolOrder = ["lure", "hand", "sugar", "bitter", "water", "dust", "shock", "post"];
 const HINTS = {
   lure: "Wiggle the lure slowly beside the fly: it turns toward small moving things (a courtship-chase circuit).",
@@ -53,6 +55,7 @@ async function loadLayout() {
   panels.events = new P.EventsPanel();
   panels.recording = new P.RecordingPanel();
   panels.model = new P.ModelPanel(L);
+  layout = new PanelManager($("aside"), $("panelsBtn"), $("panelMenu"));
   buildDialogs();
   setTool("lure");
   connect();
@@ -207,6 +210,26 @@ arenaEl.addEventListener("pointermove", (e) => {
   }
 });
 arenaEl.addEventListener("pointerleave", () => { pointer = null; post({ type: "hand_off" }); });
+// zoom: the wheel over the dish, the button, or + / -; above 1x the view follows the fly
+function setZoom(z) {
+  if (!arena) return;
+  const zoom = arena.setZoom(z);
+  setText($("zoomBtn"), `🔍 ${zoom % 1 ? zoom.toFixed(1) : zoom}×`);
+  setClass($("zoomBtn"), "on", zoom > 1);
+}
+function zoomStep(dir) {
+  if (!arena) return;
+  const z = arena.zoom, next = dir > 0 ? ZOOMS.find((v) => v > z + 1e-6) : [...ZOOMS].reverse().find((v) => v < z - 1e-6);
+  setZoom(next == null ? z : next);                     // already past the last step: stay there
+}
+// the wheel is claimed only when it changes the zoom, so a horizontal swipe or scrolling at 1x keeps working
+arenaEl.addEventListener("wheel", (e) => {
+  if (!arena || !e.deltaY) return;
+  const z = Math.max(1, Math.min(4, arena.zoom * (e.deltaY < 0 ? 1.12 : 1 / 1.12)));
+  if (z === arena.zoom) return;
+  e.preventDefault(); setZoom(z);
+}, { passive: false });
+$("zoomBtn").onclick = () => { if (!arena) return; const z = arena.zoom, i = ZOOMS.findIndex((v) => v > z + 1e-6); setZoom(i < 0 ? 1 : ZOOMS[i]); };
 arenaEl.addEventListener("pointerdown", (e) => {
   if (!arena) return;
   const p = pointerAt(e);
@@ -324,20 +347,62 @@ function wireBrain() {
       <h5>${esc(n.type || "(unannotated)")}${n.side ? " / " + esc(n.side) : ""} <small style="color:var(--muted)">#${n.index}</small></h5>
       <div class="kv">
         <span class="k">class</span><span class="v">${esc([n.superclass, n.class, n.subclass].filter(Boolean).join(" · ") || "–")}</span>
-        <span class="k">transmitter</span><span class="v">${esc(n.nt || "?")} (${n.sign > 0 ? "excitatory" : "inhibitory"})</span>
+        <span class="k">transmitter</span><span class="v">${esc(n.nt || "?")} (${n.sign > 0 ? "excitatory" : "inhibitory"})${partsRole(n.parts)}</span>
+        ${vfbRows(n)}
         <span class="k">connections</span><span class="v">${n.n_inputs} in · ${n.n_outputs} out</span>
         <span class="k">firing now</span><span class="v">${fmt(n.rate_hz, 1)} Hz</span>
         <span class="k">region</span><span class="v">${esc(L.regions[L.region[i]] || "")}</span>
         <span class="k">genes</span><span class="v">${(n.genes || []).length ? n.genes.map((g) => `<a href="${g.flybase}" target="_blank" rel="noopener" title="${esc(g.why)} · FlyBase">${esc(g.symbol)}</a>`).join(", ") : "none known here"}${n.dimorphism ? ` · ${esc(n.dimorphism)}` : ""}</span>
+        ${receptorRow(n.receptors)}
       </div>
+      ${n.vfb && n.vfb.definition ? `<details><summary>what is this cell type?</summary><div class="def">${esc(n.vfb.definition)}</div></details>` : ""}
       <b>strongest inputs</b><ul>${list(n.inputs || [])}</ul>
       <b>strongest outputs</b><ul>${list(n.outputs || [])}</ul>
       <div class="row wrap"><a href="https://neuprint.janelia.org/view?bodyid=${n.body_id}&dataset=male-cns%3Av1.0" target="_blank" rel="noopener">neuPrint ↗</a>
+        ${n.vfb ? `<a href="${esc(n.vfb.url)}" target="_blank" rel="noopener" title="${esc(n.vfb.label)} on Virtual Fly Brain">VFB ↗</a>` : ""}
         <button class="mini" data-act="lab">to the lab</button><button class="mini" data-act="watch">watch ${esc(spec)}</button></div>`;
     pop.querySelector(".close").onclick = () => { setShown(pop, false); brain.picked = -1; };
     pop.querySelector("[data-act=lab]").onclick = () => { $("spec").value = spec; $("spec").focus(); };
     pop.querySelector("[data-act=watch]").onclick = () => post({ type: "watch", spec });
+    pop.querySelectorAll(".crumb").forEach((a) => (a.onclick = () => { $("spec").value = `fbbt:${a.dataset.fbbt}`; $("spec").focus(); }));
   };
+}
+
+// the popover's Virtual Fly Brain lines: the ontology class, its parents (click = select that class),
+// the transmitter the literature asserts, the lineage and peptides, the receptors the type expresses
+function partsRole(p) {
+  if (!p) return "";
+  const bits = [];
+  if (p.modulator) bits.push(`${p.modulator} tone${p.keep_fast ? " + fast synapses" : ""}`);
+  if (p.curated) bits.push(`the literature says ${esc(p.curated.curated.join(" + "))}: ${esc(p.curated.action)}`);
+  else if (p.sign !== undefined && p.modulator === null) bits.push(`fast ${p.sign > 0 ? "+" : "−"}`);
+  if (p.graded) bits.push("graded");
+  return bits.length ? ` <small class="muted">· parts list: ${bits.join("; ")}</small>` : "";
+}
+function vfbRows(n) {
+  const v = n.vfb;
+  if (!v) return L.vfb && L.vfb.available ? `<span class="k">ontology</span><span class="v muted">no FBbt class matched this type</span>` : "";
+  const crumbs = (v.breadcrumb || []).slice(0, 3).map((b) => `<a class="crumb" data-fbbt="${esc(b.fbbt)}" title="select every ${esc(b.label)} (fbbt:${esc(b.fbbt)})">${esc(b.label)}</a>`).join(" › ");
+  let out = `<span class="k">ontology</span><span class="v"><a href="${esc(v.url)}" target="_blank" rel="noopener" title="${esc(v.fbbt[0])} on Virtual Fly Brain">${esc(v.label)}</a>${v.coarse ? ` <small class="muted">(class of ${v.shared_by || "several"} types)</small>` : v.shared_by ? ` <small class="muted">(shared by ${v.shared_by} types)</small>` : ""}${crumbs ? `<br><small>${crumbs}</small>` : ""}</span>`;
+  if (v.curated_nt && v.curated_nt.length) {
+    const agrees = v.curated_nt.includes(n.nt);
+    out += `<span class="k">${v.evidence === "literature" ? "literature" : "elsewhere"}</span><span class="v">${esc(v.curated_nt.join(" + "))} <small class="${agrees ? "agree" : "warn"}">${agrees ? "agrees" : "differs from the prediction"}</small> <small class="muted">(${v.evidence === "literature" ? "curated in the ontology" : "another connectome's prediction, via the ontology"})</small></span>`;
+  }
+  const extra = [];
+  if (v.lineage && v.lineage.length) extra.push(esc(v.lineage[0]));
+  if (v.birth) extra.push(`${v.birth} neuron`);
+  if (v.peptides && v.peptides.length) extra.push(`peptides: ${esc(v.peptides.join(", "))}`);
+  if (extra.length) out += `<span class="k">also</span><span class="v">${extra.join(" · ")}</span>`;
+  return out;
+}
+function receptorRow(rx) {
+  if (!rx || !rx.receptors.length) return "";
+  const cells = rx.receptors.map((r) => {
+    const tip = esc(r.modulator ? `${r.modulator} receptor, ${r.sign > 0 ? "raises" : "lowers"} the gain` : "not a modelled receptor");
+    const name = r.flybase ? `<a href="${esc(r.flybase)}" target="_blank" rel="noopener" title="${tip} · FlyBase">${esc(r.gene)}</a>` : `<span title="${tip}">${esc(r.gene)}</span>`;
+    return `${name} ${Math.round(100 * r.extent)} %`;
+  }).join(", ");
+  return `<span class="k">receptors</span><span class="v">${cells} <small class="muted">(${esc(rx.family_label)}${rx.depth ? ", from " + esc(rx.label) : ""}; % of cells)</small></span>`;
 }
 
 // ---------------------------------------------------------------- dialogs and keyboard
@@ -352,7 +417,9 @@ $("keysBtn").onclick = () => $("keysDlg").showModal();
 document.querySelectorAll("[data-close]").forEach((b) => (b.onclick = () => b.closest("dialog").close()));
 window.addEventListener("keydown", (e) => {
   const tag = e.target.tagName;
-  if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA" || e.ctrlKey || e.metaKey) return;
+  const typing = (tag === "INPUT" && !/^(checkbox|radio|range|button)$/.test(e.target.type)) || tag === "SELECT" || tag === "TEXTAREA";
+  if (typing || e.ctrlKey || e.metaKey) return;
+  if (e.key === " " && e.target.closest("button, a, input, select, summary, [role=button]")) return;   // Space activates a focused control
   if (!L) return;
   if (/^[0-9]$/.test(e.key)) { const k = e.key === "0" ? 9 : parseInt(e.key) - 1; if (toolOrder[k]) setTool(toolOrder[k]); return; }
   switch (e.key) {
@@ -363,23 +430,37 @@ window.addEventListener("keydown", (e) => {
     case "e": case "E": $("retinaToggle").checked = retinaOn = !retinaOn; setShown($("retinaBox"), retinaOn); break;
     case "w": case "W": post({ type: "autopilot", on: !(S && S.autopilot) }); break;
     case "n": case "N": post({ type: "reset" }); break;
+    case "h": case "H": if (layout) layout.toggleSidebar(); break;
+    case "+": case "=": zoomStep(1); break;
+    case "-": case "_": zoomStep(-1); break;
     case "Escape": setShown($("neuronPop"), false); if (brain) brain.picked = -1; $("clearMenu").hidden = true; break;
   }
 });
 
 // ---------------------------------------------------------------- main loop
 let last = performance.now();
+const failed = new Set();
+// one broken drawer must not stop the others, and nothing may stop the loop itself: each part is guarded
+// and the next frame is always scheduled (a failure is logged once)
+function guard(name, fn) {
+  try { fn(); } catch (e) { if (!failed.has(name)) { failed.add(name); console.error(`${name} failed; the rest of the page keeps running`, e); } }
+}
 function frame(now) {
-  const dt = Math.min(0.1, (now - last) / 1000); last = now;
-  if (L && arena) {
-    if (renderPending && S) { renderPending = false; renderState(S); }
-    const pose = S ? flyPose() : null, female = S ? femalePose() : null;
-    arena.draw(dt, { S, pose, female, pointer, tool, sees, handAng: S ? serverHandAngle() : 0, stripes: S ? stripesNow() : null });
-    brain.frame(dt, now / 1000);
-    panels.keys.drawSparks(now);
-    setShown($("disc"), lastStateAt > 0 && now - lastStateAt > 3000);
+  try {
+    const dt = Math.min(0.1, (now - last) / 1000); last = now;
+    if (L && arena) {
+      if (renderPending && S) { renderPending = false; guard("panels", () => renderState(S)); }
+      const pose = S ? flyPose() : null, female = S ? femalePose() : null;
+      guard("the dish", () => arena.draw(dt, { S, pose, female, pointer, tool, sees, handAng: S ? serverHandAngle() : 0, stripes: S ? stripesNow() : null }));
+      guard("the brain map", () => brain.frame(dt, now / 1000));
+      guard("the key-neuron sparklines", () => panels.keys.drawSparks(now));
+      setShown($("disc"), lastStateAt > 0 && now - lastStateAt > 3000);
+    }
+  } catch (e) {
+    guard("the frame", () => { throw e; });
+  } finally {
+    requestAnimationFrame(frame);
   }
-  requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
 loadLayout();

@@ -73,12 +73,21 @@ class Antennae:
 
 
 class Bristles:
-    """Touch on the head, and proprioception from walking legs."""
+    """Touch on the head, and proprioception from walking legs.
+
+    Bristle mechanoreceptors adapt quickly: they fire when a bristle is deflected, not for as long
+    as it stays bent. So a touch fires the head bristles for 0.2 s, and a head held still against
+    the wall or a post does not fire them again until it moves (0.3 mm or 0.15 rad) or ``REARM_S``
+    have passed. Without this the touch drives the grooming neurons, grooming stops the fly with
+    its head on the wall, the touch never ends, and the fly grooms there for ever."""
+
+    REARM_S = 2.5
 
     def __init__(self, world):
         self.world = world
         self.touch_left = 0.0
         self.last_touch_t = -99.0
+        self._contact = None                  # (head x, head y, heading) at the touch that last fired
 
     def rates(self, pose, dt: float, bumped: bool, t: float) -> dict[str, float]:
         out: dict[str, float] = {}
@@ -86,8 +95,15 @@ class Bristles:
         near_wall = math.hypot(hx, hy) > self.world.arena_r - 0.6
         near_post = any(math.hypot(hx - o.x, hy - o.y) < o.r + 0.6 for o in self.world.obstacles)
         if bumped or near_wall or near_post:
-            self.touch_left = 0.2
-            self.last_touch_t = t
+            c = self._contact
+            moved = (c is None or math.hypot(hx - c[0], hy - c[1]) > 0.3
+                     or abs(math.atan2(math.sin(pose.h - c[2]), math.cos(pose.h - c[2]))) > 0.15)
+            if moved or t - self.last_touch_t > self.REARM_S:
+                self.touch_left = 0.2
+                self.last_touch_t = t
+                self._contact = (hx, hy, pose.h)
+        else:
+            self._contact = None
         if self.touch_left > 0:
             out[HEAD_BRISTLES] = 100.0
             self.touch_left -= dt

@@ -30,6 +30,8 @@ Returned once at start-up (gzip-compressed if the client accepts it; ~2.4 MB raw
 | `settings` | brain settings dict (dt, backend `numpy`/`numba`, gain, fatigue, silenced, plasticity ...) |
 | `genetics` | `{expression: [{key, label, spec, n, high, types, gene, flybase}], transmitters: [{nt, spec, n, sign, synapse_share, genes: [{symbol, flybase}]}], unclear, genes: [...], readouts: {key: {n, fru, dsx, male, dimorphic, nt, tags}}, source}`; each `readouts[]` row also carries `genes` (its tags: `fru`, `dsx`, `♂`, `♂♀`) |
 | `genome` | `{levels: [{level, label}]}`: the wiring levels the `grow` action accepts |
+| `parts` | `{tables: {modulators: [{nt, label, genes[], receptors, tau_ms, gain, why}], graded: [{spec, label, why}], params: [...], graded_rate_hz, curated, receptor_signs, receptors: [{gene, fbgn, modulator, coupling, sign, why}]}, counts: {modulators: [{nt, neurons, synapses, targets, co_release, ...}], modulatory_neurons, modulated_targets, co_release_neurons, graded: [{spec, label, neurons, why}], graded_neurons, params, curated: {policy, types, neurons, by_action, signs_changed, confident_signs_flipped, rows: [{type, n, predicted, curated[], evidence, action, fbbt, label}]}, receptor_signs: {on, coverage: [{nt, targets, with_data, mean_sign, negative}], receptors[]}}}`: the parts list (`parts.py`) and what it finds in this connectome, including what the curated transmitters change and how many modulated targets have receptor data |
+| `vfb` | `{available, source, overlay_source, types_mapped, types_total, neurons_mapped, neurons_typed, classes, curated: {agree, differ, unclear_with_curated, differ_rows: [{type, n, predicted, curated[], evidence, fbbt, label}]}}` (or `{available: false}` without the data files): the anatomy-ontology join (`vfb.py`) |
 | `decoder` | per decoder DN spec: motor synapses it reaches (`direct_motor_synapses`, `two_hop_motor_synapses_by_neuromere`) |
 | `columnar_vision` | bool: T4/T5 columns driven from the retina |
 | `whats_real` | `{wiring[], hand_built[], not_modelled[]}` text for the "What's real here?" dialog |
@@ -68,7 +70,7 @@ One JSON object per tick (40 per second at real time). Same schema on both endpo
 | `events[]` | the last 12 events `{id, t, kind, text}`; `event_seq` is the newest id |
 | `scenario` | `null` or `{id, name, step, steps, caption, left, measure{}}` |
 | `recording` | `null` or `{frames, spikes, active}` (after `record off` the frames are kept for download, `active` is false, until the next `record on`) |
-| `genome` | `{level, seed, growing: {level, seed, secs} or null, survival: {running, results: [{name, ok, readouts: [{label, hz, lo, hi, ok}]}], ok, tested} or null, wiring: {edges_grown, synapses_grown, shared_connections_fraction} or null, rules: {level, groups, pairs, numbers, rank} or null, error}`: the current fly's genome (see `grow`) |
+| `genome` | `{level, seed, growing: {level, seed, secs[, reason: "parts", parts]} or null, survival: {running, results: [{name, ok, readouts: [{label, hz, lo, hi, ok}]}], ok, tested} or null, wiring: {edges_grown, synapses_grown, shared_connections_fraction} or null, rules: {level, groups, pairs, numbers, rank} or null, error, parts: {on, status}}`: the current fly's genome (see `grow` and `parts`). `parts.status` is `null` when the parts list is off, else `{tone: {dopamine: {mean, max, targets_on}, octopamine: {...}, serotonin: {...}}, graded_active, graded, modulatory, targets}` (`mean` = the tone over that modulator's targets as a fraction of its full effect) |
 
 `world` fields: `food[] = {id, kind (sugar|bitter|water), x, y, r, amount}`; `obstacles[] = {id, x, y, r}`;
 `odours[] = {id, odour, x, y, strength, food}` (sources); `puffs[] = [x, y, r, c, odour]` (plume
@@ -96,6 +98,7 @@ filaments, up to 300); `wind = {angle, speed}` (direction the wind blows *toward
 | `modulate` | `spec, factor` | scale a population's output (1 = normal) |
 | `watch` / `unwatch` | `spec[, key]` / `key` | add / remove a custom readout (appears in `hz`). A `key` that names a built-in readout (`MN9`, `GF`, `DNp15L`, ...) is refused, since the decoder reads those; without a `key` the spec is the name, prefixed `watch:` if it collides. `unwatch` only removes custom watches. |
 | `grow` | `level[, seed]` | grow a fly from the wiring rules (`type`, `class`, `bottleneck:K`) or go back to `real`; runs in the background (`state.genome.growing`), swaps the brain in when done and then tests every validated experiment on a private copy (`state.genome.survival` fills in) |
+| `parts` | `on` (bool) | rebuild the current fly's brain with the parts list on or off (dopamine, octopamine and serotonin as slow tones; graded optic-lobe cells); the same background rebuild, swap and survival run as `grow`, on the same wiring. Refused while a rebuild or a growth is running, or if already in that state |
 | `clear` | `[what]` | `all`, `food`, `odours`, `obstacles` |
 | `reset` | | new fly, fresh brain (learned synapses kept) |
 | `calm` | | reset the brain's activity to rest |
@@ -115,7 +118,9 @@ filaments, up to 300); `wind = {angle, speed}` (direction the wind blows *toward
 | endpoint | returns |
 |---|---|
 | `GET /api/types?q=LC10[&limit=50]` | `{types: [{type, n}]}` |
-| `GET /api/neuron?index=123` or `?body=<bodyId>` | `{neuron: {index, body_id, type, side, superclass, class, subclass, nt, sign, nerve, neuromere, hex, soma, n_inputs, n_outputs, rate_hz, inputs[], outputs[]}}` (`inputs`/`outputs`: `{type, side, synapses, connections, neurons, nt, sign}`) |
+| `GET /api/neuron?index=123` or `?body=<bodyId>` | `{neuron: {index, body_id, type, side, superclass, class, subclass, nt, sign, nerve, neuromere, hex, soma, n_inputs, n_outputs, rate_hz, inputs[], outputs[], genes[], vfb, receptors, parts}}` (`inputs`/`outputs`: `{type, side, synapses, connections, neurons, nt, sign}`; `vfb`: `null` or `{fbbt[], label, symbol, url, route, coarse, definition, breadcrumb: [{fbbt, label}], curated_nt[], evidence, peptides[], lineage[], birth, shared_by}`; `receptors`: `null` or `{class, label, depth, family, family_label, cluster, receptors: [{gene, extent, modulator, sign, flybase}]}`; `parts`: `null` when the parts list is off, else `{sign, modulator, keep_fast, graded, theta_mv[, curated: {action, curated[], predicted}]}`) |
+| `GET /api/ontology?q=lobula[&limit=30]` | `{q, classes: [{fbbt, label, symbol, types, neurons, spec}]}`: anatomy-ontology classes matching the text, largest first (`spec` is the `fbbt:` population) |
+| `GET /api/ontology?id=FBbt_00003870` | `{class: {fbbt, label, symbol, definition, url, parents[], children: [{fbbt, label, types, neurons}], types: [{type, n}], n_types, neurons, spec, tags}}` (404 if the class is not among the kit's) |
 | `GET /api/partners?spec=MN9&dir=in\|out[&top=15]` | `{spec, n, dir, rows: [{type, side, synapses, connections, neurons, nt, sign, fraction}]}` |
 | `GET /api/trace?from=LC10a/L&to=DNa02/L[&hops=4&top=8&avoid=SPEC]` | `{paths: [{nodes[], score, net_sign, hops: [{src, dst, synapses, fraction, sign, src_size, dst_size}]}], neurons: [[neuron index per node or null]], relays: [[name, score]], secs}` (takes 0.5-3 s) |
 | `GET /api/history?keys=MN9,GF[&n=400]` | `{bin_ms, history: {key: [hz...]}}` one value per tick |
@@ -127,6 +132,11 @@ filaments, up to 300); `wind = {angle, speed}` (direction the wind blows *toward
 ### `GET /api/genome`
 
 The genome levels plus the current `state.genome` block.
+
+### `GET /api/parts`
+
+`{on, tables, counts, status}`: the layout's `parts` block plus whether the parts list is on and,
+if so, the tones right now (`state.genome.parts.status`).
 
 ### `GET /api/genes`
 

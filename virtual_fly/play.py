@@ -10,6 +10,7 @@ Start the game: ``python fly_game.py`` or ``python -m virtual_fly.play``.
     --noise 2:1          background kicks per neuron per second : size in mV
     --fast               brain time step 1 ms instead of 0.5 ms (about twice as fast; all six
                          classic experiments still pass)
+    --parts              start with the genes as each neuron's parts list (the Genome card toggles it)
 """
 
 from __future__ import annotations
@@ -44,6 +45,13 @@ def main(argv=None):
     ap.add_argument("--grow", metavar="LEVEL", default=None,
                     help="start with a fly grown from its wiring rules: type, class or bottleneck:K (the Genome card does the same)")
     ap.add_argument("--grow-seed", type=int, default=1, help="which individual to grow (any whole number)")
+    ap.add_argument("--parts", action="store_true",
+                    help="start with the parts list on: modulators as slow tones, graded optic-lobe cells (the Genome card toggles it)")
+    ap.add_argument("--curated", choices=("off", "modulators", "all"), default=None,
+                    help="the parts list's policy for Virtual Fly Brain's curated transmitters, used whenever the parts list "
+                         "is on (now with --parts, or when switched on from the Genome card): off; modulators (default) = fill "
+                         "'unclear' predictions and correct which neurons are modulators; all = the literature also wins over "
+                         "confident fast predictions")
     ap.add_argument("--seed", type=int, default=0)
     args = ap.parse_args(argv)
 
@@ -56,6 +64,10 @@ def main(argv=None):
     if args.noise:
         hz, mv = (float(x) for x in args.noise.split(":"))
         overrides.update(noise_hz=hz, noise_mv=mv)
+    from .parts import PartsList
+    parts_list = PartsList(curated=args.curated or "modulators")
+    if args.parts:
+        overrides["parts"] = parts_list
     print("Loading the fly's nervous system...", file=sys.stderr)
     conn = load_connectome()
     brain = build_brain(conn, profile, **overrides)
@@ -65,8 +77,12 @@ def main(argv=None):
         print("Brain integrator: NumPy. For a several-times faster brain: pip install numba", file=sys.stderr)
     if args.no_learning and brain.plasticity is not None:
         brain.plasticity.enabled = False
+    if brain.parts is not None:
+        c = brain.parts.counts
+        print(f"Parts list: on ({c['modulatory_neurons']:,} modulatory neurons, {c['graded_neurons']:,} graded cells).", file=sys.stderr)
     game = Game(brain, autopilot=not args.no_autopilot, seed=args.seed, columnar=not args.no_columnar,
-                profile_name=profile, brain_factory=lambda c: build_brain(c, profile, **overrides))
+                profile_name=profile, brain_factory=lambda c, **kw: build_brain(c, profile, **{**overrides, **kw}),
+                parts_list=parts_list)
     if args.no_learning:
         game.learning_on = False
     if args.grow:

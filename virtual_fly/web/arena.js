@@ -14,22 +14,46 @@ export const wrap = (a) => { a = (a + Math.PI) % (2 * Math.PI); if (a < 0) a += 
 export class Arena {
   constructor(canvas, stage, L) {
     this.canvas = canvas; this.stage = stage; this.L = L; this.ctx = canvas.getContext("2d");
-    this.R = L.arena_r || 50; this.size = 600; this.scale = 6; this.dpr = 1;
+    this.R = L.arena_r || 50; this.w = this.h = 600; this.base = 6; this.scale = 6; this.dpr = 1;
+    this.zoom = 1; this.cam = { x: 0, y: 0 };         // the view: zoom 1 shows the whole dish; above it the camera follows the fly
     this.particles = []; this.windDots = []; this.shockUntil = 0; this.clapAt = 0;
     this.sprites = {};
     this.odourColour = {}; for (const o of L.odours || []) this.odourColour[o.id] = o.colour;
     this.resize();
   }
   resize() {
+    // the canvas fills the stage; the dish is drawn centred, as big as the shorter side allows
     const st = this.stage.getBoundingClientRect();
     this.dpr = window.devicePixelRatio || 1;
-    this.size = Math.max(280, Math.floor(Math.min(st.width, st.height || st.width)));
-    this.canvas.width = Math.round(this.size * this.dpr); this.canvas.height = Math.round(this.size * this.dpr);
-    this.canvas.style.width = this.size + "px"; this.canvas.style.height = this.size + "px";
-    this.scale = (this.size / 2 - 10) / this.R;
+    this.w = Math.max(280, Math.floor(st.width || 280)); this.h = Math.max(280, Math.floor(st.height || st.width || 280));
+    this.canvas.width = Math.round(this.w * this.dpr); this.canvas.height = Math.round(this.h * this.dpr);
+    this.canvas.style.width = this.w + "px"; this.canvas.style.height = this.h + "px";
+    this.base = (Math.min(this.w, this.h) / 2 - 10) / this.R;
+    this.scale = this.base * this.zoom;
   }
-  W2C(x, y) { return [this.size / 2 + x * this.scale, this.size / 2 - y * this.scale]; }
-  C2W(px, py) { return [(px - this.size / 2) / this.scale, -(py - this.size / 2) / this.scale]; }
+  /** Zoom the view (1 = the whole dish, up to 4x); above 1 the camera follows the fly. */
+  setZoom(z) {
+    this.zoom = Math.max(1, Math.min(4, z));
+    this.scale = this.base * this.zoom;
+    if (this.zoom === 1) this.cam = { x: 0, y: 0 };
+    return this.zoom;
+  }
+  _camera(dt, pose) {
+    if (this.zoom <= 1) { this.cam.x = this.cam.y = 0; return; }
+    // keep the fly in the middle, but never look past the wall: the camera centre stays at least half the
+    // shorter canvas side from the wall in every direction (a radial limit, then a per-axis one for the
+    // long axis, which may already show the whole dish)
+    const lim = Math.max(0, this.R - Math.min(this.w, this.h) / 2 / this.scale);
+    let tx = pose ? pose.x : 0, ty = pose ? pose.y : 0;
+    const d = Math.hypot(tx, ty);
+    if (d > lim) { tx *= lim / d; ty *= lim / d; }
+    const lx = Math.max(0, this.R - this.w / 2 / this.scale), ly = Math.max(0, this.R - this.h / 2 / this.scale);
+    tx = Math.max(-lx, Math.min(lx, tx)); ty = Math.max(-ly, Math.min(ly, ty));
+    const k = Math.min(1, dt * 4);
+    this.cam.x += (tx - this.cam.x) * k; this.cam.y += (ty - this.cam.y) * k;
+  }
+  W2C(x, y) { return [this.w / 2 + (x - this.cam.x) * this.scale, this.h / 2 - (y - this.cam.y) * this.scale]; }
+  C2W(px, py) { return [(px - this.w / 2) / this.scale + this.cam.x, -(py - this.h / 2) / this.scale + this.cam.y]; }
 
   sprite(col) {
     if (this.sprites[col]) return this.sprites[col];
@@ -54,7 +78,8 @@ export class Arena {
   draw(dt, view) {
     const { S, pose, female, pointer, tool, sees, hz, stripes } = view, c = this.ctx, R = this.R;
     c.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
-    c.clearRect(0, 0, this.size, this.size);
+    c.clearRect(0, 0, this.w, this.h);
+    this._camera(dt, pose);
     const [cx, cy] = this.W2C(0, 0), rr = R * this.scale;
     const grd = c.createRadialGradient(cx, cy - rr * 0.3, rr * 0.1, cx, cy, rr);
     grd.addColorStop(0, "#222d3b"); grd.addColorStop(1, "#141b25");
@@ -162,7 +187,7 @@ export class Arena {
     c.stroke();
   }
   drawWindArrow(wind) {
-    const c = this.ctx, x = 44, y = this.size - 44, len = 10 + Math.min(26, wind.speed * 0.7), a = -wind.angle;
+    const c = this.ctx, x = 44, y = this.h - 44, len = 10 + Math.min(26, wind.speed * 0.7), a = -wind.angle;
     c.fillStyle = "rgba(10,14,19,.7)"; c.beginPath(); c.arc(x, y, 30, 0, 2 * Math.PI); c.fill();
     c.strokeStyle = "rgba(143,184,255,.35)"; c.lineWidth = 1; c.beginPath(); c.arc(x, y, 30, 0, 2 * Math.PI); c.stroke();
     c.save(); c.translate(x, y); c.rotate(a);
@@ -197,7 +222,7 @@ export class Arena {
       const [x1, y1] = this.W2C(ex, ey), [x2, y2] = this.W2C(o.x, o.y);
       c.strokeStyle = loom ? "rgba(255,93,93,.55)" : "rgba(77,226,197,.5)"; c.lineWidth = 1; c.setLineDash([4, 4]);
       c.beginPath(); c.moveTo(x1, y1); c.lineTo(x2, y2); c.stroke(); c.setLineDash([]);
-      c.strokeStyle = loom ? "rgba(255,93,93,.7)" : "rgba(77,226,197,.7)"; c.beginPath(); c.arc(x2, y2, 8, 0, 2 * Math.PI); c.stroke();
+      c.strokeStyle = loom ? "rgba(255,93,93,.7)" : "rgba(77,226,197,.7)"; c.beginPath(); c.arc(x2, y2, Math.max(8, 1.6 * this.scale), 0, 2 * Math.PI); c.stroke();
     }
   }
 
