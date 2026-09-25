@@ -140,13 +140,17 @@ def read_annotations(path: Path | str) -> list[dict]:
         return list(csv.DictReader(f, delimiter="\t"))
 
 
-def read_connectivity(path: Path | str):
-    """(pre root ids, post root ids, synapse counts) from the published model's parquet file."""
+def _parquet():
     try:
         import pyarrow.parquet as pq
     except ImportError:
         raise SystemExit("The female fly needs pyarrow to read FlyWire's connectivity file: pip install pyarrow")
-    t = pq.read_table(path, columns=["Presynaptic_ID", "Postsynaptic_ID", "Connectivity"])
+    return pq
+
+
+def read_connectivity(path: Path | str):
+    """(pre root ids, post root ids, synapse counts) from the published model's parquet file."""
+    t = _parquet().read_table(path, columns=["Presynaptic_ID", "Postsynaptic_ID", "Connectivity"])
     return (t.column("Presynaptic_ID").to_numpy(), t.column("Postsynaptic_ID").to_numpy(),
             t.column("Connectivity").to_numpy())
 
@@ -233,6 +237,7 @@ def build_female(out: Path | str = FEMALE_FILE, src_dir: Path | str = SOURCE_DIR
                  min_synapses: int = MIN_SYNAPSES) -> Path:
     """Download the sources (once) and write the female FLYB file."""
     t0 = time.time()
+    _parquet()                                      # fail before downloading 130 MB, not after
     src = download_sources(src_dir, quiet=quiet)
     if not quiet:
         print("Building the female fly's connectome (FlyWire 783)...", file=sys.stderr)

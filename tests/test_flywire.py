@@ -167,3 +167,17 @@ def test_the_game_runs_on_a_female_fly(female):
     assert "MN9" in keys and "pIP10" not in keys and "TTMn" not in keys  # no gauge for cells this fly lacks
     for _ in range(5):
         g.tick()
+
+
+def test_no_pyarrow_fails_before_downloading(tmp_path, monkeypatch):
+    import builtins
+    real = builtins.__import__
+
+    def fake(name, *a, **k):
+        if name.startswith("pyarrow"):
+            raise ImportError(name)
+        return real(name, *a, **k)
+    monkeypatch.setattr(builtins, "__import__", fake)
+    monkeypatch.setattr(flywire, "download_sources", lambda *a, **k: pytest.fail("downloaded without pyarrow"))
+    with pytest.raises(SystemExit, match="pyarrow"):
+        flywire.build_female(tmp_path / "f.flyb.gz", tmp_path, quiet=True)
