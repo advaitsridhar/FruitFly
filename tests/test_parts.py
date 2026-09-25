@@ -272,6 +272,9 @@ def test_apl_compartments_from_a_region_table(conn):
     other = dict(table, neurons={})
     assert P.compile_local(conn, P.LOCAL[0], other).mode == "groups"
     assert P.compile_local(conn, P.Local("APL", P.LOCAL[0].groups, "APL", by_region=False), table).mode == "groups"
+    # a grown or rewired fly has the same body ids but not the real fly's pairs: lobe groups, not the table
+    grown = conn.rewired(conn.row_ptr, conn.post_idx, conn.n_syn, label="grown")
+    assert P.compile_local(grown, P.LOCAL[0], table).mode == "groups"
     # in the brain: the calyx, shared by both lobe systems, keeps APL's full release while the quiet lobe gets less
     P.use_region_table(table)
     try:

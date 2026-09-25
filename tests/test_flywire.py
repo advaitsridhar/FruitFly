@@ -279,3 +279,72 @@ def test_both_literatures_count_for_a_female_type(tmp_path, mini_vfb):
     own = vfb.file_curated(c)
     assert own["MBON11"]["nt"] == ["glutamate", "gaba"] and own["MBON11"]["source"].endswith("; Virtual Fly Brain")
     assert own["MBON20"]["nt"] == ["acetylcholine"] and "Virtual Fly Brain" not in own["MBON20"]["source"]  # a connectome guess
+
+
+def test_mbon_valence_reads_the_literature_column(tmp_path):
+    from virtual_fly.plasticity import mbon_transmitters, mbon_valence
+    c = _female(tmp_path, more=[_ann(95, "MBON07", cls="MBON", nt="glutamate", conf="0.3", known="glutamate"),
+                                _ann(96, "MBON10", cls="MBON", nt="glutamate", known="gaba"),
+                                _ann(97, "MBON01", cls="MBON", nt="glutamate")])
+    idx, val = mbon_valence(c)
+    assert dict(zip(c.types[idx].tolist(), val.tolist())) == {"MBON07": -1, "MBON10": 1, "MBON01": -1}
+    assert c.nt[c.select("MBON07")[0]] == "unclear"                      # the prediction alone gave no valence
+    assert mbon_transmitters(c, c.select("MBON01")).tolist() == ["glutamate"]   # no literature entry: the prediction
+
+
+def test_an_alias_to_several_types_gives_each_the_class(tmp_path, mini_vfb):
+    from virtual_fly import vfb
+    c = _female(tmp_path, more=[_ann(510, "HSE1"), _ann(511, "HSE2")])
+    c.aliases = {**c.aliases, "HSE": "regex:^HSE[0-9]+$"}              # as VS -> VS1-VS8 in FlyWire
+    ont = vfb.ontology_for(c)
+    assert ont.types["HSE1"]["fbbt"] == ont.types["HSE2"]["fbbt"] == ["FBbt:00003919"]
+    assert c.select("fbbt:FBbt:00003919").size == 2
+    assert flywire.aliases(set())["VS"] == "regex:^VS[0-9]+$"
+
+
+def test_a_retest_process_rebuilds_the_female_fly(female):
+    from virtual_fly import retest
+    from virtual_fly.experiments import survival
+    from virtual_fly.game import Game
+    from virtual_fly.settings import build_brain
+    g = Game(build_brain(female, "game", seed=0, backend="numpy"), autopilot=False, seed=1, retest="process")
+    spec = g._retest_spec(g.conn)
+    assert spec["path"] == str(female.path) and spec["brain_kwargs"]["gain"] == 1.0
+    assert g._survival_key(g.conn)[0] == female.dataset
+    h = retest.Retest(spec)
+    rows = h.wait()
+    assert rows == survival(build_brain(female, "game", **spec["brain_kwargs"]), profile="game")
+    assert h.info["fingerprint"] == retest.fingerprint(build_brain(female, "game", **spec["brain_kwargs"]))
+
+
+def test_neuronbridge_says_it_does_not_cover_the_female_fly(female):
+    nb = genetics.NeuronBridge()
+    for call in (lambda: nb.lines_for(female, "MN9"), lambda: nb.neurons_for_line(female, "SS02385")):
+        with pytest.raises(ValueError, match="MaleCNS"):
+            call()                                                       # before any request is made
+
+
+def test_the_game_describes_the_female_fly_and_hides_what_she_lacks(female):
+    import json
+    from virtual_fly.game import Game
+    from virtual_fly.settings import build_brain
+    g = Game(build_brain(female, "game", seed=0, backend="numpy"), autopilot=False, seed=1)
+    lay = json.loads(g.layout_json)
+    real = " ".join(lay["whats_real"]["wiring"] + lay["whats_real"]["hand_built"])
+    assert "FlyWire" in real and "→ pIP10 →" not in real and "MaleCNS annotation" not in real
+    assert "column by column" not in real and "1 antennal-lobe local neurons" in real      # her one lLN1
+    assert all(p["spec"] != "pIP10" for p in lay["presets"]) and all(c["id"] != "court" for c in lay["checks"])
+    g.tick()
+    hz = json.loads(g.state_json)["hz"]
+    assert "MN9" in hz and "pIP10" not in hz and "TTMn" not in hz
+    assert "pIP10" not in g.brain.monitors
+
+
+def test_the_literature_panel_counts_only_her_types_and_names_her_sources(tmp_path, mini_vfb):
+    from virtual_fly import vfb
+    c = _female(tmp_path, more=[_ann(600, "MBON11", known="glutamate"), _ann(601, "KCab", nt="dopamine", known="acetylcholine")])
+    summ = vfb.ontology_for(c).summary(c)["curated"]
+    rows = {r["type"]: r for r in summ["differ_rows"]}
+    assert rows["KCab"]["source"].startswith("Davis") and rows["KCab"]["curated"] == ["acetylcholine"]
+    male_only = [t for t in vfb.ontology().types if t not in c.tables["types"]]
+    assert male_only and summ["agree"] + summ["differ"] + summ["unclear_with_curated"] <= len(set(c.tables["types"]))

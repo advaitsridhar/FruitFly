@@ -41,6 +41,18 @@ def lower_priority() -> str:
         return f"priority unchanged ({e!r})"
 
 
+def fingerprint(brain) -> str:
+    """A hash of what makes two brains behave the same: the synaptic weights and, with the parts list, every
+    neuron's sign and tone signs. The re-test process reports it, so a test can check it built the game's brain."""
+    import hashlib
+    h = hashlib.sha1(brain._w_original.tobytes())
+    p = getattr(brain, "parts", None)
+    if p is not None:
+        for a in (p.sign, p.mod_sign, p.theta):
+            h.update(a.tobytes())
+    return h.hexdigest()
+
+
 def _child(q, spec: dict):
     """The re-test process (module level, so that ``spawn`` can import it)."""
     try:
@@ -50,9 +62,14 @@ def _child(q, spec: dict):
     t0 = time.time()
     try:
         prio = lower_priority()
+        from . import parts, vfb
         from .connectome import load_connectome
         from .experiments import survival
         from .settings import build_brain
+        if spec.get("vfb") is not None:                  # the game runs on data swapped in at runtime (tests do)
+            vfb.use(*spec["vfb"])
+        if spec.get("regions") is not None:
+            parts.use_region_table(spec["regions"]["table"])
         conn = load_connectome(spec["path"], quiet=True)
         w = spec.get("wiring")
         if w is not None:
@@ -66,7 +83,8 @@ def _child(q, spec: dict):
                 os._exit(0)
             q.put(("progress", rows))
         rows = survival(brain, profile=spec["profile"], on_progress=progress)
-        q.put(("done", rows, {"ready_s": round(t_ready, 2), "total_s": round(time.time() - t0, 2), "priority": prio}))
+        q.put(("done", rows, {"ready_s": round(t_ready, 2), "total_s": round(time.time() - t0, 2), "priority": prio,
+                              "fingerprint": fingerprint(brain)}))
     except BaseException as e:                    # report every failure, never leave the game waiting
         q.put(("error", f"{type(e).__name__}: {e}"))
 

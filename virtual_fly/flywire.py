@@ -22,7 +22,8 @@ more synapses, the published model uses all of them), the paper's 0.275 mV per s
 sign as the published model's table; the annotations' predictions are newer). ``build_female(min_synapses=5)``
 builds a file cut like the male one, for comparisons.
 
-Transmitter *labels*, which the parts list and the genetics panel read, follow the male file's rules: a prediction
+Transmitter *labels*, which the parts list reads, follow the male file's rules (the genetics panel reads the
+  predictions as they are): a prediction
 below 0.5 confidence is "unclear" (``NT_CONF_FALLBACK``; the sign stays the prediction's), and FlyWire's
 literature column ``known_nt`` is stored per cell type (:func:`known_transmitters`) for the parts list's curated
 rule, as Virtual Fly Brain's classes are for the male. FlyWire's predictor has no histamine class and calls whole
@@ -56,7 +57,7 @@ import numpy as np
 from .connectome import PROJECT_DIR
 
 FEMALE_FILE = PROJECT_DIR / "data" / "flywire-v783.flyb.gz"
-BUILD = 4                             # bump when the builder changes what goes in the file: older files are rebuilt
+BUILD = 5                             # bump when the builder changes what goes in the file: older files are rebuilt
 SOURCE_DIR = PROJECT_DIR / "data" / "flywire-src"
 DATASET = "flywire:v783"
 MIN_SYNAPSES = 1                      # every connection, as the published model uses them
@@ -111,6 +112,7 @@ ALIASES = {
     "LB2a": ("LB2a-b", "FlyWire types LB2a and LB2b together"),
     "LB2b": ("LB2a-b", "FlyWire types LB2a and LB2b together"),
     "R1-R6": ("R1-6", "the outer photoreceptors, spelled R1-6 in FlyWire"),
+    "VS": ("regex:^VS[0-9]+$", "the VS cells, typed VS1-VS8 in FlyWire"),
     "prefix:R1-R6": ("R1-6", "the outer photoreceptors, spelled R1-6 in FlyWire (the parts list's graded cells)"),
     "prefix:KCa'b'": ("prefix:KCa'b',prefix:KCapbp", "the alpha'/beta' Kenyon cells, spelled KCapbp-* in FlyWire "
                                                    "(APL's local-release groups)"),
@@ -215,7 +217,7 @@ def _trusted_transmitters(known: str, sources: str) -> set[str]:
     parts, srcs = known.split(";"), sources.split(";")
     if len(parts) == len(srcs):
         parts = [p for p, src in zip(parts, srcs) if not _weak_source(src)]
-    elif srcs and all(_weak_source(src) for src in srcs if src.strip()):
+    elif any(src.strip() for src in srcs) and all(_weak_source(src) for src in srcs if src.strip()):
         parts = []
     return {x.strip() for p in parts for x in re.split(r"[;,]", p)} & set(KNOWN_NTS)
 
@@ -237,7 +239,7 @@ def known_transmitters(annotations: list[dict]) -> dict[str, dict]:
     """Per cell type, the transmitters FlyWire's ``known_nt`` column gives from the literature (Davis et al. 2020
     TAPIN-seq, Nern et al. 2024 EASI-FISH, immunostaining ...). FlyWire's *predicted* transmitters come from a
     classifier with no histamine class, which calls whole types dopaminergic or serotonergic that are not
-    (all 1,643 alpha/beta Kenyon cells, many olfactory receptor neurons); the parts list reads this table the way
+    (5,172 of the 5,177 Kenyon cells, many olfactory receptor neurons); the parts list reads this table the way
     it reads Virtual Fly Brain's curated classes for the male fly. A transmitter counts for a type when at least
     half of all its neurons name it (one labelled cell does not speak for 173 unlabelled ones); negative results
     ("gaba-negative"), peptides and nitric oxide are left out, and so is what only a weak source says

@@ -173,9 +173,26 @@ def test_the_after_line_splits_graded_quanta_and_tallies_every_seed(conn):
     assert res.to_dict()["after_graded_per_seed"] == [0.0, 20000.0, 0.0]
     # measured: one graded share per seed, never more than all the events
     parts = FlyBrain(conn, seed=0, parts=True)
+    clear, n = parts.clear_stimuli, {"calls": 0}
+
+    def keep_on():          # run_experiment clears before each seed (odd calls) and before the after period (even ones)
+        n["calls"] += 1
+        if n["calls"] % 2:
+            clear()
+    parts.clear_stimuli = keep_on                      # so the graded cells are still releasing when it counts
     live = run_experiment(parts, Experiment("motion", {"T4a/R,T5a/R": 25, "Mi1/R,Mi9/R": 400}, 300, [R("HSE", "HS", 0, 400)]),
                           seeds=(0, 1))
     assert len(live.after_graded_per_seed) == len(live.after_per_seed) == 2
-    assert all(0 <= g <= a for g, a in zip(live.after_graded_per_seed, live.after_per_seed))
+    assert all(0 < g < a for g, a in zip(live.after_graded_per_seed, live.after_per_seed))   # a share, not all or none
+    assert "graded quanta" in format_result(live)
     plain = run_experiment(FlyBrain(conn, seed=0), SUGAR_EXP, seeds=(0,))
     assert plain.after_graded_per_seed == [0.0]                          # no parts list: no graded cells
+
+
+def test_an_experiment_that_cannot_be_done_says_so_without_claiming_a_lesion():
+    res = E.ExperimentResult("Courtship, fru silenced", [E.ReadoutResult("pC1", "prefix:pC1_", 0.0, 0.0, 40, 90, None),
+                                                         E.ReadoutResult("pIP10", "pIP10", 0.0, 0.0, 15, 80, None)],
+                             0.0, "", 0.0, [0], silenced=["gene:fru"], missing=["pIP10"], na=True)
+    text = format_result(res)
+    assert "pC1" in text and "not run" in text and "not in this fly" in text and "output blocked" not in text
+    assert "cannot be done: this fly has no pIP10" in text

@@ -196,3 +196,25 @@ def test_module_entry_points_import():
     import virtual_fly
     from virtual_fly import play
     assert virtual_fly.__version__ and callable(play.main) and callable(cli.main)
+
+
+def test_one_sign_rule_flag(capsys, mini_vfb, monkeypatch):
+    from virtual_fly import parts as P
+    seen = []
+    real = P.PartsList.compile
+    monkeypatch.setattr(P.PartsList, "compile", lambda self, c: (seen.append(self.unknown_sign), real(self, c))[1])
+    main(["--one-sign-rule", "--stim", "LB1a,LB1b:150", "--watch", "MN9", "--ms", "100"])
+    out = capsys.readouterr().out
+    assert "parts list on:" in out and "the one-sign rule for targets without receptor data (v2.7)" in out
+    assert "no tone on the" not in out and seen and set(seen) == {1.0}
+
+
+def test_the_summary_names_what_cannot_be_done_and_the_runaways(capsys, monkeypatch):
+    from virtual_fly import experiments as E
+    na = E.ExperimentResult("A", [E.ReadoutResult("x", "pIP10", 0.0, 0.0, 0, 3, None)], 0.0, "", 0.0, [0], na=True, missing=["pIP10"])
+    ok = E.ExperimentResult("B", [E.ReadoutResult("y", "MN9", 30.0, 0.0, 20, 40, True, [30.0])], 60000.0,
+                            E.after_note(60000.0), 0.1, [0], after_per_seed=[60000.0])
+    monkeypatch.setattr(E, "run_all", lambda *a, **k: [na, ok])
+    main([])
+    out = capsys.readouterr().out
+    assert "1 cannot be done on this fly: A" in out and "After the stimulus, 1 of 1 leave a runaway loop on at least one seed." in out

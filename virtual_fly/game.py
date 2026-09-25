@@ -308,7 +308,8 @@ class Game:
         self.neuronbridge = genetics.NeuronBridge()
         self.custom_readouts: dict[str, str] = {}
         for r in READOUTS:
-            self.brain.add_monitor(r[0], r[1], bin_ms=TICK_MS)
+            if self.readouts[r[0]].size:                 # not for cells this fly lacks (/api/history leaves them out)
+                self.brain.add_monitor(r[0], r[1], bin_ms=TICK_MS)
         self.user_silenced: set[str] = set()
         self.user_modulated: dict[str, float] = {}
         self.has_soma = ~np.isnan(self.conn.soma[:, 0])
@@ -442,7 +443,8 @@ class Game:
         with old.lock:
             self.brain, self.conn = a["brain"], a["conn"]
             for r in READOUTS:
-                self.brain.add_monitor(r[0], r[1], bin_ms=TICK_MS)
+                if self.readouts[r[0]].size:
+                    self.brain.add_monitor(r[0], r[1], bin_ms=TICK_MS)
             for k, spec in self.custom_readouts.items():
                 self.brain.add_monitor(k, spec, bin_ms=TICK_MS)
             for spec in self.user_silenced:
@@ -499,7 +501,8 @@ class Game:
         wiring_ = None
         if conn is not self.real_conn:                   # a grown fly: send its wiring, the neurons are the same
             wiring_ = {"row_ptr": conn.row_ptr, "post_idx": conn.post_idx, "n_syn": conn.n_syn, "label": "grown"}
-        return {"path": str(path), "wiring": wiring_, "profile": self.profile_name, "brain_kwargs": kw}
+        return {"path": str(path), "wiring": wiring_, "profile": self.profile_name, "brain_kwargs": kw,
+                "vfb": vfb.injected(), "regions": partslib.injected_region_table()}   # data swapped in at runtime
 
     def _survival_key(self, conn) -> tuple:
         """Everything a survival report depends on. Each seed resets the brain and starts its own random
@@ -916,7 +919,7 @@ class Game:
             trace = pl.kc_trace
             act = trace[pl.pe_kc]                       # eligibility of each plastic synapse's KC
             if act.sum() > 0:
-                nt = self.conn.nt[pl.mbon][pl.pe_mbon]
+                nt = pl.mbon_nt[pl.pe_mbon]                  # the MBONs' transmitters (plasticity.mbon_transmitters)
                 depression = 1.0 - pl.scale
                 app = np.isin(nt, APPROACH_NTS)
                 av = np.isin(nt, AVOID_NTS)
@@ -1093,7 +1096,7 @@ class Game:
             self.events.add(self.t, "system", "runaway firing: brain reset to rest")
         if self.recording is not None and self.record_active:
             self.recording.append({"t": round(self.t, 3), "fly": self.body.to_dict(), "mode": mode,
-                                   "hz": {k: round(v, 1) for k, v in hz.items()}, "senses": self.senses_now,
+                                   "hz": {k: round(v, 1) for k, v in hz.items() if self._has(k)}, "senses": self.senses_now,
                                    "sps": int(sps)})
         self.publish(spikes, self.hz_shown, sps)
 
@@ -1135,7 +1138,7 @@ class Game:
             "autopilot": self.autopilot, "paused": self.paused,
             "senses": self.senses_now,
             "retina": self.retina.images_b64(),
-            "hz": {k: round(v, 1) for k, v in hz.items()},
+            "hz": {k: round(v, 1) for k, v in hz.items() if self._has(k)},     # not the cells this fly lacks
             "motor": {k: round(v, 3) for k, v in self.decoder.m.items()},
             "driver": self.driver, "mode": self.mode,
             "spikes": vis.tolist(), "sps": int(sps), "graded_eps": int(self.graded_eps),
@@ -1178,6 +1181,7 @@ class Game:
             t0 = time.perf_counter()
             if self.paused:
                 self._apply_actions()
+                self.graded_eps = 0.0
                 self.publish(np.zeros(0, dtype=np.int64), self.hz_shown, 0)   # keep the page in sync
                 time.sleep(0.05)
                 continue
@@ -1225,12 +1229,12 @@ class Game:
             "regions": ["optic lobes", "central brain", "descending", "nerve cord", "ascending", "motor", "other",
                         "Kenyon cells", "MBON / DAN"],
             "arena_r": ARENA_R, "fly_half": FLY_HALF, "tick_ms": TICK_MS,
-            "presets": [{"spec": s, "hz": h, "label": l} for s, h, l in ZAP_PRESETS],
+            "presets": [{"spec": s, "hz": h, "label": l} for s, h, l in ZAP_PRESETS if c.select(s).size],   # cells this fly has
             "types": sorted(type_counts, key=lambda t: -type_counts[t])[:5000],
             "edges": int(c.n_edges), "synapses": int(c.n_syn.sum()),
             "dataset": c.dataset, "sex": c.sex,
             "readouts": self.readout_meta,
-            "checks": [{"id": i, "text": t} for i, t in CHECKS],
+            "checks": [{"id": i, "text": t} for i, t in CHECKS if i != "court" or self.readouts["pIP10"].size],
             "odours": [{"id": o.id, "name": o.name, "glomeruli": o.glomeruli, "innate": o.innate, "colour": o.colour,
                         "note": o.note} for o in ODOURS.values()],
             "scenarios": [{"id": k, "name": s.name, "description": s.description} for k, s in SCENARIOS.items()],
@@ -1247,7 +1251,14 @@ class Game:
             "whats_real": self.whats_real(),
         }, separators=(",", ":")).encode()
 
+    def _has(self, key: str) -> bool:
+        """Whether this fly has the cells of a readout (the female fly has no pIP10 and no TTMn)."""
+        i = self.readouts.get(key)
+        return i is None or i.size > 0
+
     def whats_real(self) -> dict:
+        male = getattr(self.real_conn, "sex", "male") != "female"
+        src = "MaleCNS" if male else "FlyWire"
         return {
             "wiring": [
                 "Sugar taste neurons → MN9, the proboscis motor neuron. Bitter taste keeps MN9 silent, even on top of sugar.",
@@ -1257,13 +1268,20 @@ class Game:
                 "Odour receptor neurons → projection neurons → a sparse, odour-specific Kenyon-cell code → mushroom body output neurons.",
                 "Bitter taste → PPL1 dopamine neurons (the punishment signal for learning).",
                 "Which Kenyon-cell synapses are plastic and which dopamine neurons gate each MBON: read from the wiring (DAN→MBON synapses).",
-                "pC1 courtship neurons → pIP10 → wing motor neurons (song), and → DNp13; a female seen as a small moving object → LC10a → DNa02 (the chase).",
+                ("pC1 courtship neurons → pIP10 → wing motor neurons (song), and → DNp13; a female seen as a small moving object → LC10a → DNa02 (the chase)."
+                 if male else "A small moving object seen on one side → LC10a → DNa02 on that side (the male's chase route; this female brain has no pIP10 and no nerve cord)."),
                 "A loud sound → Johnston's organ A/B neurons → the giant fibre (a startle jump), and wind on the antennae → grooming and backing neurons.",
-                "Wide-field motion → T4/T5 (driven column by column from the retina) → HS cells → DNa02 and DNp15 on the same side: the optomotor reflex.",
-                "Which neurons express fruitless and doublesex, and which are male-specific or dimorphic: the MaleCNS annotation, read from the data. Silencing the fruitless neurons stops the song (pIP10 and its route to the wing motor neurons are fru+) and leaves feeding and escape alone.",
-                "A grown fly (Genome card) keeps the connectome's cell-type wiring rules and nothing else: 9 of the 11 validated reflexes survive on type-level rules, none on class-level rules.",
-                "The parts list (Genome card): which neurons make dopamine, octopamine or serotonin is the MaleCNS transmitter prediction; that these act only through slow receptors, and that photoreceptors, L1-L5, the medulla inputs to T4/T5, T4/T5 and HS/VS signal without spikes, is the literature (parts.py cites it).",
-                "Which anatomy-ontology class each cell type is (the fbbt: selector, the ontology line in a neuron's popover, the VFB links): the FlyBase anatomy ontology and Virtual Fly Brain's MaleCNS name synonyms, joined offline by name. Where the literature-curated class says a neuron's transmitter differs from the prediction, or fills an 'unclear' one, the parts list follows the literature; the receptors each cell type expresses come from the adult single-cell RNA-seq atlases on VFB and set which way a tone pushes that target.",
+                "Wide-field motion → T4/T5 (" + ("driven column by column from the retina" if self.columnar_on else
+                                                 "driven as whole populations from the retina's motion signal") +
+                ") → HS cells → DNa02 and DNp15 on the same side: the optomotor reflex.",
+                ("Which neurons express fruitless and doublesex, and which are male-specific or dimorphic: the MaleCNS annotation, read from the data. Silencing the fruitless neurons stops the song (pIP10 and its route to the wing motor neurons are fru+) and leaves feeding and escape alone."
+                 if male else "Which neurons express fruitless and doublesex, and which are female-specific or dimorphic: FlyWire's annotation (Schlegel et al. 2024), read from the data."),
+                *(["A grown fly (Genome card) keeps the connectome's cell-type wiring rules and nothing else: 9 of the 11 validated reflexes survive on type-level rules, none on class-level rules."] if male else []),
+                f"The parts list (Genome card): which neurons make dopamine, octopamine or serotonin is the {src} transmitter prediction"
+                + ("" if male else ", corrected from FlyWire's literature column (known_nt)") +
+                "; that these act only through slow receptors, and that photoreceptors, L1-L5, the medulla inputs to T4/T5, T4/T5 and HS/VS signal without spikes, is the literature (parts.py cites it).",
+                "Which anatomy-ontology class each cell type is (the fbbt: selector, the ontology line in a neuron's popover, the VFB links): the FlyBase anatomy ontology and Virtual Fly Brain's MaleCNS name synonyms, joined offline by name"
+                + ("" if male else " (for FlyWire's own type names, the classes FlyWire's annotation gives them)") + ". Where the literature-curated class says a neuron's transmitter differs from the prediction, or fills an 'unclear' one, the parts list follows the literature; the receptors each cell type expresses come from the adult single-cell RNA-seq atlases on VFB and set which way a tone pushes that target.",
             ],
             "hand_built": [
                 "The retina (which facet sees what) and the feature computations that turn retinal images into LC4/LPLC2/LC10a/T4/T5 rates.",
@@ -1278,7 +1296,7 @@ class Game:
                 "Wind on Johnston's organ is kept weak: at the rates real wind would give, the same neurons drive grooming in this model; there is no wind-steering route, so heading upwind is hand-built.",
                 "Efference copy: the eyes' motion signal is damped while the fly turns on purpose, as in real flies.",
                 "The learning rule's constants (rate, time windows, floor, forgetting).",
-                "Fixes for runaway loops: mild neuron fatigue and blocking the output of the 420 antennal-lobe local neurons.",
+                f"Fixes for runaway loops: mild neuron fatigue and blocking the output of the {self.real_conn.select('class:ALLN').size:,} antennal-lobe local neurons.",
                 "With the parts list on, where APL releases: that its inhibition stays local to the busy part of the mushroom body is the literature (Amin et al. 2020), the rule that turns each lobe's Kenyon-cell activity into APL's release there is the kit's. That dopamine turns APL down through Dop2R is the literature (Zhou et al. 2019).",
             ],
             "not_modelled": [

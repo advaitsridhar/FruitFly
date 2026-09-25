@@ -44,7 +44,7 @@ def parse_stim(text: str, default_hz: float = 80.0) -> list[tuple[str, float]]:
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(description="Simulate the whole male fruit fly nervous system (MaleCNS v1.0).",
+    ap = argparse.ArgumentParser(description="Simulate a whole fruit-fly nervous system (MaleCNS v1.0; FlyWire 783 with --female).",
                                  formatter_class=argparse.RawDescriptionHelpFormatter, epilog=__doc__)
     ap.add_argument("--find", metavar="TEXT", help="list neuron types whose name contains TEXT")
     ap.add_argument("--info", metavar="SPEC", help="describe the neurons matching SPEC (first 30)")
@@ -169,7 +169,7 @@ def main(argv=None):
                     print(f"  body {n['body']:>9}  score {n['score']:9,.0f}  {kit:22} NeuronBridge type {n['nb_type'] or '?'}")
                 if r["spec"]:
                     print(f"  spec for --stim / --silence: {r['spec']}")
-        except NeuronBridgeError as e:
+        except (NeuronBridgeError, ValueError) as e:
             raise SystemExit(str(e))
         return
     if args.inputs or args.outputs:
@@ -232,8 +232,11 @@ def main(argv=None):
               + (f"; curated transmitters ({cur['policy']}): {cur['neurons']:,} neurons in {cur['types']:,} types changed" if cur.get("neurons") else "")
               + (f"; receptor signs on {with_data:,} modulated targets" if with_data else "")
               + ("; the one-sign rule for targets without receptor data (v2.7)" if args.one_sign_rule
-                 else f"; no tone on the {c['modulated_targets'] - with_data - by_fact:,} targets without receptor data" if with_data else "")
-              + "".join(f"; receptors from the literature for {f['spec']} ({f['what']})" for f in c["receptor_signs"].get("facts", []) if f["neurons"])
+                 else "" if args.no_receptor_signs
+                 else f"; no tone on the {c['modulated_targets'] - with_data - by_fact:,} targets without receptor data")
+              + "".join((f"; receptors from the literature for {f['spec']} ({f['what']})" if f["receptors"]
+                         else f"; from the literature: {f['what']} ({f['label']})")
+                        for f in c["receptor_signs"].get("facts", []) if f["neurons"])
               + "".join(f"; {x['spec']} releases locally ({x['compartments']} compartments, by "
                         f"{'neuPrint region' if x.get('mode') == 'regions' else 'lobe'})" for x in c["local"])
               + (f"; overrides: {', '.join(p['spec'] + ' -> ' + ', '.join(f'{k} {v}' for k, v in p.items() if k in ('theta_mv', 'graded') and v is not None) for p in c['params'])}" if c["params"] else ""))
@@ -357,7 +360,7 @@ def main(argv=None):
         print(f"wrote {args.json}")
     if args.profile == "pure":
         print("Try the game's settings: python fly_brain.py --profile game")
-    print("Then play: python fly_game.py")
+    print("Then play: python fly_game.py" + (" --female" if args.female else ""))
 
 
 def check(conn, spec):

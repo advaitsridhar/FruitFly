@@ -26,7 +26,7 @@ from .server import serve
 from .settings import PROFILES, build_brain
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(description="Play with a fly driven by the whole MaleCNS connectome.",
+    ap = argparse.ArgumentParser(description="Play with a fly driven by a whole connectome (MaleCNS v1.0; FlyWire 783 with --female).",
                                  formatter_class=argparse.RawDescriptionHelpFormatter, epilog=__doc__)
     ap.add_argument("--port", type=int, default=8765)
     ap.add_argument("--host", default="127.0.0.1")

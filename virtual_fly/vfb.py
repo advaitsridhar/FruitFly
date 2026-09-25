@@ -309,9 +309,10 @@ class Ontology:
         agree = differ = filled = 0
         rows = []
         nt_by_type = _majority_nt(conn)
-        for t, e in self.types.items():
+        own = file_curated(conn)                       # the file's own literature table (the female fly); {} for the male
+        for t, e in {**self.types, **own}.items():
             S = e.get("nt")
-            if not S:
+            if not S or t not in tc:                   # a type this connectome does not have
                 continue
             k = nt_by_type.get(t)
             if k in (None, "", "unclear"):
@@ -321,8 +322,10 @@ class Ontology:
                 agree += 1
             else:
                 differ += 1
+                fb = e["fbbt"][0] if e.get("fbbt") else ""
                 rows.append({"type": t, "n": tc.get(t, 0), "predicted": k, "curated": S, "evidence": e.get("evidence"),
-                             "fbbt": e["fbbt"][0], "label": self.label(e["fbbt"][0])})
+                             "fbbt": fb, "label": self.label(fb) if fb else t,
+                             **({"source": e["source"]} if e.get("source") else {})})
         rows.sort(key=lambda r: -r["n"])
         return {"available": True, "source": self.source, "overlay_source": self.overlay_source,
                 "types_mapped": sum(1 for t in self.types if t in tc), "types_total": len(tc),
@@ -441,6 +444,7 @@ class Receptors:
 _ONT: Ontology | None = None
 _RX: Receptors | None = None
 _GENERATION = 0
+_INJECTED = False                    # True while data installed by use() stand in for the files
 
 
 def generation() -> int:
@@ -481,11 +485,17 @@ def ontology_for(conn=None) -> Ontology:
         known = [c for c in cids if c in ont.classes]
         if t in names and t not in ont.types and known:
             extra[t] = {"fbbt": known, "route": "file"}
-    for name, target in aliases.items():                 # the kit's name -> this file's type of that name
+    for name, target in aliases.items():                 # the kit's name -> this file's type(s) of that name
         e = ont.types.get(name)
-        if e and target in names and target not in ont.types:
-            cur = extra.setdefault(target, {"fbbt": [], "route": "alias"})
-            cur["fbbt"] = sorted(set(cur["fbbt"]) | set(e.get("fbbt", [])))
+        if not e or not e.get("fbbt"):
+            continue
+        if target in names:
+            targets = [] if target in ont.types else [target]
+        else:                                            # a population (VS -> VS1-VS8): the types it selects
+            targets = sorted(set(conn.types[conn.select(target)].tolist()) - set(ont.types) - {""})
+        for t in targets:
+            cur = extra.setdefault(t, {"fbbt": [], "route": "alias"})
+            cur["fbbt"] = sorted(set(cur["fbbt"]) | set(e["fbbt"]))
     view = ont if not extra else Ontology(
         {"types": {**ont.types, **extra}, "overlay_source": ont.overlay_source},
         {"classes": ont.classes, "roots": ont.roots, "source": ont.source})
@@ -504,9 +514,16 @@ def receptors() -> Receptors:
 
 def use(ont: Ontology | None = None, rx: Receptors | None = None):
     """Install (or, with None, drop back to the files) the data the module answers from."""
-    global _ONT, _RX, _GENERATION
+    global _ONT, _RX, _GENERATION, _INJECTED
     _ONT, _RX = ont, rx
     _GENERATION += 1
+    _INJECTED = ont is not None or rx is not None
+
+
+def injected() -> tuple | None:
+    """The (ontology, receptors) that :func:`use` installed, or None when the module reads its files. A re-test
+    process (retest.py) installs the same data, so it builds the same brain as the game."""
+    return (ontology(), receptors()) if _INJECTED else None
 
 
 # ---------------------------------------------------------------------------------------------

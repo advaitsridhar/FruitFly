@@ -228,9 +228,21 @@ class PhysicsBody:
         self.wall_s = 0.0                          # wall-clock seconds spent in MuJoCo
         self.reset()
 
+    _spawn = None          # the thorax's spawn pose in MuJoCo (x, y, heading): the same in every arena, measured once
+
     def reset(self, x=0.0, y=-12.0, h=math.pi / 2):
-        # the physics world is built around the fly's start: the arena centre is where the kit says it is
-        c = (-(x * math.cos(-h) - y * math.sin(-h)), -(x * math.sin(-h) + y * math.cos(-h)))
+        # the physics world is built around the fly's start: the arena centre is where the kit says it is. The
+        # thorax spawns a little off MuJoCo's origin (about 0.5 mm with flygym 1.2.1), so the wall is placed from
+        # the measured spawn pose: kit = start + R(h - spawn heading) (p - spawn position), solved for kit = (0, 0).
+        if PhysicsBody._spawn is None:
+            first = Walker(self.timestep, self._seed, wall_center=None)
+            pos, hd = first.thorax()
+            PhysicsBody._spawn = (float(pos[0]), float(pos[1]), float(hd))
+            if not self._wall:
+                self.walker = first
+        sx, sy, sh = PhysicsBody._spawn
+        r = -(h - sh)
+        c = (round(sx - x * math.cos(r) + y * math.sin(r), 9), round(sy - x * math.sin(r) - y * math.cos(r), 9))
         if self.walker is None or (self._wall and getattr(self, "_center", None) != c):
             self.walker = Walker(self.timestep, self._seed, wall_center=c if self._wall else None)
             self._center = c

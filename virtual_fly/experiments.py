@@ -347,14 +347,15 @@ def format_result(res: ExperimentResult) -> str:
     lines = []
     for k, r in enumerate(res.readouts):
         if r.ok is None:
-            lines.append(f" {res.name if k == 0 else '':34} {r.label:32}    n/a         not in this fly")
+            why = "not in this fly" if r.spec in res.missing else "not run"
+            lines.append(f" {res.name if k == 0 else '':34} {r.label:32}    n/a         {why}")
             continue
         sd = f" ±{r.sd:4.1f}" if r.sd else ""
         flag = "ok" if r.ok else "<-- not the usual result"
         if r.ok and r.seeds_out:
             flag = f"ok on the mean, but {r.seeds_out} of {len(r.per_seed)} seeds outside"
         lines.append(f" {res.name if k == 0 else '':34} {r.label:32} {r.hz:6.1f}{sd:6} Hz  {r.lo:g}-{r.hi:g} Hz  {flag}")
-    if res.silenced:
+    if res.silenced and not res.na:
         lines.append(f" {'':34} (output blocked in {', '.join(res.silenced)})")
     if res.missing:
         lines.append(f" {'':34} ({'cannot be done: ' if res.na else ''}this fly has no {', '.join(res.missing)})")

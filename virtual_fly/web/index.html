@@ -288,7 +288,7 @@
 <dialog id="realDlg">
   <button class="btn close" data-close>Close</button>
   <h3>What's real here?</h3>
-  <p>The fly's brain is a simulation of the whole male fruit-fly central nervous system: all 176,422 neuron entries in the MaleCNS v1.0 connectome (about 166,700 annotated cells plus unannotated fragments; HHMI Janelia / Cambridge / Google, <i>Cell</i> 2026). Every neuron is the same simple "leaky integrate-and-fire" unit, and every connection's strength comes from the synapse count in the wiring diagram (Shiu et al., <i>Nature</i> 2024). Nothing is trained.</p>
+  <p id="realIntro">The fly's brain is a simulation of the whole male fruit-fly central nervous system: all 176,422 neuron entries in the MaleCNS v1.0 connectome (about 166,700 annotated cells plus unannotated fragments; HHMI Janelia / Cambridge / Google, <i>Cell</i> 2026). Every neuron is the same simple "leaky integrate-and-fire" unit, and every connection's strength comes from the synapse count in the wiring diagram (Shiu et al., <i>Nature</i> 2024). Nothing is trained.</p>
   <p>Since the first version the fly has grown eyes (a real retina whose image feeds looming, small-object and motion detectors), a nose (odour plumes carried by the wind, a sparse Kenyon-cell code, and dopamine-gated learning at the KC→MBON synapses), ears and wind sensors (Johnston's organ), a female to court, and hunger and thirst.</p>
   <h4>Comes out of the wiring (not tuned by us)</h4>
   <ul id="realWiring"></ul>
@@ -319,7 +319,7 @@
   </table>
 </dialog>
 
-<div class="overlay" id="loading"><div><h3>Loading the fly's brain</h3><p>Fetching the map of 176,422 neurons (about 2.4 MB) and waking the nervous system…</p></div></div>
+<div class="overlay" id="loading"><div><h3>Loading the fly's brain</h3><p>Fetching the map of the fly's neurons and waking the nervous system…</p></div></div>
 <div class="overlay" id="disc" hidden><div><h3>Lost the fly's brain</h3><p>The Python program isn't answering. Is <code>fly_game.py</code> still running in its window? Start it again and this page reconnects by itself.</p></div></div>
 
 <script type="module" src="app.js"></script>

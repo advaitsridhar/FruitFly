@@ -1,5 +1,6 @@
 """The background re-test: identical results with less work, in a separate low-priority process."""
 
+import threading
 import time
 
 import numpy as np
@@ -72,6 +73,14 @@ def test_game_retests_in_a_process_with_the_same_results_as_a_thread(conn):
         assert sv["where"] == mode and sv["tested"] > 0 and "error" not in sv
         out[mode] = sv["results"]
     assert out["process"] == out["thread"]
+    # and the child built the very brain the game builds (the test's swapped-in data tables travel with it)
+    g = Game(build_brain(conn, "game", seed=0), autopilot=False, seed=1, retest="process")
+    g.parts_on = True
+    spec = g._retest_spec(g.conn)
+    assert spec["vfb"] is not None and spec["regions"] == {"table": None}     # conftest's empty tables
+    h = RT.Retest(spec)
+    h.wait()
+    assert h.info["fingerprint"] == RT.fingerprint(g.brain_factory(g.conn, parts=g.parts_arg(True)))
 
 
 def test_a_newer_retest_terminates_the_older_process(conn):
@@ -116,3 +125,17 @@ def test_a_retest_process_that_dies_falls_back_to_a_thread(conn, monkeypatch):
     assert _wait(g, lambda: g.genome["survival"] and not g.genome["survival"]["running"], secs=120)
     sv = g.genome["survival"]
     assert "error" not in sv and sv["where"] == "thread" and sv["tested"] > 0
+
+
+def test_a_newer_retest_supersedes_a_running_one(conn):
+    g = Game(build_brain(conn, "game", seed=0), autopilot=False, seed=1, retest="process")
+    g._survival_token = t1 = object()
+    th = threading.Thread(target=g._survival_worker, args=(g.conn, t1))
+    th.start()
+    assert _wait(g, lambda: g._retest_handle is not None, 30)
+    first = g._retest_handle
+    g._survival_token = t2 = object()
+    g._survival_worker(g.conn, t2)                     # the newer one cancels the older process and finishes
+    th.join(30)
+    assert first.cancelled and not first.proc.is_alive()
+    assert g.genome["survival"]["where"] == "process" and not g.genome["survival"]["running"]

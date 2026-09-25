@@ -77,7 +77,9 @@ SOURCE = ("fruitless/doublesex labels and the male-specific/dimorphic status: th
           "and links: FlyBase.")
 SOURCE_FEMALE = ("fruitless/doublesex labels and the female-specific/dimorphic status: FlyWire's annotation "
                  "(Schlegel et al. 2024; matched to published expression data and to the MaleCNS, Berg et al. 2025). "
-                 "Transmitters: predicted from synapse appearance in the EM data. Gene identities and links: FlyBase.")
+                 "Transmitters: FlyWire's prediction from synapse appearance, as it is (it has no histamine class and "
+                 "calls the Kenyon cells dopaminergic; the parts list corrects both from FlyWire's literature column, "
+                 "this card does not). Gene identities and links: FlyBase.")
 
 
 def gene_mask(conn, value: str) -> np.ndarray:
@@ -188,6 +190,12 @@ def _default_fetch(url: str, timeout: float) -> bytes:
         return r.read()
 
 
+def _malecns_only(conn):
+    """NeuronBridge matches driver-line images to MaleCNS neurons by body id; a FlyWire root id matches nothing."""
+    if getattr(conn, "sex", "male") != "male":
+        raise ValueError("NeuronBridge lookups match MaleCNS neurons; they are not available for the female fly (FlyWire)")
+
+
 class NeuronBridge:
     """Lookups in NeuronBridge's public data: lines that match a neuron (colour-depth search) and
     MaleCNS neurons that match a line. Every file is cached under ``cache_dir`` once fetched.
@@ -251,6 +259,7 @@ class NeuronBridge:
         """Driver lines whose expression images match the neurons of ``spec`` (a sample of at most
         ``max_neurons`` of them, spread over the population). A line's score is its best
         colour-depth-search score; lines that match several of the sampled neurons come first."""
+        _malecns_only(conn)
         idx = conn.select(spec)
         if idx.size == 0:
             raise ValueError(f"no neurons match '{spec}'")
@@ -288,6 +297,7 @@ class NeuronBridge:
         images (each match file is about a megabyte), so ``max_images`` of them are searched, brain
         images first. Each neuron carries NeuronBridge's cell type and the kit's, so a disagreement
         (the two data versions differ) is visible."""
+        _malecns_only(conn)
         line = line.strip()
         if not re.fullmatch(r"[A-Za-z0-9_.-]+", line):
             raise ValueError("a line name looks like SS02385, MB112C, R85B12 or VT019730")

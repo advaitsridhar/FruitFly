@@ -392,7 +392,7 @@ export class PathwayPanel {
 // ================================================================= 8b. Genetics
 export class GeneticsPanel {
   constructor(L, lab) {
-    this.lab = lab; this.G = L.genetics || {}; this.buttons = {};
+    this.lab = lab; this.G = L.genetics || {}; this.buttons = {}; this.sex = L.sex || "male";
     const rows = $("geneRows"); rows.innerHTML = "";
     for (const g of this.G.expression || []) {
       const info = el("div", "g");
@@ -415,16 +415,20 @@ export class GeneticsPanel {
     $("lineName").addEventListener("keydown", (e) => { if (e.key === "Enter") this.neuronsOfLine(); });
     $("linesBtn").onclick = () => this.linesFor();
     $("linesSpec").addEventListener("keydown", (e) => { if (e.key === "Enter") this.linesFor(); });
+    if (this.sex === "female") for (const id of ["lineBtn", "linesBtn"]) {       // NeuronBridge knows MaleCNS bodies only
+      $(id).disabled = true; $(id).title = "NeuronBridge matches MaleCNS neurons only, not the female fly's FlyWire cells";
+    }
   }
   // what the anatomy ontology (via Virtual Fly Brain) says about the transmitters, where it differs from the prediction
   renderVfb(v) {
     if (!v || !v.available) return;
     setShown($("vfbBox"), true);
     const c = v.curated || {};
-    setText($("vfbSummary"), `what the literature says: ${c.differ.toLocaleString()} cell types differ from the prediction (Virtual Fly Brain)`);
+    const female = this.sex === "female", src = female ? "FlyWire" : "MaleCNS";
+    setText($("vfbSummary"), `what the literature says: ${c.differ.toLocaleString()} cell types differ from the prediction (${female ? "FlyWire's literature column and " : ""}Virtual Fly Brain)`);
     $("vfbIntro").innerHTML = `${v.types_mapped.toLocaleString()} of ${v.types_total.toLocaleString()} cell types (${v.neurons_mapped.toLocaleString()} of ${v.neurons_typed.toLocaleString()} typed neurons) carry a class of the FlyBase anatomy ontology, ` +
       `so a neuron's popover can say what its type is and link to <a href="https://virtualflybrain.org" target="_blank" rel="noopener">Virtual Fly Brain</a>, and <code>fbbt:</code> selects a class and everything below it (Neuron lab). ` +
-      `The ontology's transmitter agrees with the MaleCNS prediction for ${c.agree.toLocaleString()} types and differs for ${c.differ.toLocaleString()}; it names one for ${c.unclear_with_curated.toLocaleString()} types the prediction leaves "unclear". ` +
+      `The literature's transmitter agrees with the ${src} prediction for ${c.agree.toLocaleString()} types and differs for ${c.differ.toLocaleString()}; it names one for ${c.unclear_with_curated.toLocaleString()} types the prediction leaves "unclear". ` +
       `With the parts list on (Genome card) the literature's word wins for the modulators and fills "unclear" predictions. The largest disagreements:`;
     const rows = $("vfbRows"); rows.innerHTML = "";
     for (const r of c.differ_rows || []) {

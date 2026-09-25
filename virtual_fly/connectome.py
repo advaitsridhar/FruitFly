@@ -439,7 +439,8 @@ class Connectome:
         i = int(i)
         soma = self.soma[i]
         return {
-            "index": i, "body_id": int(self.body_id[i]), "type": self.types[i], "side": self.side[i],
+            "index": i, "body_id": int(self.body_id[i]), "body_ref": str(int(self.body_id[i])),   # exact in JavaScript too
+            "type": self.types[i], "side": self.side[i],
             "superclass": self.superclass[i], "class": self.cls[i], "subclass": self.subclass[i],
             "nt": self.nt[i], "sign": int(self.sign[i]), "nerve": self.nerve[i], "neuromere": self.neuromere[i],
             "dimorphism": self.dimorphism[i], "frudsx": self.frudsx[i],

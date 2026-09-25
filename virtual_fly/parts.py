@@ -45,7 +45,7 @@ Two more tables came from chasing the one readout the parts list missed (v2.6; d
 
 * :data:`RECEPTOR_FACTS`: receptors a cell type is shown to use by direct evidence in that type, for
   types no atlas cluster covers (APL uses Dop2R, so dopamine lowers its gain; Zhou et al. 2019), or the
-  measured effect of a modulator where the receptor is unknown (octopamine raises the HS and VS cells'
+  measured effect of a modulator where the receptor is unknown (octopamine raises the VS cells'
   gain; Suver et al. 2012). Since v2.8 a target with neither feels no tone at all.
 * :data:`LOCAL`: wide-field neurons whose release follows the activity around each target rather
   than the whole cell's. APL's activity and inhibition stay local (Amin et al. 2020); here its
@@ -245,7 +245,12 @@ def region_table() -> dict | None:
 
 def use_region_table(table: dict | None):
     """Install a region table (tests use a hand-made one; None = no table)."""
-    _REGIONS.update(table=table, loaded=True)
+    _REGIONS.update(table=table, loaded=True, injected=True)
+
+
+def injected_region_table() -> dict | None:
+    """``{"table": ...}`` when :func:`use_region_table` installed one (None included), else None (the file)."""
+    return {"table": _REGIONS["table"]} if _REGIONS.get("injected") else None
 
 
 OUTSIDE = "outside the mushroom body"
@@ -345,6 +350,8 @@ def _region_layout(conn, neurons, members, member_pos, edges, owner, table):
     which takes no group input and so keeps the whole cell's release (a few hundred synapses per region are too
     few to carry a local signal). None when the table does not cover these neurons (another connectome, a grown
     fly, or neurons it was not harvested for)."""
+    if (getattr(conn, "meta", None) or {}).get("rewired"):
+        return None                                    # a grown or rewired fly: the table lists the real fly's pairs
     bid = conn.body_id
     local_b = {int(b): a for a, b in enumerate(bid[neurons].tolist())}
     known = table.get("neurons", {})

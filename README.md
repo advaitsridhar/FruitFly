@@ -211,7 +211,9 @@ kit on FlyWire, the whole female brain the published model was built on (Dorkenw
 the model exactly as published: every connection, and 0.275 mV per synapse. The experiments and senses
 find her cells under the male names (`MN9` is FlyWire's `CB0701`, and so on). Cells she doesn't have
 come out as n/a, never as 0 Hz: she has no nerve cord, and no male-specific cells such as pIP10. Sugar
-drives her MN9 and bitter wins over it, as in the paper. The parts list, the physics body and the
+drives her MN9 and, in the published model's profile (`fly_brain.py --female`), bitter wins over it, as
+in the paper; in the game profile MN9 still fires about 7 Hz with both (13 Hz with the parts list on),
+against 72 Hz with sugar alone. The parts list, the physics body and the
 background re-test run on her too; `docs/SCIENCE.md` section 9.5 compares each with the male. Most readouts differ from the male's, and
 `docs/SCIENCE.md` section 9 says why most of those differences are not yet sex differences.
 
@@ -289,10 +291,13 @@ feedback neuron, releases locally: onto the Kenyon cells and output neurons of a
 quieter than the rest it releases less, as in the real fly (Amin et al. 2020), and dopamine turns
 it down through its Dop2R receptor. A tone acts only through receptors the kit has evidence for
 (the target's single-cell atlas cluster, or a fact from the literature such as octopamine sharpening
-the VS motion cells); a target with neither feels none. That rule closed a leak of song past the
-silenced fruitless neurons (`--one-sign-rule` brings back the old rule, under which every tone raised
-every target's gain). The reflexes are re-tested on the switch: all 16 validated experiments pass,
-none of them fragile (`--global-apl` puts APL back to one cell releasing the same everywhere). Every
+the VS motion cells, of which the octopamine neurons reach one in this wiring); a target with neither
+feels none. That rule closed a leak of song past the
+silenced fruitless neurons (`python fly_brain.py --one-sign-rule` brings back the old rule, under which
+every tone raised every target's gain; the game always uses the new one). The reflexes are re-tested on
+the switch (the eleven the Genome card lists; all 16 validated experiments pass in `fly_brain.py
+--parts`, none of them fragile; `python fly_brain.py --global-apl` puts APL back to one cell releasing
+the same everywhere). Every
 re-test runs each experiment five times on a fly with nothing learned carried over between runs, in a
 separate low-priority process so the game keeps its speed, and a reflex that passes on average but
 misses on some run gets an amber mark ("fragile"). `python fly_brain.py --parts` runs any experiment
