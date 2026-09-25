@@ -1049,6 +1049,42 @@ single-cell expression atlases matched to these cell types, which is mature only
 system, the olfactory projection neurons and the mushroom body; that is the next level, and it
 would ship as a separate profile judged by the validated experiments.
 
+### 6.7 An optional physics body: NeuroMechFly v2 (proposal)
+
+`--body physics` swaps the drawn body for NeuroMechFly v2 (Wang-Chen et al. 2024) in MuJoCo, through
+the `flygym` package (`virtual_fly/physics.py`). The decoder is unchanged; its drives become flygym's
+two-sided descending signal, one stepping amplitude per body side (sign = stepping direction), with
+flygym's published steering constants: the inner side x (1 - 0.6|s|), the outer side x (1 + 0.2|s|).
+These are the two steering gestures Yang et al. (2024) found for DNa02 (shorter strides on the inside)
+and DNg13 (longer strides on the outside). Six coupled oscillators (12 Hz tripod) replay a recorded
+step on each leg; 42 leg joints are position servos; tarsal adhesion is on in stance; the floor is
+MuJoCo contacts at a 0.1 ms step. Brain and body both advance 25 ms per tick (50 and 250 steps).
+
+Measured (real connectome, game profile, parts list on, seed 0, 3 s unless stated):
+
+| | drawn body | physics body |
+|---|---|---|
+| speed at forward drive 0.3 / 0.6 / 1.0 | 4.2 / 8.4 / 14 mm/s (chosen) | 4.0 / 8.9 / 14.9 mm/s (measured) |
+| turn rate at full steering, same drives | 264 / 228 / 180 deg/s | 27 / 85 / 154 deg/s |
+| lure 20 mm at 70 deg left / right, walking urge on | turns 98 / 72 deg, faces it within 1.5 s | turns 65 / 58 deg (77 / 76 with the raw pose), lure still 56 / 64 deg (37 / 42) off at 3 s |
+| lure 15 mm left, walking urge off | turns 85 deg in place | turns 1.5 deg |
+| MDN at 60 Hz | 18.8 mm straight back | 19.6-19.8 mm back, heading drifts 5-14 deg |
+| 10 s in a quiet arena, walking urge on | HS 5.5 Hz, 26k spikes/s, no backing | raw pose: HS 41 Hz, 85k spikes/s, 2.9 s of backing; stride-averaged senses: HS 4.1 Hz, 26k spikes/s, none |
+
+What this shows. Steering in a physical body modulates an ongoing rhythm, so a fly that is not stepping
+does not turn. In this connectome the small-object pathway steers but never asks to walk: LC10a/L at
+70 Hz gives DNa02/L 78 Hz and DNp09, DNg100, DNge053 and DNge050 all 0 Hz (DNg97 2-3 Hz; five seeds,
+with or without the parts list), although P9/DNp09 drives object-directed walking in real flies
+(Bidaye et al. 2020). The drawn body hides this by turning in place. Second, the body's stride-by-stride
+yaw wobble, fed raw to the retina, drives T4/T5 -> HS and much of the brain; real flies stabilise gaze
+while walking (Cruz et al. 2021) and HS cells carry non-visual self-motion signals (Fujiwara et al.
+2017, 2022). The physics body therefore shows the senses a pose averaged over one stride (hand-built).
+
+Hand-built, still: the decoder's weights, the forward term of the drive, the stride averaging, and the
+proboscis, wings and abdomen (drawn; the model has no joints there). Not modelled: the escape jump.
+Cost: about a tenth of real time (MuJoCo alone 0.09-0.10x), ~0.45 GB more memory, ~680 MB of
+dependencies. No OpenGL is needed (MUJOCO_GL=disable); rendering video needs EGL, OSMesa or a display.
+
 ## 7. The genome as a wiring recipe (v2.3)
 
 A genome of some 140 million letters cannot list the fly's 90 million synapses; it holds rules
@@ -1746,6 +1782,9 @@ The starter kit's list, extended. These are the things a neuroscientist would po
 * Berg S, Beckett IR, Costa M, Schlegel P, Januszewski M, et al. (2026). Sexual dimorphism in the
   complete *Drosophila* male central nervous system connectome. *Cell* 189(18):5504-5526.
   doi:10.1016/j.cell.2026.08.015. Data: MaleCNS v1.0, CC BY 4.0, https://male-cns.janelia.org/
+* Bidaye SS, Laturney M, Chang AK, Liu Y, Bockemühl T, Büschges A, Scott K (2020). Two brain pathways
+  initiate distinct forward walking programs in *Drosophila*. *Neuron* 108(3):469-485.
+  doi:10.1016/j.neuron.2020.07.032
 * Blenau W, Daniel S, Balfanz S, Thamm M, Baumann A (2017). Dm5-HT2B: pharmacological
   characterization of the fifth serotonin receptor subtype of *Drosophila melanogaster*. *Frontiers
   in Systems Neuroscience* 11:28. doi:10.3389/fnsys.2017.00028
@@ -1763,6 +1802,8 @@ The starter kit's list, extended. These are the things a neuroscientist would po
   Physiology* 14:1076533. doi:10.3389/fphys.2023.1076533
 * Cohn R, Morantte I, Ruta V (2015). Coordinated and compartmentalized neuromodulation shapes
   sensory processing in *Drosophila*. *Cell* 163(7):1742-1755. doi:10.1016/j.cell.2015.11.019
+* Cruz TL, Pérez SM, Chiappe ME (2021). Fast tuning of posture control by visual feedback underlies gaze
+  stabilization in walking *Drosophila*. *Current Biology* 31(20):4596-4607. doi:10.1016/j.cub.2021.08.041
 * Davie K, Janssens J, Koldere D, De Waegeneer M, Pech U, Kreft Ł, Aibar S, Makhzami S,
   Christiaens V, Bravo González-Blas C, Poovathingal S, Hulselmans G, Spanier KI, Moerman T,
   Vanspauwen B, Geurs S, Voet T, Lammertyn J, Thienpont B, Liu S, Konstantinides N, Fiers M,
@@ -1784,6 +1825,10 @@ The starter kit's list, extended. These are the things a neuroscientist would po
 * fly-brain-minecraft (blendi-remade). The compact connectome file, the gain of 0.65, the
   Kenyon-cell input scaling and many of the sensory and motor neuron choices.
   https://github.com/blendi-remade/fly-brain-minecraft (commit `6cfa301`; code MIT, data CC BY 4.0).
+* Fujiwara T, Brotas M, Chiappe ME (2022). Walking strides direct rapid and flexible recruitment of visual
+  circuits for course control in *Drosophila*. *Neuron* 110(13):2124-2138. doi:10.1016/j.neuron.2022.04.008
+* Fujiwara T, Cruz TL, Bohnslav JP, Chiappe ME (2017). A faithful internal representation of walking
+  movements in the *Drosophila* visual system. *Nature Neuroscience* 20(1):72-81. doi:10.1038/nn.4435
 * Gruntman E, Romani S, Reiser MB (2018). Simple integration of fast excitation and offset, delayed
   inhibition computes directional selectivity in *Drosophila*. *Nature Neuroscience* 21:250-257.
   doi:10.1038/s41593-017-0046-4
@@ -1903,6 +1948,9 @@ The starter kit's list, extended. These are the things a neuroscientist would po
   neurotransmitter release probability. *PNAS* 94(2):719-723. doi:10.1073/pnas.94.2.719
 * Tully T, Quinn WG (1985). Classical conditioning and retention in normal and mutant *Drosophila
   melanogaster*. *Journal of Comparative Physiology A* 157:263-277. doi:10.1007/BF01350033
+* Wang-Chen S, Stimpfling VA, Lam TKC, Özdil PG, Genoud L, Hurtak F, Ramdya P (2024). NeuroMechFly v2:
+  simulating embodied sensorimotor control in adult *Drosophila*. *Nature Methods* 21(12):2353-2362.
+  doi:10.1038/s41592-024-02497-y
 * Witz P, Amlaiky N, Plassat J-L, Maroteaux L, Borrelli E, Hen R (1990). Cloning and
   characterization of a *Drosophila* serotonin receptor that activates adenylate cyclase. *PNAS*
   87(22):8940-8944. doi:10.1073/pnas.87.22.8940
@@ -1911,6 +1959,9 @@ The starter kit's list, extended. These are the things a neuroscientist would po
   21(10):848-854. doi:10.1016/j.cub.2011.02.041
 * Yaksi E, Wilson RI (2010). Electrical coupling between olfactory glomeruli. *Neuron* 67(6):1034-1047.
   doi:10.1016/j.neuron.2010.08.041
+* Yang HH, Brezovec BE, Serratosa Capdevila L, Vanderbeck QX, Adachi A, Mann RS, Wilson RI (2024).
+  Fine-grained descending control of steering in walking *Drosophila*. *Cell* 187(22):6290-6308.
+  doi:10.1016/j.cell.2024.08.033
 * Yang HH, St-Pierre F, Sun X, Ding X, Lin MZ, Clandinin TR (2016). Subcellular imaging of voltage and
   calcium signals reveals neural processing in vivo. *Cell* 166(1):245-257.
   doi:10.1016/j.cell.2016.05.031

@@ -343,7 +343,9 @@ These are the things the critics point at, so it's worth knowing them:
 - **The odour code is odd in places.** Kenyon-cell subtypes are recruited unlike real flies (γ-main
   cells hardly at all), single glomeruli barely reach the mushroom body, and an odour leaves the
   central-complex heading circuit ringing for a second or two after it stops.
-- **The body is a drawing.** No legs, muscles or physics; speeds and turn rates are chosen by hand.
+- **The body is a drawing** unless you ask for the optional physics body (`--body physics`: NeuroMechFly v2
+  legs in MuJoCo, about a tenth of real time; docs/SCIENCE.md section 6.7). The drawn body's speeds and
+  turn rates are chosen by hand.
   The decoder's weights are hand-chosen too, but it measures and shows which motor pools each
   descending neuron reaches in the wiring.
 - **No hormones, no electrical synapses, no development,** one fly's brain, one seed unless you ask

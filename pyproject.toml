@@ -21,6 +21,10 @@ classifiers = [
 fast = ["numba>=0.59"]                 # compiled integrator: several times faster, identical spikes
 female = ["pyarrow>=12"]               # to build the female fly (FlyWire 783) from its connectivity table
 dev = ["pytest>=7", "playwright", "numba>=0.59"]
+# the physics body (virtual_fly/physics.py): these, then `pip install --no-deps flygym==1.2.1`
+# (flygym's own requirements pin numba 0.60 and pull in Jupyter)
+physics = ["mujoco==3.2.7", "dm_control==1.0.27", "dm_tree==0.1.8", "gymnasium", "scipy", "opencv-python-headless>=4",
+           "imageio", "matplotlib", "pyyaml", "tqdm", "networkx"]
 
 [project.scripts]
 fly-brain = "virtual_fly.cli:main"

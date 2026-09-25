@@ -252,7 +252,7 @@ class MotorDecoder:
 class Game:
     def __init__(self, brain: FlyBrain, autopilot: bool = True, seed: int = 0, columnar: bool = True,
                  profile_name: str = "game", brain_factory=None, parts_list=None, brain_kwargs: dict | None = None,
-                 retest: str = "auto"):
+                 retest: str = "auto", body: str = "drawn", stride_average: bool = False):
         self.brain, self.conn = brain, brain.conn
         self.profile_name = profile_name
         # the genome: the real wiring, and flies grown from its rules (see wiring.py)
@@ -281,7 +281,12 @@ class Game:
         self.paused = False
         self.speed = 1.0
         self.world = World(seed)
-        self.body = FlyBody(self.world, self.rng)
+        if body == "physics":                          # optional: NeuroMechFly v2 in MuJoCo (virtual_fly/physics.py)
+            from .physics import make_body
+            self.body = make_body("physics", self.world, self.rng, seed=seed, stride_average=stride_average)
+        else:
+            self.body = FlyBody(self.world, self.rng)
+        self.body_kind = body
         self.retina = Retina(self.world, self.conn, columnar=columnar)
         self.columnar_on = self.retina.columnar is not None
         self.nose = Nose(self.world)
@@ -1250,7 +1255,10 @@ class Game:
             "hand_built": [
                 "The retina (which facet sees what) and the feature computations that turn retinal images into LC4/LPLC2/LC10a/T4/T5 rates.",
                 "How smells, wind, touch and dust become firing rates, and which sensory types they drive.",
-                "How descending-neuron firing becomes movement: speeds, turn rates, the jump, and what wins when commands compete.",
+                ("How descending-neuron firing becomes movement: the decoder's weights, the jump and what wins when commands compete. "
+                 "Speeds and turn rates come from leg physics (NeuroMechFly v2 in MuJoCo; its stepping rhythm, recorded steps and "
+                 "left/right drive are flygym's)." if getattr(self, "body_kind", "drawn") == "physics" else
+                 "How descending-neuron firing becomes movement: speeds, turn rates, the jump, and what wins when commands compete."),
                 "The walking urge, hunger and thirst, odour-guided steering (innate valence + the learned KC→MBON bias), the female's behaviour.",
                 "Sugar reward → PAM dopamine except PAM-γ3 (the wiring's taste-to-PAM routes give the best-connected PAM-α1 cells about a third of the drive they need; SCIENCE.md 4.5); the 'shock' tool → PPL1.",
                 "Courtship arousal: tapping the female fires the tarsal taste neurons (wiring), but their route to pC1 is ~8x too weak in this model, so contact also drives pC1 directly.",

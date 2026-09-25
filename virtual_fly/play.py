@@ -11,6 +11,8 @@ Start the game: ``python fly_game.py`` or ``python -m virtual_fly.play``.
     --fast               brain time step 1 ms instead of 0.5 ms (about twice as fast; all six
                          classic experiments still pass)
     --parts              start with the genes as each neuron's parts list (the Genome card toggles it)
+    --body physics       walk with NeuroMechFly v2 legs in MuJoCo instead of the drawn body (needs flygym;
+                         runs at about a tenth of real time)
 """
 
 from __future__ import annotations
@@ -56,7 +58,16 @@ def main(argv=None):
                     help="play with the female fly: FlyWire's whole-brain connectome (release 783), built on first use "
                          "(needs pyarrow); no nerve cord and no computed column-by-column motion vision")
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--body", choices=("drawn", "physics"), default="drawn",
+                    help="drawn: the kinematic body (default); physics: NeuroMechFly v2 legs in MuJoCo (optional, needs flygym)")
+    ap.add_argument("--stride-average", action="store_true",
+                    help="physics body: the senses see the body's pose averaged over one stride (hand-built, a stand-in for "
+                         "gaze stabilisation) instead of the stride-by-stride wobble")
     args = ap.parse_args(argv)
+    if args.body == "physics":
+        from .physics import INSTALL_HINT, available
+        if not available():
+            raise SystemExit(INSTALL_HINT)
 
     profile = "pure" if args.pure else args.profile
     overrides = {"seed": args.seed, "dt": 1.0 if args.fast else args.dt, "backend": args.backend}
@@ -85,7 +96,7 @@ def main(argv=None):
         print(f"Parts list: on ({c['modulatory_neurons']:,} modulatory neurons, {c['graded_neurons']:,} graded cells).", file=sys.stderr)
     game = Game(brain, autopilot=not args.no_autopilot, seed=args.seed, columnar=not args.no_columnar,
                 profile_name=profile, brain_factory=lambda c, **kw: build_brain(c, profile, **{**overrides, **kw}),
-                parts_list=parts_list, brain_kwargs={k: v for k, v in overrides.items() if k != "parts"})
+                parts_list=parts_list, brain_kwargs={k: v for k, v in overrides.items() if k != "parts"}, body=args.body, stride_average=args.stride_average)
     if args.no_learning:
         game.learning_on = False
     if args.grow:
