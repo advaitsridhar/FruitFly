@@ -162,6 +162,7 @@ class FlyBrain:
         self._gmask = np.zeros(n, dtype=np.bool_)            # graded cells: no reset, no refractory period
         self._graded_idx = self._empty_i64 = np.zeros(0, dtype=np.int64)
         self._mod_targets = self._empty_i64
+        self._local = []                                     # CompiledLocal per wide-field neuron that releases locally
         if self._parts is not None:
             cp = self._parts
             flipped = np.flatnonzero(cp.sign != conn.sign)               # curated transmitters of the other sign
@@ -180,6 +181,8 @@ class FlyBrain:
             self._n_syn = conn.n_syn
             self._gr_c = np.float32(pl.graded_rate_hz * dt / 1000.0 / THETA)   # release per mV per step
             self._gr_sat = np.float32(THETA)
+            self._local = [loc for loc in self._parts.local if loc.edges.size]
+            self._local_decay = [np.float32(np.exp(-self._fatigue_block * dt / loc.local.tau_ms)) for loc in self._local]
         self.out_scale = np.ones(n, dtype=np.float32)       # per-neuron output multiplier (0 = silenced)
         self.silenced: dict[str, np.ndarray] = {}           # spec -> neuron indices
         self.modulated: dict[str, tuple[np.ndarray, float]] = {}   # spec -> (indices, factor)
@@ -234,6 +237,12 @@ class FlyBrain:
         self._mod_level = np.zeros((k, self._mod_targets.size), dtype=np.float32)   # tone per modulator, per target
         self._mod_gain = np.ones(self._mod_targets.size, dtype=np.float32)
         self._mod_active = False
+        self._local_drive = [np.zeros(loc.sites.shape, dtype=np.float64) for loc in self._local]   # per neuron, per compartment
+        self._local_acc = [np.zeros(loc.sites.shape, dtype=np.float64) for loc in self._local]
+        self._local_active = False
+        self._local_p = [np.ones(loc.edges.size, dtype=np.float32) for loc in self._local]   # release factor per output
+        for loc in self._local:                               # release back to the whole cell's
+            self.w[loc.edges] = self._local_base(loc)
         self.spike_count = np.zeros(n, dtype=np.int32)
         self.window_ms = 0.0
         self.t = 0
@@ -359,6 +368,8 @@ class FlyBrain:
         self.w = self._w_original * np.repeat(scale, np.diff(self.row_ptr))
         if self.plasticity is not None:
             self.plasticity.reapply(self)
+        for loc, p in zip(self._local, getattr(self, "_local_p", ())):   # the local neurons' current release pattern
+            self.w[loc.edges] = self._local_base(loc) * p
 
     # ------------------------------------------------------------------ stepping
     REST_MV = 0.01           # below this (v and g) the whole brain counts as back at rest
@@ -383,6 +394,8 @@ class FlyBrain:
                 self.plasticity.step(self, self._empty)
             if self._mod_active and self.t % self._fatigue_block == 0:
                 self._mod_block()                        # the modulators' tone keeps fading too
+            if self._local_active and self.t % self._fatigue_block == 0:
+                self._local_block()
             self.t += 1                                  # nothing is happening anywhere: skip the maths
             self.window_ms += self.dt
             self.last_spikes = self._empty
@@ -420,6 +433,8 @@ class FlyBrain:
                 self._fade_fatigue(self.decay_f ** self._fatigue_block)
             if self._parts is not None:
                 self._mod_block()
+                if self._local_active:
+                    self._local_block()
             # Values that have decayed below a microvolt are snapped to zero. Left alone they drift
             # into the denormal float range, where the CPU slows every array operation several-fold
             # (a busy brain ran at half speed before this). A microvolt is 7,000x below threshold.
@@ -449,6 +464,8 @@ class FlyBrain:
             self._pending[out] = True
             if self._mod_targets.size:
                 self._deposit(spikes)
+            if self._local:
+                self._local_tally(spikes)
             if self.recording is not None:
                 self.recording.append((self.t, spikes.astype(np.int32)))
             for cb in self.on_spikes:
@@ -514,6 +531,58 @@ class FlyBrain:
             self._mod_gain.fill(1.0)
             self._mod_active = False
 
+    def _local_base(self, loc) -> np.ndarray:
+        """A local neuron's output weights as the whole cell would release them (after silencing/modulation)."""
+        return self._w_original[loc.edges] * self.out_scale[loc.neurons[loc.owner]]
+
+    def _local_tally(self, spikes):
+        """Book the spikes of group members as input to each compartment of the local neurons."""
+        for loc, acc in zip(self._local, self._local_acc):
+            m = loc.member_pos[spikes]
+            m = m[m >= 0]
+            if m.size:
+                np.add.at(acc.T, loc.member_group[m], loc.syn_to[m])
+                self._local_active = True
+
+    def _local_block(self):
+        """Every block of 20 steps: each compartment's activity decays and takes in the new input; a local
+        neuron's release onto a target becomes ``sum_c mix_c * min(1, density_c / mean density)``, where a
+        compartment's density is its recent input per input synapse and the mean is over the whole cell."""
+        busy = False
+        for j, (loc, drive, acc, decay) in enumerate(zip(self._local, self._local_drive, self._local_acc, self._local_decay)):
+            drive *= decay
+            drive += acc
+            acc.fill(0.0)
+            if drive.sum(axis=1).max() < 1e-3:         # nothing left: the cell releases as a whole again
+                drive.fill(0.0)
+                self._local_p[j].fill(1.0)
+            else:
+                busy = True
+                rel = self._local_release(loc, drive)
+                p = np.einsum("ec,ec->e", loc.mix, rel[loc.owner]).astype(np.float32)
+                p[~loc.placed] = 1.0
+                self._local_p[j] = p
+            self.w[loc.edges] = self._local_base(loc) * self._local_p[j]
+        self._local_active = busy
+
+    @staticmethod
+    def _local_release(loc, drive) -> np.ndarray:
+        """(A, C): each compartment's input density relative to the cell's mean, capped at 1."""
+        dens = drive / np.maximum(loc.sites, 1.0)
+        mean = drive.sum(axis=1) / np.maximum(loc.sites.sum(axis=1), 1.0)
+        rel = np.ones_like(dens)
+        on = mean > 0
+        rel[on] = np.minimum(dens[on] / mean[on, None], 1.0)
+        return rel
+
+    def local_status(self) -> list[dict]:
+        """For the game and the docs: each local neuron type's current release per compartment (0-1, mean over its neurons)."""
+        out = []
+        for loc, drive in zip(self._local, self._local_drive):
+            rel = self._local_release(loc, drive)
+            out.append({"spec": loc.local.spec, "release": {g: round(float(rel[:, c].mean()), 3) for c, g in enumerate(loc.local.groups)}})
+        return out
+
     @property
     def parts(self):
         """The compiled parts list (:class:`virtual_fly.parts.CompiledParts`), or None."""
@@ -536,7 +605,8 @@ class FlyBrain:
                 tone[m.nt] = {"mean": 0.0, "max": 0.0, "targets_on": 0}
         active = int((self.v[self._graded_idx] > np.float32(0.5)).sum()) if self._graded_idx.size else 0
         return {"tone": tone, "graded_active": active, "graded": int(self._graded_idx.size),
-                "modulatory": int(self._parts.mod_neurons.size), "targets": int(self._mod_targets.size)}
+                "modulatory": int(self._parts.mod_neurons.size), "targets": int(self._mod_targets.size),
+                "local": self.local_status()}
 
     def _step_numba(self, slot: int) -> np.ndarray:
         """The same step as above, with the arithmetic in the compiled kernels of :mod:`fastbrain`."""
@@ -561,6 +631,8 @@ class FlyBrain:
             self._fade_fatigue(self.decay_f ** self._fatigue_block)
         if do_flush and self._parts is not None:
             self._mod_block()
+            if self._local_active:
+                self._local_block()
         if self._stim_idx.size:
             forced = self._stim_idx[self.rng.random(self._stim_idx.size) < self._stim_p]
         else:
@@ -586,6 +658,8 @@ class FlyBrain:
                 if fastbrain.deposit_tone(spikes, self._mod_kind, self.row_ptr, self.post_idx, self._n_syn, self.out_scale,
                                           self._parts.target_pos, self._mod_synref_k, self._mod_level):
                     self._mod_active = True
+            if self._local:
+                self._local_tally(spikes)
             if self.recording is not None:
                 self.recording.append((self.t, spikes.astype(np.int32)))
             for cb in self.on_spikes:
@@ -775,6 +849,8 @@ class FlyBrain:
                 "std_t": self.std_t.copy(), "spike_count": self.spike_count.copy(),
                 "rel": self._rel.copy(), "mod_level": self._mod_level.copy(), "mod_gain": self._mod_gain.copy(),
                 "mod_active": self._mod_active,
+                "local": [(d.copy(), a.copy(), p.copy()) for d, a, p in zip(self._local_drive, self._local_acc, self._local_p)],
+                "local_active": self._local_active,
                 "window_ms": self.window_ms, "total_spikes": self.total_spikes,
                 "quiet": self.quiet, "quiet_since": self._quiet_since,
                 "rng": self.rng.bit_generator.state,
@@ -800,6 +876,13 @@ class FlyBrain:
             self._mod_level[:] = snap["mod_level"]
             self._mod_gain[:] = snap["mod_gain"]
             self._mod_active = snap["mod_active"]
+        if "local" in snap and len(snap["local"]) == len(self._local):
+            for j, (loc, (d, a, p)) in enumerate(zip(self._local, snap["local"])):
+                self._local_drive[j][:] = d
+                self._local_acc[j][:] = a
+                self._local_p[j] = p.copy()
+                self.w[loc.edges] = self._local_base(loc) * self._local_p[j]
+            self._local_active = snap["local_active"]
         self.window_ms, self.total_spikes = snap["window_ms"], snap["total_spikes"]
         self.quiet, self._quiet_since = snap["quiet"], snap["quiet_since"]
         self.rng.bit_generator.state = snap["rng"]
@@ -826,6 +909,8 @@ class FlyBrain:
                     "modulators": [m.nt for m in self._parts.parts.modulators], "graded_rate_hz": self._parts.parts.graded_rate_hz,
                     "curated": self._parts.parts.curated, "receptor_signs": self._parts.parts.receptor_signs,
                     "co_release_neurons": int(self._parts.keep_fast.sum()),
-                    "curated_neurons": int(self._parts.counts["curated"].get("neurons", 0))},
+                    "curated_neurons": int(self._parts.counts["curated"].get("neurons", 0)),
+                    "local": [loc.local.spec for loc in self._local],
+                    "receptor_facts": [f["spec"] for f in self._parts.counts["receptor_signs"].get("facts", [])]},
                 "silenced": sorted(self.silenced), "modulated": {k: v[1] for k, v in self.modulated.items()},
                 "plasticity": None if self.plasticity is None else self.plasticity.settings()}

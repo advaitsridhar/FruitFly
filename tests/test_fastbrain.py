@@ -18,6 +18,7 @@ CONFIGS = {
     "everything": {"fatigue_mv": 0.05, "std_u": 0.1, "threshold_jitter": 0.5, "noise_hz": 5.0, "kenyon_gain": 1.0},
     "fast": {"dt": 1.0, "fatigue_mv": 0.05},
     "parts": {"parts": True, "fatigue_mv": 0.05},
+    "parts_mb": {"parts": True, "fatigue_mv": 0.05, "kenyon_gain": 1.0},     # Kenyon cells fire: APL releases locally
 }
 
 
@@ -36,6 +37,8 @@ def _run(conn, backend, cfg, learning=False, seed=3):
         brain.stimulate("Mi1/R,Mi9/R", 80)
         brain.stimulate("T4a/R", 60)
         brain.stimulate("prefix:JO-B", 100)
+        if cfg.get("kenyon_gain"):                              # enough glomeruli for the Kenyon cells to fire
+            brain.stimulate("ORN_DM4,ORN_VM7d,ORN_DP1m", 120)
     rec += brain.run(120, record=True)
     brain.clear_stimuli()
     rec += brain.run(300, record=True)                          # runs down to rest (quiet path)
@@ -61,6 +64,10 @@ def test_numba_matches_numpy_spike_for_spike(conn, name):
         assert np.array_equal(a._rel, b._rel) and np.array_equal(a._mod_level, b._mod_level) and a._mod_active == b._mod_active
         assert a.parts_status() == b.parts_status() and a.parts_status()["tone"]["octopamine"]["mean"] > 0
         assert a.spike_count[conn.select("T4b/R")].sum() > 0                  # graded events happened
+        assert np.array_equal(a.w, b.w)
+        assert all(np.array_equal(x, y) for x, y in zip(a._local_drive + a._local_p, b._local_drive + b._local_p))
+    if name == "parts_mb":
+        assert a.spike_count[conn.select("class:Kenyon_Cell")].sum() > 0 and a.local_status() == b.local_status()
 
 
 def test_numba_matches_numpy_with_the_curated_parts_list(conn, mini_vfb):

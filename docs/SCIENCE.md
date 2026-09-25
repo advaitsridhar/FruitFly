@@ -1153,7 +1153,7 @@ rule of a quarter of the brain, which says the validated reflexes do not depend 
 monoamine neurons' fast synapses or on the optic lobe's spiking. The one miss is the marginal
 readout of the vinegar experiment: MBON11's Kenyon-cell drive gives 1.0 Hz in the standard model,
 the lower edge of its range, and 0 Hz with the parts on (its PPL1 dopamine tone is absent without
-bitter taste, and its input gain is unchanged). Three readouts move to the edges of their ranges,
+bitter taste, and its input gain is unchanged). Section 8.2 finds the cause, APL, and v2.6's change. Three readouts move to the edges of their ranges,
 all in the direction the parts predict: the graded HS cells saturate at 300 events/s instead of
 firing at 443 Hz and transmit their sub-threshold contralateral input (DNa02 left 20 Hz), and the
 courtship command loses the octopaminergic and serotonergic fast drive that DNp13 was getting.
@@ -1302,7 +1302,7 @@ serotonin.
 The receptor signs alone bring MBON11 back to 1.0 Hz, inside its range, and move the optomotor
 experiment's contralateral DNa02 from 20 to 23 Hz, just past its ceiling. The curated transmitters of the default policy pull that readout back to 3 Hz and
 leave one miss, the same marginal MBON11 readout the v2.4 parts list missed (0 Hz against a range
-whose lower edge the standard model sits on). Every other readout stays inside its range, most of
+whose lower edge the standard model sits on; v2.6 fixes it, section 8.2). Every other readout stays inside its range, most of
 them closer to the standard model's values than with the v2.4 parts list.
 
 `curated="all"` shows why the default takes its fills from the literature only. With the
@@ -1315,6 +1315,113 @@ two predictions is right is not something either data set can settle. The litera
 the silenced fruitless neurons. A busy second of brain time costs about the same as with the v2.4
 parts list (1.1-1.2 s against 0.8 s with the parts off, compiled backend).
 
+### 8.2 Where APL releases, and the vinegar readout (v2.6)
+
+Every parts-list version up to v2.5 missed one readout: MBON11 (MBON-γ1pedc>α/β) under vinegar,
+range 1-60 Hz. The standard model is marginal on it as well. On five seeds, each run on a fresh
+brain, MBON11 fires 1, 0, 3, 3, 1 Hz with the parts list off, 0, 2, 0, 1, 0 Hz with the v2.5
+default, and 0 Hz on all five with the v2.4 parts list. The real neuron answers odours robustly in
+whole-cell recordings (Hige et al. 2015), so the model, not the range, was wrong.
+
+**The cause.** MBON11 has 38,852 synapses from Kenyon cells and 441 from APL, the mushroom body's
+GABAergic feedback neuron. APL is the one input that matters. In every configuration up to v2.5 it
+fires at 175-190 Hz during vinegar, close to the rate its refractory period allows, so its 441
+synapses deliver about as much charge as the 38,852 Kenyon-cell synapses. Over the 500 ms window
+APL brings −6,800 to −8,100 mV·spikes against +5,300 to +5,900 from the Kenyon cells. With APL
+silenced, MBON11 fires 195 Hz (parts off) or 69 Hz (v2.5 default). The γ Kenyon cells, which give
+MBON11 71 % of its Kenyon-cell input, are among the most inhibited: 59 APL synapses per γ-m cell
+against 26-46 for the α/β subtypes, and only 3 % of them fire to vinegar. The parts list made it worse. APL has
+no cluster in the single-cell atlases (it is one cell per side), so the one-sign rule applied, and
+dopamine, octopamine and serotonin all raised its input gain, to about 2x during vinegar.
+
+Two findings about the real APL bear on this:
+
+* **APL does not spike, and its activity stays local.** Its activity and its inhibition of Kenyon
+  cells are confined to the part of the mushroom body that is active, so it can inhibit one
+  compartment and not another (Amin et al. 2020). The model's APL is one spiking point: each spike
+  arrives at all of its 207,598 output synapses at once, in the quiet γ lobe as much as in the busy
+  α/β lobes.
+* **Dopamine suppresses APL through Dop2R.** Dopamine neurons synapse onto APL and inhibit it
+  through the D2-like receptor; knocking Dop2R down in APL impairs aversive learning (Zhou et al.
+  2019).
+
+**What was tried first**, on the real connectome (game profile, default parts list):
+
+| change | MBON11 on five fresh seeds (Hz) | Kenyon cells (Hz) | why it is not the answer |
+|---|---|---|---|
+| APL as a graded cell (the optic-lobe rule) | 0 (seed 0) | 0.8 | APL's input is so large that its voltage sits at 50 mV and its release saturates at 300 events/s: more inhibition, not less |
+| APL's receptor fact only (Dop2R) | 13, 1, 0, 0, 0 | 2.0-2.7 | right direction (APL's gain 2.0 → 1.5, rate 190 → 151 Hz), not enough |
+| APL's release onto the γ lobe halved, by hand | 33-55 | 2.4-4.2 | shows where the problem is, but the factor is a free parameter |
+
+**What v2.6 does.** Two new tables in `parts.py`, both in the default parts list:
+
+* `RECEPTOR_FACTS`: receptors a cell type is shown to use by direct evidence in that type, for types
+  that no atlas cluster covers, and only for the modulators they name. It has one row: APL uses
+  Dop2R, so dopamine lowers its gain. Octopamine and serotonin keep the one-sign rule on APL because
+  nothing is known.
+* `LOCAL`: wide-field neurons whose release follows the activity around each target. It has one row:
+  APL, with the three Kenyon-cell lobe systems (γ, α/β, α'/β') as its compartments. Every 10 ms each
+  compartment's activity (the Kenyon-cell spikes arriving at APL's synapses in that lobe, decaying
+  with the 20 ms membrane time constant) is divided by the number of input synapses it has there.
+  Each compartment's density is compared with APL's mean over all its input. APL's release onto a
+  target is scaled by `sum_c mix_c · min(1, density_c / mean)`, where `mix` is the target's place:
+  a Kenyon cell sits in its own lobe, any other target in proportion to the Kenyon-cell input it
+  gets from each lobe (MBON11: 72 % γ, 28 % α/β), and a target with no Kenyon-cell input (a
+  projection neuron in the calyx) keeps the whole cell's release. APL keeps its spikes as the
+  measure of its overall depolarisation. The cap at 1 is the saturation argument: APL already fires
+  at its maximum, so a busy compartment cannot release more than the whole cell does, and a quiet one
+  releases less. Nothing in the rule is fitted: the compartments come from the cell types, the mix
+  from the synapse counts, and the time constant is the membrane's. At 10 or 50 ms instead of 20,
+  MBON11 is 23-39 or 35-47 Hz.
+
+**Results** (game profile; the survival table runs the experiments in sequence on one brain, as
+before; the per-seed columns use a fresh brain for each seed, because the mushroom-body learning
+rule carries depression from one run to the next):
+
+| configuration | passed | MBON11, five seeds (Hz) | Kenyon cells (Hz) | Kenyon cells active | busy second (s) |
+|---|---|---|---|---|---|
+| parts off | 16 / 16 | 1, 0, 3, 3, 1 | 1.9-2.1 | 7.8 % (seed 0) | 0.76 |
+| v2.4 parts list | 15 / 16 | 0, 0, 0, 0, 0 | 2.0-2.1 | | 1.24 |
+| v2.5 default | 15 / 16 | 0, 2, 0, 1, 0 | 1.9-2.0 | 7.5-8.7 % | 1.15 |
+| v2.5 + APL's receptor fact | 16 / 16 | 13, 1, 0, 0, 0 | 2.0-2.7 | | 1.15 |
+| v2.5 + local APL | 16 / 16 | 38, 21, 29, 10, 32 | 2.1-3.7 | | 1.21 |
+| **v2.6 default (both)** | **16 / 16** | **51, 34, 43, 38, 38** | **3.4-4.0** | **12-17 %** | **1.28** |
+| v2.6, `curated="off"` | 15 / 16 (DNa02 left 23 Hz, as in v2.5) | 20, 20, 25, 30, 31 | 2.3-2.5 | | 1.24 |
+| v2.6, `curated="all"` | 14 / 16 (sugar, fruitless song, as in v2.5) | 30, 25, 17, 22, 22 | 2.2-2.9 | | 1.23 |
+| v2.6, `receptor_signs=False` | 15 / 16 (**vinegar overshoots**) | 88, 49, 104, 32, 89 | 2.7-5.6 | | 1.28 |
+
+With v2.6, MBON11 answers vinegar on every seed and every validated experiment passes. During
+vinegar APL's release onto the γ lobe runs at 44-71 % of the whole cell's, onto α'/β' at 60-100 %
+and onto α/β at 100 %.
+
+**The price, and how it works.** The fix does not work mainly through the γ lobe. APL and DPM
+inhibit each other: APL→DPM 1,595 synapses, DPM→APL 3,521 (DPM is GABAergic as well as
+serotonergic in the literature, which the default curated policy follows). In v2.5, APL wins and
+DPM is silent during vinegar. With local release, APL's grip on DPM loosens (DPM's Kenyon-cell
+input is 42-44 % γ, so APL's release onto it drops to about three quarters), DPM wins (164 Hz),
+and APL falls to 83 Hz:
+
+| during vinegar, seed 0 | APL (Hz) | DPM (Hz) | Kenyon cells active | MBON11 (Hz) |
+|---|---|---|---|---|
+| v2.5 default | 190 | 0 | 7.5 % | 0 |
+| v2.5 + APL's receptor fact | 151 | 41 | 12.0 % | 13 |
+| v2.6 default | 83 | 164 | 16.6 % | 51 |
+| v2.6, local release onto Kenyon cells only | 201 | 0 | 8.6 % | 3 |
+| v2.6, local release onto everything else only | 19 | 229 | 17.2 % | 65 |
+
+So the Kenyon-cell code is about twice as dense as before: 16.6 % of Kenyon cells fire to vinegar
+against 7.5 %, where real flies use roughly 5-10 % (section 4.3). Every subtype is recruited more:
+γ-m from 2.9 % to 11.3 %, a step towards the real fly's γ lobe, but α'/β'-m reaches 46 %. With
+`curated="off"`, where DPM has no fast GABA, local release still fixes MBON11 (20-31 Hz) and the
+Kenyon cells stay at 2.3-2.5 Hz. The switch between APL and DPM is itself an artefact of two spiking
+point neurons inhibiting each other. The real pair is also coupled by heterotypic gap junctions
+(Wu et al. 2011), which the model does not have. Two more limits: the kit's connectome has no synapse positions, so APL's synapses on
+Kenyon-cell dendrites in the calyx, where all lobes meet, are placed in the lobe of the cell they
+touch, which probably overstates the locality there. And without receptor signs every tone raises
+the gain, which on top of local release drives the vinegar readouts past their ceilings.
+`fly-brain --parts --global-apl` (or `PartsList(local=())`) gives the v2.5 behaviour of APL back
+with everything else unchanged.
+
 ## 9. Honest limitations
 
 The starter kit's list, extended. These are the things a neuroscientist would point at first.
@@ -1322,7 +1429,11 @@ The starter kit's list, extended. These are the things a neuroscientist would po
 1. **Every neuron is identical.** No ion channels, no dendritic geometry, no cell-type-specific
    time constants. Absolute rates mean nothing; only which neurons respond, and roughly how much
    relative to each other, can be trusted. Rates saturate at the refractory limit (500 Hz), which
-   the HS cells hit under wide-field motion.
+   the HS cells hit under wide-field motion. The mushroom body's two wide-field neurons, APL and
+   DPM, are spiking points that inhibit each other; whichever wins sets the inhibition of the
+   whole mushroom body. With the parts list, APL's release follows the Kenyon cells around each
+   target, but its calyx synapses are placed by lobe and its gap junctions with DPM are missing
+   (section 8.2).
 2. **Runaway loops** are a property of the pure model, not of the fly. The game silences 420
    antennal-lobe local neurons and 340 dopamine neurons and adds fatigue to keep the brain sane;
    these are documented fixes, not physiology. Short-term depression, the physiological brake,
@@ -1386,6 +1497,8 @@ The starter kit's list, extended. These are the things a neuroscientist would po
 * Ache JM, Polsky J, Alghailani S, Parekh R, Breads P, Peek MY, Bock DD, von Reyn CR, Card GM
   (2019). Neural basis for looming size and velocity encoding in the *Drosophila* giant fiber
   escape pathway. *Current Biology* 29(6):1073-1081. doi:10.1016/j.cub.2019.01.079
+* Amin H, Apostolopoulou AA, Suárez-Grimalt R, Vrontou E, Lin AC (2020). Localized inhibition in the
+  *Drosophila* mushroom body. *eLife* 9:e56954. doi:10.7554/eLife.56954
 * Arenz A, Drews MS, Richter FG, Ammer G, Borst A (2017). The temporal tuning of the *Drosophila*
   motion detectors is determined by the dynamics of their input elements. *Current Biology*
   27(7):929-944. doi:10.1016/j.cub.2017.01.051
@@ -1555,6 +1668,9 @@ The starter kit's list, extended. These are the things a neuroscientist would po
 * Witz P, Amlaiky N, Plassat J-L, Maroteaux L, Borrelli E, Hen R (1990). Cloning and
   characterization of a *Drosophila* serotonin receptor that activates adenylate cyclase. *PNAS*
   87(22):8940-8944. doi:10.1073/pnas.87.22.8940
+* Wu C-L, Shih M-FM, Lai JS-Y, Yang H-T, Turner GC, Chen L, Chiang A-S (2011). Heterotypic gap
+  junctions between two neurons in the *Drosophila* brain are critical for memory. *Current Biology*
+  21(10):848-854. doi:10.1016/j.cub.2011.02.041
 * Yang HH, St-Pierre F, Sun X, Ding X, Lin MZ, Clandinin TR (2016). Subcellular imaging of voltage and
   calcium signals reveals neural processing in vivo. *Cell* 166(1):245-257.
   doi:10.1016/j.cell.2016.05.031
@@ -1564,3 +1680,6 @@ The starter kit's list, extended. These are the things a neuroscientist would po
 * Zheng L, de Polavieja GG, Wolfram V, Asyali MH, Hardie RC, Juusola M (2006). Feedback network
   controls photoreceptor output at the layer of first visual synapses in *Drosophila*. *Journal of
   General Physiology* 127(5):495-510. doi:10.1085/jgp.200509470
+* Zhou M, Chen N, Tian J, Zeng J, Zhang Y, Zhang X, Guo J, Sun J, Li Y, Guo A, Li Y (2019). Suppression
+  of GABAergic neurons through D2-like receptor secures efficient conditioning in *Drosophila*
+  aversive olfactory learning. *PNAS* 116(11):5118-5125. doi:10.1073/pnas.1812342116

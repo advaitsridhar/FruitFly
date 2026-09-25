@@ -19,6 +19,7 @@ import argparse
 import json
 import sys
 import time
+from dataclasses import replace
 
 import numpy as np
 
@@ -85,6 +86,9 @@ def main(argv=None):
                          "all: also flip the sign of a confident fast prediction; implies --parts)")
     ap.add_argument("--no-receptor-signs", action="store_true",
                     help="parts list: ignore the receptors each target type expresses (one net sign per modulator)")
+    ap.add_argument("--global-apl", action="store_true",
+                    help="parts list: APL releases as one cell, the same everywhere, instead of following the Kenyon cells "
+                         "active around each target (Amin et al. 2020)")
     ap.add_argument("--silence", metavar="SPEC", default="", help='block the output of a population, e.g. "class:ALLN" or "MN9"')
     ap.add_argument("--modulate", metavar="SPEC:FACTOR", default="", help='scale the output of a population, e.g. "LB3b,LB3c:1.5"')
     ap.add_argument("--record", metavar="FILE.npz", help="with --stim: save every spike (time_ms, neuron) to this file")
@@ -203,10 +207,11 @@ def main(argv=None):
     if args.noise:
         hz, mv = (float(x) for x in args.noise.split(":"))
         overrides.update(noise_hz=hz, noise_mv=mv)
-    if args.parts or args.part or args.curated or args.no_receptor_signs:
+    if args.parts or args.part or args.curated or args.no_receptor_signs or args.global_apl:
         from .parts import PartsList
         try:
-            overrides["parts"] = PartsList(curated=args.curated or "modulators", receptor_signs=not args.no_receptor_signs).with_params(args.part)
+            pl = PartsList(curated=args.curated or "modulators", receptor_signs=not args.no_receptor_signs)
+            overrides["parts"] = (pl if not args.global_apl else replace(pl, local=())).with_params(args.part)
         except ValueError as e:
             raise SystemExit(f"--part: {e}")
         c = overrides["parts"].compile(conn).counts
@@ -216,6 +221,8 @@ def main(argv=None):
               f"slow tones on {c['modulated_targets']:,} targets; {c['graded_neurons']:,} graded cells"
               + (f"; curated transmitters ({cur['policy']}): {cur['neurons']:,} neurons in {cur['types']:,} types changed" if cur.get("neurons") else "")
               + (f"; receptor signs on {with_data:,} modulated targets" if with_data else "")
+              + "".join(f"; receptors from the literature for {f['spec']} ({', '.join(f['receptors'])})" for f in c["receptor_signs"].get("facts", []) if f["neurons"])
+              + "".join(f"; {x['spec']} releases locally ({len(x['groups'])} compartments)" for x in c["local"])
               + (f"; overrides: {', '.join(p['spec'] + ' -> ' + ', '.join(f'{k} {v}' for k, v in p.items() if k in ('theta_mv', 'graded') and v is not None) for p in c['params'])}" if c["params"] else ""))
     if args.genome_sweep:
         from .experiments import survival
