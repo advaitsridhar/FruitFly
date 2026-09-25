@@ -2,6 +2,8 @@
 
 import json
 
+import numpy as np
+
 import pytest
 
 from virtual_fly import experiments as E
@@ -123,3 +125,39 @@ def test_save_json(brain, tmp_path):
     assert data["settings"]["gain"] == 0.65
     E.save_json(results, out)
     assert "settings" not in json.loads(out.read_text())
+
+
+PAIRING = Experiment("Vinegar with bitter taste", {"ORN_DM1,ORN_DM4,ORN_VM7d": 120, "LB1a,LB1b,LB1c,LB1d": 120}, 600,
+                     [R("class:Kenyon_Cell", "Kenyon cells", 0, 1000), R("PPL101", "punishment dopamine", 0, 1000)])
+
+
+def test_learning_counts_within_a_run_but_never_carries_to_the_next(game_brain, monkeypatch):
+    pl = game_brain.plasticity
+    for start in (1.0, 0.5):                                   # a naive fly, then a trained one
+        pl.scale[:] = start
+        pl.reapply(game_brain)
+        seen = []
+        real_reset, real_clear = game_brain.reset, game_brain.clear_stimuli
+        monkeypatch.setattr(game_brain, "reset", lambda: (seen.append(("start", pl.scale.copy())), real_reset())[1])
+        monkeypatch.setattr(game_brain, "clear_stimuli", lambda: (seen.append(("end", pl.scale.copy())), real_clear())[1])
+        run_experiment(game_brain, PAIRING, seeds=(0, 1, 2))
+        monkeypatch.undo()
+        starts = [x for k, x in seen if k == "start"]
+        ends = [x for k, x in seen if k == "end"]
+        assert len(starts) >= 3 and all((x == np.float32(start)).all() for x in starts)   # every seed starts from the same fly
+        assert min(x.min() for x in ends) < start                  # odour plus punishment: it learned during the runs
+        assert (pl.scale == np.float32(start)).all()             # and the fly is left as it was
+    pl.reset_weights()
+
+
+def test_fragile_readouts_and_the_survival_rows(brain):
+    from virtual_fly.experiments import ExperimentResult, ReadoutResult
+    steady = ReadoutResult("a", "MN9", 30.0, 0.0, 20, 40, True, [30.0, 30.0], seeds_out=0)
+    shaky = ReadoutResult("b", "MN9", 21.0, 1.0, 20, 40, True, [22.0, 19.0, 22.0], seeds_out=1)
+    res = ExperimentResult("x", [steady, shaky], 0.0, "calm", 0.1, [0, 1, 2])
+    assert res.ok and res.fragile and "ok on the mean, but 1 of 3 seeds outside" in format_result(res)
+    assert not ExperimentResult("y", [steady], 0.0, "calm", 0.1, [0, 1]).fragile
+    rows = E.survival(brain, [SUGAR_EXP, LOOM_EXP], seeds=(0, 1))
+    assert [r["seeds"] for r in rows] == [2, 2] and all(r["ok"] and r["fragile"] is False for r in rows)
+    assert len(rows[0]["readouts"][0]["per_seed"]) == 2 and rows[0]["readouts"][0]["seeds_out"] == 0
+    assert E.SEEDS == (0, 1, 2, 3, 4)

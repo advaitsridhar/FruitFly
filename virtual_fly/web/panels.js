@@ -557,13 +557,17 @@ export class GenomePanel {
     box.innerHTML = "";
     if (!sv) return;
     const head = el("div", "head");
-    head.innerHTML = `<span>reflexes that survive</span><span>${sv.running ? "testing…" : `${sv.ok} / ${sv.tested}`}</span>`;
+    const runs = (sv.results[0] || {}).seeds;
+    head.innerHTML = `<span>reflexes that survive${runs > 1 ? ` <small>(${runs} runs each)</small>` : ""}</span><span>${sv.running ? "testing…" : `${sv.ok} / ${sv.tested}`}</span>`;
     box.appendChild(head);
     for (const r of sv.results) {
-      const d = el("div", "sv " + (r.ok === null ? "na" : r.ok ? "ok" : "bad"));
+      const d = el("div", "sv " + (r.ok === null ? "na" : r.ok ? (r.fragile ? "ok fragile" : "ok") : "bad"));
       const bad = (r.readouts || []).filter((x) => !x.ok).map((x) => `${x.label} ${x.hz} Hz (want ${x.lo}-${x.hi})`).join(", ");
+      // passes on the average of the seeds, but some seed on its own misses: say which readout and how often
+      const shaky = r.ok && r.fragile ? (r.readouts || []).filter((x) => x.seeds_out).map((x) => `${x.label}: ${x.seeds_out} of ${r.seeds} runs miss`).join(", ") : "";
       const n = r.ok === null ? "n/a" : `${(r.readouts || []).filter((x) => x.ok).length} / ${(r.readouts || []).length}`;
-      d.innerHTML = `<i></i><span>${esc(r.name)}${bad ? ` <small>${esc(bad)}</small>` : ""}</span><span class="n">${n}</span>`;
+      d.innerHTML = `<i></i><span>${esc(r.name)}${bad ? ` <small>${esc(bad)}</small>` : ""}${shaky ? ` <small>${esc(shaky)}</small>` : ""}</span><span class="n">${n}</span>`;
+      d.title = (r.readouts || []).map((x) => `${x.label}: ${(x.per_seed || [x.hz]).join(", ")} Hz (want ${x.lo}-${x.hi})`).join("\n");
       box.appendChild(d);
     }
   }

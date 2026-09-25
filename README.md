@@ -212,7 +212,7 @@ py fly_brain.py --trace LC10a/L DNa02/L                    # the strongest wirin
 py fly_brain.py --inputs MN9 --outputs GNG232              # strongest partners of a population
 py fly_brain.py --sweep "LB3b,LB3c:0:200:9" --watch MN9    # a dose-response curve
 py fly_brain.py --lesion Sugar --readout MN9               # which relays does sugar → MN9 need?
-py fly_brain.py --profile game --seeds 3 --json out.json   # mean ± sd over seeds, saved
+py fly_brain.py --profile game --json out.json             # five seeds each (the default): mean ± sd, saved
 py fly_brain.py --silence GNG087 --only bitter             # knock out the bitter relay
 py fly_brain.py --stim "prefix:JO-B:100" --record spikes.npz   # every spike, with neuPrint IDs
 py fly_game.py --pure                                      # the paper's model, seizures and all
@@ -275,7 +275,9 @@ they transmit graded signals below the spike threshold. APL, the mushroom body's
 feedback neuron, releases locally: onto the Kenyon cells and output neurons of a lobe that is
 quieter than the rest it releases less, as in the real fly (Amin et al. 2020), and dopamine turns
 it down through its Dop2R receptor. The reflexes are re-tested on the switch: all 16 validated
-experiments pass (`--global-apl` puts APL back to one cell releasing the same everywhere). `python fly_brain.py --parts` runs any experiment
+experiments pass (`--global-apl` puts APL back to one cell releasing the same everywhere). Every
+re-test runs each experiment five times on a fly with nothing learned carried over between runs,
+and a reflex that passes on average but misses on some run gets an amber mark ("fragile"). `python fly_brain.py --parts` runs any experiment
 that way, `--part "class:Kenyon_Cell:theta=10"` overrides a type's threshold, and
 `python fly_game.py --parts` starts the game with the parts on. The parts cost about a third
 more brain time (the graded cells emit more events), so under heavy stimulation the game runs
