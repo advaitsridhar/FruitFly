@@ -52,6 +52,9 @@ def main(argv=None):
                          "is on (now with --parts, or when switched on from the Genome card): off; modulators (default) = fill "
                          "'unclear' predictions and correct which neurons are modulators; all = the literature also wins over "
                          "confident fast predictions")
+    ap.add_argument("--female", action="store_true",
+                    help="play with the female fly: FlyWire's whole-brain connectome (release 783), built on first use "
+                         "(needs pyarrow); no nerve cord and no computed column-by-column motion vision")
     ap.add_argument("--seed", type=int, default=0)
     args = ap.parse_args(argv)
 
@@ -69,7 +72,7 @@ def main(argv=None):
     if args.parts:
         overrides["parts"] = parts_list
     print("Loading the fly's nervous system...", file=sys.stderr)
-    conn = load_connectome()
+    conn = load_connectome(female=args.female)
     brain = build_brain(conn, profile, **overrides)
     if brain.backend == "numba":
         print("Brain integrator: compiled (numba).", file=sys.stderr)

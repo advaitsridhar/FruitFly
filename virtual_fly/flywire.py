@@ -13,12 +13,22 @@ female one on first use from two public files, downloaded once, pinned to one co
   doublesex expression, sex dimorphism, soma position.
 
 The data files are not redistributed here: they come from their sources and the female FLYB file is built on
-your machine (about 130 MB to download once; the result is about 12 MB). Reading the parquet file needs
-``pyarrow`` (``pip install pyarrow``). As for the male file, connections of fewer than 5 synapses are left out.
+your machine (about 130 MB to download once; the result is about 45 MB). Reading the parquet file needs
+``pyarrow`` (``pip install pyarrow``).
+
+The female fly is the published model as published: every connection (the male file keeps only those of 5 or
+more synapses, the published model uses all of them), the paper's 0.275 mV per synapse (gain 1.0, see
+``brain.DEFAULT_GAIN``), and a sign from each neuron's predicted transmitter (on 98.9 % of connections the same
+sign as the published model's table; the annotations' predictions are newer). ``build_female(min_synapses=5)``
+builds a file cut like the male one, for comparisons.
+
+The kit's experiments and senses are written with MaleCNS cell-type names. ``ALIASES`` maps the ones FlyWire calls
+something else to FlyWire's cells; the table is stored in the file and :meth:`Connectome.select` reads it.
 
 FlyWire is a brain without the ventral nerve cord, so the leg, wing and neck motor neurons of the male data do
-not exist in it, and the experiments that read them are skipped. There are no medulla column coordinates in the
-annotations, so the computed column-by-column motion vision is off for the female fly.
+not exist in it, and the readouts on them are n/a. Neither do male-specific cells such as pIP10. There are no
+medulla column coordinates in the annotations, so the computed column-by-column motion vision is off for the
+female fly.
 """
 from __future__ import annotations
 
@@ -39,7 +49,7 @@ from .connectome import PROJECT_DIR
 FEMALE_FILE = PROJECT_DIR / "data" / "flywire-v783.flyb.gz"
 SOURCE_DIR = PROJECT_DIR / "data" / "flywire-src"
 DATASET = "flywire:v783"
-MIN_SYNAPSES = 5
+MIN_SYNAPSES = 1                      # every connection, as the published model uses them
 
 SOURCES = {
     "connectivity": {
@@ -63,6 +73,32 @@ SIDE = {"left": "L", "right": "R", "center": "M"}
 NT_SIGN = {"acetylcholine": 1, "glutamate": -1, "gaba": -1, "histamine": -1, "dopamine": 1, "octopamine": 1,
            "serotonin": 1, "unclear": 1, "": 1}                        # as in the male file
 VOXEL_NM = (4.0, 4.0, 40.0)                                            # FlyWire's annotation voxel size
+
+# The labellar sugar cells the published model drives (Shiu et al. 2024, figures.ipynb at the pinned commit; one
+# side). FlyWire types all 122 sugar and water cells of the labellum as LB3, where the MaleCNS splits them into
+# LB3a-d, so the kit's sugar populations (LB3b, LB3c) take these cells in the female fly. One of the 21 is not in
+# release 783.
+SHIU_SUGAR = (720575940624963786, 720575940630233916, 720575940637568838, 720575940638202345, 720575940617000768,
+              720575940630797113, 720575940632889389, 720575940621754367, 720575940621502051, 720575940640649691,
+              720575940639332736, 720575940616885538, 720575940639198653, 720575940620900446, 720575940617937543,
+              720575940632425919, 720575940633143833, 720575940612670570, 720575940628853239, 720575940629176663,
+              720575940611875570)
+
+# Names the kit uses (MaleCNS cell types) -> the same cells in FlyWire, with where the match comes from. A name that
+# is already a FlyWire type needs no entry. Stored in the female file, where Connectome.select() reads it.
+ALIASES = {
+    "MN9": ("CB0701", "proboscis muscle 9 motor neuron, FBbt_00111298 (VFB synonyms MN9 and CB0701); the published "
+                      "model's MN9"),
+    "GNG232": ("CB0616", "G2N-1, FBbt_00051850 (VFB synonyms GNG232 and CB0616); the published model's G2N-1"),
+    "GNG087": ("CB0219", "FBbt_20004033 (VFB synonyms GNG087 and CB0219)"),
+    "LB3b": ("sugar", "FlyWire does not split LB3; the published model's sugar cells (SHIU_SUGAR)"),
+    "LB3c": ("sugar", "FlyWire does not split LB3; the published model's sugar cells (SHIU_SUGAR)"),
+    "LB1a": ("LB1a,LB1d", "FlyWire types LB1a and LB1d together"),
+    "LB2a": ("LB2a-b", "FlyWire types LB2a and LB2b together"),
+    "LB2b": ("LB2a-b", "FlyWire types LB2a and LB2b together"),
+    "LB1d": ("LB1a,LB1d", "FlyWire types LB1a and LB1d together"),
+    "prefix:pC1_": ("prefix:pC1", "the doublesex pC1 cluster: pC1a-e in the female (the male's pC1_ types include P1)"),
+}
 
 
 def _sha256(path: Path) -> str:
@@ -137,6 +173,12 @@ def neuron_rows(annotations: list[dict], extra_ids=()) -> list[dict]:
     return rows
 
 
+def aliases(roots) -> dict[str, str]:
+    """``ALIASES`` as population specs for this build (the sugar cells as ``body:`` terms, those present)."""
+    sugar = ",".join(f"body:{r}" for r in SHIU_SUGAR if r in roots)
+    return {k: (sugar if v == "sugar" else v) for k, (v, _) in ALIASES.items()}
+
+
 def write_flyb(path: Path | str, rows: list[dict], pre_root, post_root, n_syn, meta: dict) -> Path:
     """Write neurons and connections in the kit's FLYB layout (see :class:`virtual_fly.connectome.Connectome`)."""
     n = len(rows)
@@ -202,6 +244,7 @@ def build_female(out: Path | str = FEMALE_FILE, src_dir: Path | str = SOURCE_DIR
     extra = sorted({int(x) for x in np.unique(np.concatenate([pre, post]))} - known)
     rows = neuron_rows(ann, extra)
     meta = {"dataset": DATASET, "sex": "female", "built": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "aliases": aliases({r["root"] for r in rows}), "alias_notes": {k: v[1] for k, v in ALIASES.items()},
             "min_weight": min_synapses, "nt_signs": NT_SIGN, "neurons": len(rows), "edges": int(pre.size),
             "synapses_in_edges": int(syn.sum()), "unannotated_connected_neurons": len(extra),
             "sources": {k: {"url": s["url"], "sha256": s["sha256"]} for k, s in SOURCES.items()},

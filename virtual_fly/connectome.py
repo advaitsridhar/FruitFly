@@ -167,8 +167,13 @@ class Connectome:
         self.neuromere = np.array(t["neuromeres"], dtype=object)[self.neuromere_idx]
         self.dimorphism = np.array(t["dimorphisms"], dtype=object)[self.dimorphism_idx]
         self.frudsx = np.array(t["fruDsx"], dtype=object)[self.frudsx_idx]
+        # which fly: "male" (MaleCNS) or "female" (FlyWire, see flywire.py), and the kit's names for cells this
+        # file calls something else (e.g. the female file's "MN9" -> "CB0701")
+        self.sex = str(self.meta.get("sex", "male"))
+        self.aliases: dict[str, str] = dict(self.meta.get("aliases") or {})
         self._by_type = None
         self._cache: dict[str, np.ndarray] = {}
+        self._resolving: set[str] = set()
         self._col = None
         self._type_graph = None
 
@@ -191,6 +196,7 @@ class Connectome:
         c.meta = dict(self.meta, rewired=label)
         c._by_type = self._by_type            # depends only on the types: safe to share
         c._cache = dict(self._cache)          # population selections depend only on the annotations
+        c._resolving = set()
         c._col = None
         c._type_graph = None
         return c
@@ -244,6 +250,8 @@ class Connectome:
         End a term with ``/L``, ``/R`` or ``/M`` to keep only that side, e.g. ``"DNa02/L"``.
         Join filters with ``&`` to intersect them, e.g. ``"class:mechanosensory_tactile&nerve:ADMN"``.
         Prefix a term with ``!`` to subtract it, e.g. ``"prefix:LC10,!LC10a"``.
+        A file can carry aliases (the female fly's FlyWire file answers to the kit's MaleCNS names, e.g.
+        ``"MN9"`` selects FlyWire's CB0701); a real cell type of the same name always wins.
         An array of indices is returned unchanged (so functions can accept either form).
         """
         if isinstance(spec, np.ndarray):
@@ -262,6 +270,8 @@ class Connectome:
             bounds = np.searchsorted(self.type_idx[order], np.arange(len(self.tables["types"]) + 1))
             self._by_type = (order, bounds, {t: k for k, t in enumerate(self.tables["types"])})
         exact = self._exact_type(spec.strip())        # 70 type names contain ',' or '&': try whole first
+        if exact is None:
+            exact = self._alias(spec.strip())
         if exact is not None:
             result = np.flatnonzero(exact).astype(np.int64)
             self._cache[key] = result
@@ -273,6 +283,8 @@ class Connectome:
             negate = term.startswith("!")
             term = term[1:].strip() if negate else term
             mask = self._exact_type(term)
+            if mask is None:
+                mask = self._alias(term)
             if mask is None:
                 mask = np.ones(self.n, dtype=bool)
                 for part in self._and_parts(term):
@@ -321,6 +333,26 @@ class Connectome:
             return None
         mask = np.zeros(self.n, dtype=bool)
         mask[order[bounds[k]:bounds[k + 1]]] = True
+        if side is not None:
+            mask &= self.side == side
+        return mask
+
+    def _alias(self, term: str) -> np.ndarray | None:
+        """Mask for a term this file knows under another name (:attr:`aliases`, optionally with a side), or None.
+        A real cell type of the same name always wins: aliases are looked up only when the name is not one."""
+        if not self.aliases:
+            return None
+        target, side = self.aliases.get(term), None
+        if target is None and len(term) > 2 and term[-2] == "/" and term[-1] in "LRM":
+            target, side = self.aliases.get(term[:-2]), term[-1]
+        if target is None or term in self._resolving:
+            return None
+        self._resolving.add(term)
+        try:
+            mask = np.zeros(self.n, dtype=bool)
+            mask[self.select(target)] = True
+        finally:
+            self._resolving.discard(term)
         if side is not None:
             mask &= self.side == side
         return mask
@@ -606,17 +638,23 @@ class TypeGraph:
         return self.src[e], self.weight[e]
 
 
-def load_connectome(path: Path | str = DATA_FILE, quiet: bool = False) -> Connectome:
-    """Download (first time only) and load the MaleCNS v1.0 connectome.
+def load_connectome(path: Path | str | None = None, quiet: bool = False, female: bool = False) -> Connectome:
+    """Download (first time only) and load the MaleCNS v1.0 connectome, or with ``female=True`` the female
+    fly's FlyWire 783 connectome (built on first use, see :mod:`virtual_fly.flywire`).
 
-    Only the default file is downloaded and checksummed; a path given explicitly or through the
+    Only the default male file is downloaded and checksummed; a path given explicitly or through the
     ``FLY_DATA_FILE`` environment variable is loaded as it is."""
-    path = Path(path)
+    if female:
+        if path is not None:
+            raise ValueError("load_connectome(): give a path or female=True, not both")
+        from .flywire import ensure_female
+        path = ensure_female(quiet=quiet)
+    path = Path(DATA_FILE if path is None else path)
     if path == DEFAULT_DATA_FILE:
         download_connectome(path, quiet=quiet)
     t0 = time.time()
     conn = Connectome(path)
     if not quiet:
-        print(f"Loaded {conn.dataset}: {conn.n:,} neurons, {conn.n_edges:,} connections "
+        print(f"Loaded {conn.dataset} ({conn.sex}): {conn.n:,} neurons, {conn.n_edges:,} connections "
               f"({int(conn.n_syn.sum()):,} synapses) in {time.time() - t0:.1f}s", file=sys.stderr)
     return conn

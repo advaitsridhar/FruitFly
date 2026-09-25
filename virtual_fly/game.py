@@ -282,7 +282,7 @@ class Game:
         c = self.conn
         self.readout_meta = [{"key": r[0], "spec": r[1], "label": r[2], "group": r[3], "max": r[4], "colour": r[5],
                               "genes": genetics.genotype(c, c.select(r[1]))["tags"]}
-                             for r in READOUTS]
+                             for r in READOUTS if self.readouts[r[0]].size]      # (the female fly has no pIP10, no TTMn)
         self.genetics = genetics.summary(c, self.readout_meta)
         self.neuronbridge = genetics.NeuronBridge()
         self.custom_readouts: dict[str, str] = {}
@@ -1134,6 +1134,7 @@ class Game:
             "presets": [{"spec": s, "hz": h, "label": l} for s, h, l in ZAP_PRESETS],
             "types": sorted(type_counts, key=lambda t: -type_counts[t])[:5000],
             "edges": int(c.n_edges), "synapses": int(c.n_syn.sum()),
+            "dataset": c.dataset, "sex": c.sex,
             "readouts": self.readout_meta,
             "checks": [{"id": i, "text": t} for i, t in CHECKS],
             "odours": [{"id": o.id, "name": o.name, "glomeruli": o.glomeruli, "innate": o.innate, "colour": o.colour,

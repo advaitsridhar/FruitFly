@@ -57,13 +57,15 @@ GENE_SPEC = {g[0].lower(): g[4] for g in GENES}
 FLYBASE_ID = {g[0]: g[1] for g in GENES}
 
 # the expression labels in the data ("fruDsx" table) grouped by gene
-FRU_LABELS = ("fru_high", "fru_low", "coexpress_high", "coexpress_low")
-DSX_LABELS = ("dsx_high", "dsx_low", "coexpress_high", "coexpress_low")
-BOTH_LABELS = ("coexpress_high", "coexpress_low")
+# MaleCNS labels carry a confidence (_high/_low); FlyWire's (the female fly) are plain fru, dsx, coexpress
+FRU_LABELS = ("fru_high", "fru_low", "coexpress_high", "coexpress_low", "fru", "coexpress")
+DSX_LABELS = ("dsx_high", "dsx_low", "coexpress_high", "coexpress_low", "dsx", "coexpress")
+BOTH_LABELS = ("coexpress_high", "coexpress_low", "coexpress")
 HIGH_LABELS = ("fru_high", "dsx_high", "coexpress_high")
 GENE_GROUPS = {"fru": FRU_LABELS, "fruitless": FRU_LABELS, "dsx": DSX_LABELS, "doublesex": DSX_LABELS,
                "both": BOTH_LABELS, "fru+dsx": BOTH_LABELS, "coexpress": BOTH_LABELS}
 DIMORPHISM_GROUPS = {"male": ("male-specific", "potentially male-specific"),
+                     "female": ("female-specific", "potentially female-specific"),
                      "dimorphic": ("sexually dimorphic", "potentially sexually dimorphic")}
 TRANSMITTER_GENES = {"acetylcholine": ["ChAT", "VAChT"], "gaba": ["Gad1", "VGAT"], "glutamate": ["VGlut"],
                      "histamine": ["Hdc"], "serotonin": ["Trh", "SerT"], "dopamine": ["ple", "DAT"],
@@ -73,6 +75,9 @@ SOURCE = ("fruitless/doublesex labels and the male-specific/dimorphic status: th
           "(light-microscopy expression images registered to the EM volume; a female connectome for the "
           "comparison). Transmitters: predicted from synapse appearance in the EM data. Gene identities "
           "and links: FlyBase.")
+SOURCE_FEMALE = ("fruitless/doublesex labels and the female-specific/dimorphic status: FlyWire's annotation "
+                 "(Schlegel et al. 2024; matched to published expression data and to the MaleCNS, Berg et al. 2025). "
+                 "Transmitters: predicted from synapse appearance in the EM data. Gene identities and links: FlyBase.")
 
 
 def gene_mask(conn, value: str) -> np.ndarray:
@@ -94,7 +99,7 @@ def dimorphism_mask(conn, value: str) -> np.ndarray:
     if v in DIMORPHISM_GROUPS:
         return np.isin(conn.dimorphism, DIMORPHISM_GROUPS[v])
     if v == "any":
-        return np.isin(conn.dimorphism, DIMORPHISM_GROUPS["male"] + DIMORPHISM_GROUPS["dimorphic"])
+        return np.isin(conn.dimorphism, sum(DIMORPHISM_GROUPS.values(), ()))
     return conn.dimorphism == value
 
 
@@ -102,7 +107,7 @@ def genotype(conn, idx: np.ndarray) -> dict:
     """What a population expresses, as fractions, plus short tags for the screen (>= half the cells)."""
     idx = np.asarray(idx)
     if idx.size == 0:
-        return {"n": 0, "fru": 0.0, "dsx": 0.0, "male": 0.0, "dimorphic": 0.0, "nt": "", "tags": []}
+        return {"n": 0, "fru": 0.0, "dsx": 0.0, "male": 0.0, "female": 0.0, "dimorphic": 0.0, "nt": "", "tags": []}
     fd = conn.frudsx[idx]
     dm = conn.dimorphism[idx]
     nts = conn.nt[idx]
@@ -111,8 +116,10 @@ def genotype(conn, idx: np.ndarray) -> dict:
     out = {"n": int(idx.size),
            "fru": float(np.isin(fd, FRU_LABELS).mean()), "dsx": float(np.isin(fd, DSX_LABELS).mean()),
            "male": float(np.isin(dm, DIMORPHISM_GROUPS["male"]).mean()),
+           "female": float(np.isin(dm, DIMORPHISM_GROUPS["female"]).mean()),
            "dimorphic": float(np.isin(dm, DIMORPHISM_GROUPS["dimorphic"]).mean()), "nt": nt}
-    tags = [t for t, k in (("fru", "fru"), ("dsx", "dsx"), ("♂", "male"), ("♂♀", "dimorphic")) if out[k] >= 0.5]
+    tags = [t for t, k in (("fru", "fru"), ("dsx", "dsx"), ("♂", "male"), ("♀", "female"), ("♂♀", "dimorphic"))
+            if out[k] >= 0.5]
     out["tags"] = tags
     return out
 
@@ -122,12 +129,12 @@ def genes_of(conn, i: int) -> list[dict]:
     i = int(i)
     out = []
     label = conn.frudsx[i]
+    grade = (" (high confidence)" if label.endswith("_high") else " (low confidence)" if label.endswith("_low")
+             else "")                                             # FlyWire's labels have no grade
     if label in FRU_LABELS:
-        out.append({"symbol": "fru", "flybase": FLYBASE.format(FLYBASE_ID["fru"]),
-                    "why": f"fruitless-expressing ({'high' if label.endswith('high') else 'low'} confidence)"})
+        out.append({"symbol": "fru", "flybase": FLYBASE.format(FLYBASE_ID["fru"]), "why": f"fruitless-expressing{grade}"})
     if label in DSX_LABELS:
-        out.append({"symbol": "dsx", "flybase": FLYBASE.format(FLYBASE_ID["dsx"]),
-                    "why": f"doublesex-expressing ({'high' if label.endswith('high') else 'low'} confidence)"})
+        out.append({"symbol": "dsx", "flybase": FLYBASE.format(FLYBASE_ID["dsx"]), "why": f"doublesex-expressing{grade}"})
     for sym in TRANSMITTER_GENES.get(conn.nt[i], []):
         out.append({"symbol": sym, "flybase": FLYBASE.format(FLYBASE_ID[sym]), "why": f"makes/handles {conn.nt[i]}"})
     return out
@@ -137,14 +144,16 @@ def summary(conn, readouts: list[dict] | None = None) -> dict:
     """Everything the Genetics panel shows: the expression populations, the transmitter groups, the
     genotype of each readout, and the source line."""
     groups = []
+    graded = any(t.endswith(("_high", "_low")) for t in conn.tables.get("fruDsx", []))   # FlyWire's labels are not
     for key, label, spec, gene in (("fru", "fruitless", "gene:fru", "fru"), ("dsx", "doublesex", "gene:dsx", "dsx"),
                                    ("both", "fruitless and doublesex", "gene:both", None)):
         idx = conn.select(spec)
-        high = int(np.isin(conn.frudsx[idx], HIGH_LABELS).sum())
+        high = int(np.isin(conn.frudsx[idx], HIGH_LABELS).sum()) if graded else None
         groups.append({"key": key, "label": label, "spec": spec, "n": int(idx.size), "high": high,
                        "gene": gene, "flybase": FLYBASE.format(FLYBASE_ID[gene]) if gene else None,
                        "types": int(len(set(conn.types[idx].tolist()) - {""}))})
-    for key, label, spec in (("male", "male-specific", "dimorphism:male"), ("dimorphic", "sexually dimorphic", "dimorphism:dimorphic")):
+    sex = getattr(conn, "sex", "male")
+    for key, label, spec in ((sex, f"{sex}-specific", f"dimorphism:{sex}"), ("dimorphic", "sexually dimorphic", "dimorphism:dimorphic")):
         idx = conn.select(spec)
         groups.append({"key": key, "label": label, "spec": spec, "n": int(idx.size), "high": None, "gene": None,
                        "flybase": None, "types": int(len(set(conn.types[idx].tolist()) - {""}))})
@@ -157,7 +166,8 @@ def summary(conn, readouts: list[dict] | None = None) -> dict:
                              "synapse_share": share,
                              "genes": [{"symbol": g, "flybase": FLYBASE.format(FLYBASE_ID[g])} for g in genes]})
     unclear = conn.select("nt:unclear")
-    out = {"expression": groups, "transmitters": transmitters, "unclear": int(unclear.size), "source": SOURCE,
+    out = {"expression": groups, "transmitters": transmitters, "unclear": int(unclear.size),
+           "source": SOURCE_FEMALE if sex == "female" else SOURCE,
            "genes": [{"symbol": s, "flybase": FLYBASE.format(fb), "name": n, "marks": m, "spec": sp} for s, fb, n, m, sp in GENES]}
     if readouts is not None:
         out["readouts"] = {r["key"]: genotype(conn, conn.select(r["spec"])) for r in readouts}

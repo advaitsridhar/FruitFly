@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import json
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import numpy as np
 
@@ -154,10 +154,13 @@ def survival(brain: FlyBrain, experiments=None, profile: str | None = None, on_p
             continue
         try:
             res = run_experiment(brain, exp, seeds=seeds)
-            rows.append({"name": exp.name, "ok": res.ok, "fragile": res.fragile, "seeds": len(res.seeds),
-                         "readouts": [{"label": r.label, "hz": round(r.hz, 1), "lo": r.lo, "hi": r.hi, "ok": r.ok,
-                                       "per_seed": [round(v, 1) for v in r.per_seed], "seeds_out": r.seeds_out}
-                                      for r in res.readouts]})
+            row = {"name": exp.name, "ok": res.ok, "fragile": res.fragile, "seeds": len(res.seeds),
+                   "readouts": [{"label": r.label, "hz": round(r.hz, 1), "lo": r.lo, "hi": r.hi, "ok": r.ok,
+                                 "per_seed": [round(v, 1) for v in r.per_seed], "seeds_out": r.seeds_out}
+                                for r in res.readouts if r.ok is not None]}
+            if res.missing:
+                row["missing"] = list(res.missing)            # populations this fly does not have
+            rows.append(row)
         except (ValueError, KeyError) as e:
             rows.append({"name": exp.name, "ok": None, "readouts": [], "error": str(e)})
         if on_progress is not None:
@@ -180,6 +183,7 @@ class ReadoutResult:
     ok: bool
     per_seed: list[float] = field(default_factory=list)
     seeds_out: int = 0              # how many seeds, on their own, fall outside the range
+    # ``ok`` is None when this fly has no such neurons (the female fly has no pIP10 and no nerve cord)
 
 
 @dataclass
@@ -191,20 +195,26 @@ class ExperimentResult:
     wall_s: float
     seeds: list[int]
     silenced: list[str] = field(default_factory=list)   # populations whose output was blocked
+    missing: list[str] = field(default_factory=list)    # populations this fly does not have (see run_experiment)
+    na: bool = False                                    # the experiment cannot be done on this fly
 
     @property
-    def ok(self) -> bool:
-        return all(r.ok for r in self.readouts)
+    def ok(self) -> bool | None:
+        """Every readout in its range; None when the experiment cannot be done on this fly."""
+        if self.na:
+            return None
+        return all(r.ok for r in self.readouts if r.ok is not None)
 
     @property
     def fragile(self) -> bool:
         """Passes on the mean, but some seed on its own falls outside a range."""
-        return self.ok and any(r.seeds_out for r in self.readouts)
+        return bool(self.ok) and any(r.seeds_out for r in self.readouts)
 
     def to_dict(self) -> dict:
         return {"name": self.name, "ok": self.ok, "after_spikes_per_s": self.after_sps, "after": self.after_note,
                 "wall_s": round(self.wall_s, 2), "seeds": self.seeds,
-                "readouts": [r.__dict__ for r in self.readouts], "silenced": list(self.silenced)}
+                "readouts": [r.__dict__ for r in self.readouts], "silenced": list(self.silenced),
+                "missing": list(self.missing)}
 
 
 def in_range(hz: float, lo: float, hi: float) -> bool:
@@ -231,13 +241,38 @@ def kept_learning(brain: FlyBrain):
     return back
 
 
+def absent(conn, spec: str) -> bool:
+    """True when ``spec`` names no neuron in this connectome (e.g. a nerve-cord motor neuron in the female fly)."""
+    return conn.select(spec).size == 0
+
+
 def run_experiment(brain: FlyBrain, exp: Experiment, seeds=(0,), after_ms: float = 1000.0,
                    verbose: bool = False) -> ExperimentResult:
     """Run one experiment for each seed; readouts are averaged, the after-stimulus test uses the last.
 
     Every seed starts from what the fly had learned when the experiment began (learning during a run
-    counts, as in a real fly, but does not carry into the next seed), and the fly is left as it was."""
-    per: dict[str, list[float]] = {r.label: [] for r in exp.readouts}
+    counts, as in a real fly, but does not carry into the next seed), and the fly is left as it was.
+
+    Experiments are written for the male fly. On a fly that lacks some of their neurons (the female fly):
+    a missing stimulus population is left out; a missing readout is reported as n/a (``ok`` None) and does not
+    count; and the experiment cannot be done (``na``) when all its stimulus is missing, or a population it
+    silences is, or every readout that is not the stimulated population itself is."""
+    conn = brain.conn
+    missing = list(dict.fromkeys(s for s in [*exp.stimulus, *exp.silence, *(r.spec for r in exp.readouts)]
+                                 if absent(conn, s)))
+    if missing:
+        stimulus = {s: hz for s, hz in exp.stimulus.items() if s not in missing}
+        tested = [r for r in exp.readouts if r.spec not in missing and r.spec not in exp.stimulus]
+        na = (bool(exp.stimulus) and not stimulus) or not tested or any(s in missing for s in exp.silence)
+        if na:
+            res = ExperimentResult(exp.name, [ReadoutResult(r.label, r.spec, 0.0, 0.0, r.lo, r.hi, None)
+                                              for r in exp.readouts], 0.0, "", 0.0, list(seeds),
+                                   silenced=list(exp.silence), missing=missing, na=True)
+            if verbose:
+                print(format_result(res))
+            return res
+        exp = replace(exp, stimulus=stimulus)
+    per: dict[str, list[float]] = {r.label: [] for r in exp.readouts if r.spec not in missing}
     t0 = time.time()
     after_sps = 0.0
     restore_learning = kept_learning(brain)
@@ -255,7 +290,8 @@ def run_experiment(brain: FlyBrain, exp: Experiment, seeds=(0,), after_ms: float
             brain.reset_counts()
             brain.run(exp.ms - exp.settle_ms)
             for r in exp.readouts:
-                per[r.label].append(brain.rate(r.spec))
+                if r.label in per:
+                    per[r.label].append(brain.rate(r.spec))
             if exp.stimulus:                      # switch the stimulus off: does the brain calm down?
                 brain.clear_stimuli()
                 brain.run(after_ms / 2)
@@ -269,6 +305,9 @@ def run_experiment(brain: FlyBrain, exp: Experiment, seeds=(0,), after_ms: float
     wall = time.time() - t0
     results = []
     for r in exp.readouts:
+        if r.label not in per:
+            results.append(ReadoutResult(r.label, r.spec, 0.0, 0.0, r.lo, r.hi, None))
+            continue
         vals = per[r.label]
         mean = float(np.mean(vals))
         results.append(ReadoutResult(r.label, r.spec, mean, float(np.std(vals)) if len(vals) > 1 else 0.0,
@@ -277,7 +316,7 @@ def run_experiment(brain: FlyBrain, exp: Experiment, seeds=(0,), after_ms: float
     brain.clear_stimuli()
     brain.reset()
     res = ExperimentResult(exp.name, results, float(after_sps), after_note(after_sps) if exp.stimulus else "",
-                           wall, list(seeds), silenced=list(exp.silence))
+                           wall, list(seeds), silenced=list(exp.silence), missing=missing)
     if verbose:
         print(format_result(res))
     return res
@@ -286,6 +325,9 @@ def run_experiment(brain: FlyBrain, exp: Experiment, seeds=(0,), after_ms: float
 def format_result(res: ExperimentResult) -> str:
     lines = []
     for k, r in enumerate(res.readouts):
+        if r.ok is None:
+            lines.append(f" {res.name if k == 0 else '':34} {r.label:32}    n/a         not in this fly")
+            continue
         sd = f" ±{r.sd:4.1f}" if r.sd else ""
         flag = "ok" if r.ok else "<-- not the usual result"
         if r.ok and r.seeds_out:
@@ -293,9 +335,12 @@ def format_result(res: ExperimentResult) -> str:
         lines.append(f" {res.name if k == 0 else '':34} {r.label:32} {r.hz:6.1f}{sd:6} Hz  {r.lo:g}-{r.hi:g} Hz  {flag}")
     if res.silenced:
         lines.append(f" {'':34} (output blocked in {', '.join(res.silenced)})")
+    if res.missing:
+        lines.append(f" {'':34} ({'cannot be done: ' if res.na else ''}this fly has no {', '.join(res.missing)})")
     if res.after_note:
         lines.append(f" {'':34} {'1 s after it stops':32} {res.after_sps:8,.0f} spikes/s  {res.after_note}")
-    lines.append(f" {'':34} ({res.wall_s:.1f} s wall time, seeds {res.seeds})")
+    if not res.na:
+        lines.append(f" {'':34} ({res.wall_s:.1f} s wall time, seeds {res.seeds})")
     return "\n".join(lines)
 
 

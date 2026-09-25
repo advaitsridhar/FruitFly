@@ -71,7 +71,7 @@ def main(argv=None):
     ap.add_argument("--dt", type=float, default=0.5, help="time step in ms (0.1 = the paper's Brian2 default, slower)")
     ap.add_argument("--backend", choices=("auto", "numpy", "numba"), default="auto",
                     help="integrator: compiled numba kernels when numba is installed (auto), or plain NumPy; same spikes either way")
-    ap.add_argument("--gain", type=float, default=None, help="global synaptic gain (default 0.65)")
+    ap.add_argument("--gain", type=float, default=None, help="global synaptic gain (default 0.65 for the male fly, 1.0 = the paper's value for the female fly)")
     ap.add_argument("--kenyon-gain", type=float, default=None, help="input gain of Kenyon cells (0.25 pure, 1.0 game)")
     ap.add_argument("--fatigue", type=float, default=None, metavar="MV", help="threshold increase per spike, fading over 2 s")
     ap.add_argument("--std", metavar="U:TAU_MS", help="short-term synaptic depression, e.g. 0.1:150")
@@ -102,11 +102,14 @@ def main(argv=None):
     ap.add_argument("--grow-seed", type=int, default=1, help="which individual to grow")
     ap.add_argument("--genome-sweep", metavar="LEVELS", nargs="?", const="real,type,class,bottleneck:64",
                     help='grow a fly at each level (comma-separated; default "real,type,class,bottleneck:64") and table which experiments survive')
+    ap.add_argument("--female", action="store_true",
+                    help="the female fly: FlyWire's whole-brain connectome (release 783), built on first use from its public "
+                         "sources (needs pyarrow); no nerve cord, so experiments on leg and wing motor neurons are n/a")
     ap.add_argument("--top", type=int, default=15, help="how many rows to show in rankings")
     ap.add_argument("--seed", type=int, default=0)
     args = ap.parse_args(argv)
 
-    conn = load_connectome()
+    conn = load_connectome(female=args.female)
     if args.find:
         hits = conn.find_types(args.find)
         for t, c in hits[:200]:
@@ -124,7 +127,7 @@ def main(argv=None):
         from .wiring import compare, grow_level
         t0 = time.time()
         conn, rules = grow_level(conn, args.grow, args.grow_seed)
-        cmp = compare(load_connectome(quiet=True), conn) if rules is not None else {}
+        cmp = compare(load_connectome(quiet=True, female=args.female), conn) if rules is not None else {}
         print(f"grown a fly from its {args.grow} wiring rules (seed {args.grow_seed}) in {time.time() - t0:.0f} s: "
               f"{conn.n_edges:,} connections, {int(conn.n_syn.sum()):,} synapses"
               + (f", {100 * cmp.get('shared_connections_fraction', 0):.0f}% shared with the real wiring" if cmp else "")
@@ -328,12 +331,15 @@ def main(argv=None):
           f"(every neuron simulated, nothing trained)...")
     results = E.run_all(brain, only=args.only, seeds=tuple(range(args.seed, args.seed + args.seeds)),
                         profile=args.profile)
-    bad = [r for r in results if not r.ok]
-    n_read = sum(len(r.readouts) for r in results)
-    n_ok = sum(sum(x.ok for x in r.readouts) for r in results)
+    done = [r for r in results if r.ok is not None]
+    bad = [r for r in done if not r.ok]
+    n_read = sum(sum(x.ok is not None for x in r.readouts) for r in done)
+    n_ok = sum(sum(bool(x.ok) for x in r.readouts) for r in done)
     fragile = [r for r in results if r.fragile]
-    print(f"\n{n_ok}/{n_read} readouts in the expected range ({len(results) - len(bad)}/{len(results)} experiments"
+    na = [r for r in results if r.ok is None]
+    print(f"\n{n_ok}/{n_read} readouts in the expected range ({len(done) - len(bad)}/{len(done)} experiments"
           + (f"; {len(fragile)} pass on the mean but miss on some seed: {', '.join(r.name for r in fragile)}" if fragile else "")
+          + (f"; {len(na)} cannot be done on this fly: {', '.join(r.name for r in na)}" if na else "")
           + ").")
     if args.json:
         E.save_json(results, args.json, brain)

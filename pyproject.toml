@@ -19,6 +19,7 @@ classifiers = [
 
 [project.optional-dependencies]
 fast = ["numba>=0.59"]                 # compiled integrator: several times faster, identical spikes
+female = ["pyarrow>=12"]               # to build the female fly (FlyWire 783) from its connectivity table
 dev = ["pytest>=7", "playwright", "numba>=0.59"]
 
 [project.scripts]

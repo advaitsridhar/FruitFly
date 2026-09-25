@@ -17,7 +17,7 @@ STATE_KEYS = {"seq", "t", "rtf", "speed", "fly", "world", "autopilot", "paused",
               "driver", "mode", "spikes", "sps", "stims", "calms", "msg", "silenced", "baseline", "modulated", "custom",
               "done", "state", "learning", "events", "event_seq", "scenario", "recording", "genome"}
 LAYOUT_KEYS = {"n", "w", "h", "d", "x", "y", "z", "region", "regions", "arena_r", "fly_half", "tick_ms", "presets",
-               "types", "edges", "synapses", "readouts", "checks", "odours", "scenarios", "retina", "profile", "settings",
+               "types", "edges", "synapses", "dataset", "sex", "readouts", "checks", "odours", "scenarios", "retina", "profile", "settings",
                "decoder", "columnar_vision", "whats_real", "genetics", "genome", "parts", "vfb"}
 FLY_KEYS = {"x", "y", "h", "v", "w", "mode", "prob", "legs", "groom", "wingL", "wingR", "abdomen", "jump", "hx", "hy", "dist"}
 

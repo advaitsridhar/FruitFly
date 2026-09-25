@@ -60,6 +60,9 @@ from .connectome import Connectome
 MV_PER_SYNAPSE = 0.275       # Shiu et al. 2024
 TAU_M, TAU_S = 20.0, 5.0      # ms
 THETA = 7.0                   # mV above rest
+# global synaptic gain by connectome: 0.65 is the fly-brain-minecraft calibration for the male MaleCNS (more synapses
+# per neuron); 1.0 is Shiu et al.'s own value on the female FlyWire brain it was fitted on (docs/SCIENCE.md 1.3)
+DEFAULT_GAIN = {"male": 0.65, "female": 1.0}
 GAIN_FLOOR = 0.1         # a modulated target's input gain never falls below this (inhibitory receptors)
 REFRACTORY_MS, DELAY_MS = 2.2, 1.8
 
@@ -96,8 +99,9 @@ class FlyBrain:
     reset to 0, it is silent for 2.2 ms, and 1.8 ms later every neuron it connects to gets
     ``g += sign x synapses x 0.275 mV x gain``.
 
-    ``gain = 0.65`` for this male connectome: it has more synapses per neuron than the female brain
-    the 0.275 mV figure was tuned on, so the literal value over-excites it. Kenyon cells (the
+    ``gain = 0.65`` for the male connectome: it has more synapses per neuron than the female brain
+    the 0.275 mV figure was tuned on, so the literal value over-excites it. On that female brain (FlyWire,
+    ``load_connectome(female=True)``) the default is the paper's own value, ``gain = 1.0`` (``DEFAULT_GAIN``). Kenyon cells (the
     learning centre) get their input scaled by 0.25 so that their odour code stays sparse.
 
     Optional mechanisms (all off unless you ask, see the module docstring):
@@ -117,7 +121,7 @@ class FlyBrain:
         say it is: slow modulators, graded cells, per-type thresholds (see :mod:`virtual_fly.parts`).
     """
 
-    def __init__(self, conn: Connectome, dt: float = 0.5, gain: float = 0.65, kenyon_gain: float = 0.25,
+    def __init__(self, conn: Connectome, dt: float = 0.5, gain: float | None = None, kenyon_gain: float = 0.25,
                  fatigue_mv: float = 0.0, fatigue_ms: float = 2000.0,
                  std_u: float = 0.0, std_tau_ms: float = 500.0,
                  noise_hz: float = 0.0, noise_mv: float = 1.0, noise_spec: str = "all",
@@ -129,6 +133,8 @@ class FlyBrain:
             raise RuntimeError("the numba backend needs the numba package: pip install numba")
         self.backend = "numba" if (backend == "numba" or (backend == "auto" and fastbrain.available())) else "numpy"
         self.dt = float(dt)
+        if gain is None:
+            gain = DEFAULT_GAIN.get(getattr(conn, "sex", "male"), DEFAULT_GAIN["male"])
         self.gain, self.kenyon_gain = float(gain), float(kenyon_gain)
         self.fatigue_mv, self.fatigue_ms = float(fatigue_mv), float(fatigue_ms)
         self.decay_f = float(np.exp(-dt / fatigue_ms))

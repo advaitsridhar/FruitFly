@@ -33,7 +33,7 @@ async function loadLayout() {
     try { const r = await fetch("api/layout"); if (!r.ok) throw new Error(r.status); L = await r.json(); }
     catch (e) { await new Promise((res) => setTimeout(res, 1000)); }
   }
-  setText($("sub"), `${L.n.toLocaleString()} neurons · ${(L.edges / 1e6).toFixed(1)} M connections · ${(L.synapses / 1e6).toFixed(0)} M synapses · MaleCNS v1.0`);
+  setText($("sub"), `${L.n.toLocaleString()} neurons · ${(L.edges / 1e6).toFixed(1)} M connections · ${(L.synapses / 1e6).toFixed(0)} M synapses · ${L.sex === "female" ? "FlyWire 783 (female)" : "MaleCNS v1.0"}`);
   buildToolbar();
   arena = new Arena($("arena"), $("stage"), L);
   new ResizeObserver(() => arena.resize()).observe($("stage"));

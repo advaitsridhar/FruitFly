@@ -69,7 +69,7 @@ export class KeyNeurons {
   addRow(r, custom) {
     const name = el("div", "name");
     const shown = custom ? r.key : r.key.replace(/(L|R)$/, " $1").replace(/^GF$/, "DNp01");
-    const tags = (r.genes || []).map((g) => `<span class="gtag" title="${g === "♂" ? "male-specific" : g === "♂♀" ? "sexually dimorphic" : "expresses " + g}">${esc(g)}</span>`).join("");
+    const tags = (r.genes || []).map((g) => `<span class="gtag" title="${g === "♂" ? "male-specific" : g === "♀" ? "female-specific" : g === "♂♀" ? "sexually dimorphic" : "expresses " + g}">${esc(g)}</span>`).join("");
     name.innerHTML = `<span>${esc(shown)} <small>${esc(r.label)}</small>${tags}</span>` + (custom ? `<button title="stop watching">✕</button>` : "");
     name.title = `${r.key}: ${r.spec}`;
     if (custom) name.querySelector("button").onclick = () => post({ type: "unwatch", key: r.key });
@@ -566,7 +566,8 @@ export class GenomePanel {
       const shaky = r.ok && r.fragile ? (r.readouts || []).filter((x) => x.seeds_out).map((x) => `${x.label}: ${x.seeds_out} of ${r.seeds} runs miss`).join(", ") : "";
       const n = r.ok === null ? "n/a" : `${(r.readouts || []).filter((x) => x.ok).length} / ${(r.readouts || []).length}`;
       d.innerHTML = `<i></i><span>${esc(r.name)}${bad ? ` <small>${esc(bad)}</small>` : ""}${shaky ? ` <small>${esc(shaky)}</small>` : ""}</span><span class="n">${n}</span>`;
-      d.title = (r.readouts || []).map((x) => `${x.label}: ${(x.per_seed || [x.hz]).join(", ")} Hz (want ${x.lo}-${x.hi})`).join("\n");
+      d.title = (r.readouts || []).map((x) => `${x.label}: ${(x.per_seed || [x.hz]).join(", ")} Hz (want ${x.lo}-${x.hi})`)
+        .concat(r.missing ? [`this fly has no ${r.missing.join(", ")}`] : []).join("\n");
       box.appendChild(d);
     }
   }
