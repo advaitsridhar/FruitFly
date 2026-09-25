@@ -3,12 +3,15 @@
 ```
 fly_brain.py / fly_game.py / my_first_fly.py     thin entry points (kept from the starter kit)
 virtual_fly/
-  connectome.py    the data: FLYB reader, population specs, input/output indices, cell-type graph
+  connectome.py    the data: FLYB reader, population specs (and a file's name aliases), input/output indices, cell-type graph
+  flywire.py       the female fly: builds FlyWire 783 in the FLYB format from its public sources, with the table of
+                   the kit's MaleCNS names for FlyWire's cells (load_connectome(female=True))
   brain.py         the simulation: LIF network, optional brakes/noise/modulation, monitors, checkpoints
   fastbrain.py     the same integration step as compiled numba kernels (optional, same spikes, ~2x faster)
   plasticity.py    mushroom-body learning: dopamine-gated depression of KC->MBON synapses
   pathways.py      static analysis: strongest routes between populations, lesion candidates
   experiments.py   validated protocols, seeds, sweeps, lesion scans, JSON export
+  retest.py        the game's background re-test (the survival report) in a separate low-priority process
   genetics.py      gene-expression populations (fru, dsx, transmitter genes), FlyBase links, NeuronBridge lookups
   wiring.py        the genome as a recipe: cell-type wiring rules, grown flies, the rank bottleneck
   parts.py         the genes as a parts list: slow modulators (DA/OA/5-HT), graded cell types, per-type thresholds,
@@ -19,10 +22,13 @@ virtual_fly/
 tools/
   build_vfb_data.py    fbbt.obo (+ the connector overlay) -> data/fbbt_map.json.gz, data/fbbt_tree.json.gz
   merge_vfb_harvest.py a Virtual Fly Brain connector harvest -> tools/vfb_overlay.json, data/vfb_receptors.json.gz
+  harvest_neuprint_rois.py  neuPrint (token; run by .github/workflows/neuprint-harvest.yml) -> data/mb_roi_connectivity.json.gz,
+                       APL's and DPM's connections split by region
   settings.py      named model profiles (pure / game / brakes)
   cli.py           `python fly_brain.py ...`
   world.py         the arena: food, posts, odour sources and plume puffs, wind, the drum, the female
   body.py          the fly's body: inertia, gait, appendages, collisions
+  physics.py       the optional physics body: NeuroMechFly v2 legs in MuJoCo through flygym (--body physics)
   senses/
     vision.py      retina (two compound eyes), feature detectors, columnar T4/T5 motion detectors
     olfaction.py   odours -> glomeruli -> ORN rates, with adaptation

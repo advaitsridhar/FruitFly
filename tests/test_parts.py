@@ -57,12 +57,12 @@ def test_param_overrides_and_parsing(conn):
 
 def test_modulators_lose_their_fast_synapses_and_leave_a_tone(conn):
     plain = FlyBrain(conn, seed=0)
-    parts = FlyBrain(conn, seed=0, parts=True)
+    parts = FlyBrain(conn, seed=0, parts=P.PartsList(unknown_sign=1.0))   # no receptor data here: the tone machinery with the v2.7 fill
     assert parts.settings()["parts"] == {"graded_neurons": parts.parts.graded_idx.size, "modulatory_neurons": 16,
                                          "modulated_targets": parts.parts.mod_targets.size,
                                          "modulators": ["dopamine", "octopamine", "serotonin"], "graded_rate_hz": 300.0,
-                                         "curated": "modulators", "receptor_signs": True, "co_release_neurons": 0,
-                                         "curated_neurons": 0, "local": ["APL"], "receptor_facts": ["APL"]}
+                                         "curated": "modulators", "receptor_signs": True, "unknown_sign": 1.0, "co_release_neurons": 0,
+                                         "curated_neurons": 0, "local": ["APL"], "receptor_facts": ["APL", "VS,regex:^VS[0-9]+$"]}
     # dopamine drives the MBONs directly in the published model; with the parts list it does not
     assert _measure(plain, {"PPL101": 300}).rate("MBON11") > 20
     assert _measure(parts, {"PPL101": 300}).rate("MBON11") == 0 and parts.rate("PPL101") > 150
@@ -84,7 +84,7 @@ def test_modulators_lose_their_fast_synapses_and_leave_a_tone(conn):
 
 
 def test_octopamine_and_serotonin_tone_from_a_sound(conn):
-    b = FlyBrain(conn, seed=0, parts=True)
+    b = FlyBrain(conn, seed=0, parts=P.PartsList(unknown_sign=1.0))
     _measure(b, {"prefix:JO-B": 100}, ms=800, settle=100)
     st = b.parts_status()["tone"]
     assert st["octopamine"]["mean"] > 0.2 and st["serotonin"]["mean"] > 0.2 and st["octopamine"]["targets_on"] >= 6
@@ -96,10 +96,10 @@ def test_octopamine_and_serotonin_tone_from_a_sound(conn):
     assert st2["octopamine"]["mean"] < st["octopamine"]["mean"] and st2["serotonin"]["mean"] < st["serotonin"]["mean"]
     assert st2["octopamine"]["mean"] / st["octopamine"]["mean"] < st2["serotonin"]["mean"] / st["serotonin"]["mean"]
     # octopamine raises the HS cells' response to the same motion
-    quiet = FlyBrain(conn, seed=0, parts=True)
+    quiet = FlyBrain(conn, seed=0, parts=P.PartsList(unknown_sign=1.0))
     motion = {"T4a/R,T5a/R": 10}                                     # below the graded cells' saturation
     base = _measure(quiet, motion, ms=500, settle=200).rate("HSE/R,HSN/R,HSS/R")
-    aroused = FlyBrain(conn, seed=0, parts=True)
+    aroused = FlyBrain(conn, seed=0, parts=P.PartsList(unknown_sign=1.0))
     aroused.set_stimuli({"prefix:JO-B": 100})
     aroused.run(600)
     aroused.set_stimuli(motion)
@@ -186,7 +186,7 @@ def test_apl_releases_where_its_kenyon_cells_are_active(conn):
     assert b._local_active and p.max() <= 1.0 and p[on_ab].mean() < p[on_g].mean()
     assert np.allclose(b.w[loc.edges], base * p)
     rel = b.local_status()[0]["release"]
-    assert rel["prefix:KCg"] == 1.0 and rel["prefix:KCab"] < 1.0 and b.parts_status()["local"][0]["spec"] == "APL"
+    assert rel["γ lobe"] == 1.0 and rel["α/β lobes"] < 1.0 and b.parts_status()["local"][0]["spec"] == "APL"
     b.silence("APL")                                           # silencing still silences
     assert (b.w[loc.edges] == 0).all()
     b.run(40)
@@ -225,7 +225,7 @@ def test_receptor_facts_fill_types_the_atlas_does_not_cover(conn, mini_vfb):
     row = cp.counts["receptor_signs"]["facts"][0]
     assert row["left_to_the_atlas"] == ["KCg-m"] and row["neurons"] == 2    # the atlas has a gamma Kenyon cell cluster
     pos = cp.target_pos[conn.select("MBON11")]
-    assert (pos >= 0).all() and (cp.mod_sign[0, pos] == -1).all() and (cp.mod_sign[1:, pos] == 1).all()
+    assert (pos >= 0).all() and (cp.mod_sign[0, pos] == -1).all() and (cp.mod_sign[1:, pos] == 0).all()   # the fact names only Dop2R; no data for OA/5-HT: no tone
     assert "receptor_fact" not in cp.role(int(conn.select("KCg-m")[0]))
     off = P.PartsList(receptor_facts=(fact,), receptor_signs=False).compile(conn)
     assert off.counts["receptor_signs"]["facts"] == [] and (off.mod_sign == 1).all()
@@ -233,3 +233,89 @@ def test_receptor_facts_fill_types_the_atlas_does_not_cover(conn, mini_vfb):
         P.PartsList(receptor_facts=(P.ReceptorFact("MBON11", ("Dop9R",), "bad"),)).compile(conn)
     d = P.PartsList().describe()
     assert d["receptor_facts"][0]["receptors"] == ["Dop2R"] and d["local"][0]["spec"] == "APL" and d["local"][0]["why"]
+
+
+def _synthetic_region_table(conn, lobe_of_ab="aL"):
+    """A hand-made neuPrint region table for the synthetic APLs: every Kenyon-cell <-> APL connection split
+    between the calyx and the cell's lobe (a quarter of the synapses in the calyx)."""
+    apl = conn.select("APL")
+    rois = ["CA(L)", "CA(R)", "gL(L)", "gL(R)", f"{lobe_of_ab}(L)", f"{lobe_of_ab}(R)"]
+    roi = {r: k for k, r in enumerate(rois)}
+    neurons, edges = {}, []
+    for a in apl.tolist():
+        side = conn.side[a]
+        for direction in ("in", "out"):
+            e = conn.edges_between("class:Kenyon_Cell", [a]) if direction == "in" else conn.edges_between([a], "class:Kenyon_Cell")
+            for k in e.tolist():
+                pre, post = int(conn.pre_idx[k]), int(conn.post_idx[k])
+                kc = pre if direction == "in" else post
+                lobe = "gL" if str(conn.types[kc]).startswith("KCg") else lobe_of_ab
+                w = int(conn.n_syn[k]); calyx = w // 4
+                for b in (pre, post):
+                    neurons[str(int(conn.body_id[b]))] = [str(conn.types[b]), ""]
+                if calyx:
+                    edges.append([int(conn.body_id[pre]), int(conn.body_id[post]), roi[f"CA({side})"], calyx])
+                edges.append([int(conn.body_id[pre]), int(conn.body_id[post]), roi[f"{lobe}({side})"], w - calyx])
+    return {"dataset": "synthetic", "cells": ["APL"], "rois": rois, "neurons": neurons, "edges": edges}
+
+
+def test_apl_compartments_from_a_region_table(conn):
+    table = _synthetic_region_table(conn)
+    loc = P.compile_local(conn, P.LOCAL[0], table)
+    assert loc.mode == "regions" and set(loc.labels) == {"calyx", "γ lobe", "α lobe"} and loc.placed.all()
+    assert loc.syn_to.shape[1:] == (2, 6) and (loc.sites > 0).sum() == 6               # per side: each APL uses its own three
+    assert np.allclose(loc.mix.sum(axis=1), 1.0)
+    cal = [c for c, lab in enumerate(loc.labels) if lab == "calyx"]
+    kc_in = conn.edges_between("class:Kenyon_Cell", "APL")
+    assert loc.sites.sum() == conn.n_syn[kc_in].sum() and 0.15 < loc.sites[:, cal].sum() / loc.sites.sum() < 0.3
+    # a table that does not cover the neurons leaves the lobe-system compartments in place
+    other = dict(table, neurons={})
+    assert P.compile_local(conn, P.LOCAL[0], other).mode == "groups"
+    assert P.compile_local(conn, P.Local("APL", P.LOCAL[0].groups, "APL", by_region=False), table).mode == "groups"
+    # a grown or rewired fly has the same body ids but not the real fly's pairs: lobe groups, not the table
+    grown = conn.rewired(conn.row_ptr, conn.post_idx, conn.n_syn, label="grown")
+    assert P.compile_local(grown, P.LOCAL[0], table).mode == "groups"
+    # in the brain: the calyx, shared by both lobe systems, keeps APL's full release while the quiet lobe gets less
+    P.use_region_table(table)
+    try:
+        b = FlyBrain(conn, seed=0, parts=True, kenyon_gain=1.0)
+    finally:
+        P.use_region_table(None)
+    assert b.parts.counts["local"][0]["mode"] == "regions" and b.parts.role(int(conn.select("APL")[0]))["local"]["mode"] == "regions"
+    b.set_stimuli({"ORN_DM1,ORN_DM4,ORN_VM7d": 120})          # the vinegar Kenyon cells are gamma cells
+    b.run(150)
+    rel = b.local_status()[0]["release"]
+    assert b.local_status()[0]["mode"] == "regions" and rel["γ lobe"] == 1.0 and rel["α lobe"] < rel["calyx"] <= 1.0
+
+
+def test_a_target_without_receptor_data_feels_no_tone(conn):
+    """v2.8: the tone changes a target's gain only through receptors the kit knows it expresses."""
+    b = FlyBrain(conn, seed=0, parts=True)
+    _measure(b, {"PPL101": 80})
+    assert b.parts_status()["tone"]["dopamine"]["mean"] > 0.3          # the tone is there ...
+    assert (b._mod_gain == 1).all()                                     # ... but moves no gain without receptor data
+    old = FlyBrain(conn, seed=0, parts=P.PartsList(unknown_sign=1.0))
+    _measure(old, {"PPL101": 80})
+    assert (old._mod_gain > 1).sum() == 4
+
+
+
+def test_a_measured_effect_stands_in_for_an_unknown_receptor(conn):
+    """A fact with a measured effect and no receptor (the default names the VS cells: octopamine raises their
+    gain, Suver et al. 2012); the other modulators, with no data, do nothing to its cells."""
+    assert any(f.spec.startswith("VS,") and f.effects == (("octopamine", 1.0),) and not f.receptors
+               for f in P.RECEPTOR_FACTS)
+    fact = P.ReceptorFact("HSN,HSS", (), "test cells", effects=(("octopamine", 1.0),))
+    cp = P.PartsList(receptor_facts=(*P.RECEPTOR_FACTS, fact)).compile(conn)
+    k = {m.nt: j for j, m in enumerate(cp.parts.modulators)}
+    row = next(f for f in cp.counts["receptor_signs"]["facts"] if f["spec"] == "HSN,HSS")
+    idx = conn.select("HSN,HSS")
+    own = idx[~np.isin(conn.types[idx], row["left_to_the_atlas"])]        # an atlas cluster, where there is one, wins
+    pos = cp.target_pos[own]
+    pos = pos[pos >= 0]
+    assert pos.size and (cp.mod_sign[k["octopamine"], pos] == 1).all()
+    assert (cp.mod_sign[k["dopamine"], pos] == 0).all() and (cp.mod_sign[k["serotonin"], pos] == 0).all()
+    assert row["receptors"] == [] and row["effects"] == {"octopamine": 1.0} and "raises its gain" in row["what"]
+    assert cp.role(int(own[0]))["receptor_fact"]["effects"] == {"octopamine": 1.0}
+    with pytest.raises(ValueError):
+        P.PartsList(receptor_facts=(P.ReceptorFact("HSE", (), "bad", effects=(("tyramine", 1.0),)),)).compile(conn)

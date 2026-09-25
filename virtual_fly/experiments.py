@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import json
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import numpy as np
 
@@ -141,23 +141,30 @@ SEEDS = (0, 1, 2, 3, 4)   # a verdict on a fly: every experiment on five seeds (
 
 
 def survival(brain: FlyBrain, experiments=None, profile: str | None = None, on_progress=None,
-             seeds=SEEDS) -> list[dict]:
+             seeds=SEEDS, after_ms: float = 0.0, should_stop=None) -> list[dict]:
     """Run the experiments one by one and report, per experiment, whether every readout was in its
     range (on the mean over ``seeds``): the survival report of a grown fly (see :mod:`virtual_fly.wiring`).
     ``fragile`` marks an experiment that passes on the mean although some seed on its own does not. An
     experiment whose populations do not exist in this connectome is reported as ``ok: None``.
-    ``on_progress(rows)`` is called after each experiment with the rows so far."""
+    ``on_progress(rows)`` is called after each experiment with the rows so far. The report has no
+    after-stimulus column, so the after-stimulus test is skipped (``after_ms=0``; the readouts are the
+    same either way). ``should_stop()``, checked before each experiment, ends the report early."""
     experiments = experiments if experiments is not None else CLASSIC + EXTENDED
     rows: list[dict] = []
     for exp in experiments:
         if profile is not None and exp.profile is not None and exp.profile != profile:
             continue
+        if should_stop is not None and should_stop():
+            break
         try:
-            res = run_experiment(brain, exp, seeds=seeds)
-            rows.append({"name": exp.name, "ok": res.ok, "fragile": res.fragile, "seeds": len(res.seeds),
-                         "readouts": [{"label": r.label, "hz": round(r.hz, 1), "lo": r.lo, "hi": r.hi, "ok": r.ok,
-                                       "per_seed": [round(v, 1) for v in r.per_seed], "seeds_out": r.seeds_out}
-                                      for r in res.readouts]})
+            res = run_experiment(brain, exp, seeds=seeds, after_ms=after_ms)
+            row = {"name": exp.name, "ok": res.ok, "fragile": res.fragile, "seeds": len(res.seeds),
+                   "readouts": [{"label": r.label, "hz": round(r.hz, 1), "lo": r.lo, "hi": r.hi, "ok": r.ok,
+                                 "per_seed": [round(v, 1) for v in r.per_seed], "seeds_out": r.seeds_out}
+                                for r in res.readouts if r.ok is not None]}
+            if res.missing:
+                row["missing"] = list(res.missing)            # populations this fly does not have
+            rows.append(row)
         except (ValueError, KeyError) as e:
             rows.append({"name": exp.name, "ok": None, "readouts": [], "error": str(e)})
         if on_progress is not None:
@@ -180,31 +187,46 @@ class ReadoutResult:
     ok: bool
     per_seed: list[float] = field(default_factory=list)
     seeds_out: int = 0              # how many seeds, on their own, fall outside the range
+    # ``ok`` is None when this fly has no such neurons (the female fly has no pIP10 and no nerve cord)
 
 
 @dataclass
 class ExperimentResult:
     name: str
     readouts: list[ReadoutResult]
-    after_sps: float            # spikes/s in the whole brain 1 s after the stimulus ends
+    after_sps: float            # events/s in the whole brain 1 s after the stimulus ends (spikes + graded quanta): the worst seed
     after_note: str
     wall_s: float
     seeds: list[int]
     silenced: list[str] = field(default_factory=list)   # populations whose output was blocked
+    missing: list[str] = field(default_factory=list)    # populations this fly does not have (see run_experiment)
+    na: bool = False                                    # the experiment cannot be done on this fly
+    after_per_seed: list[float] = field(default_factory=list)   # the after-stimulus events/s of each seed
+    after_graded_per_seed: list[float] = field(default_factory=list)   # of which the graded cells' release quanta
 
     @property
-    def ok(self) -> bool:
-        return all(r.ok for r in self.readouts)
+    def after_not_calm(self) -> int:
+        """How many seeds leave activity running 1 s after the stimulus (1,000 spikes/s or more)."""
+        return sum(v >= 1000 for v in self.after_per_seed)
+
+    @property
+    def ok(self) -> bool | None:
+        """Every readout in its range; None when the experiment cannot be done on this fly."""
+        if self.na:
+            return None
+        return all(r.ok for r in self.readouts if r.ok is not None)
 
     @property
     def fragile(self) -> bool:
         """Passes on the mean, but some seed on its own falls outside a range."""
-        return self.ok and any(r.seeds_out for r in self.readouts)
+        return bool(self.ok) and any(r.seeds_out for r in self.readouts)
 
     def to_dict(self) -> dict:
         return {"name": self.name, "ok": self.ok, "after_spikes_per_s": self.after_sps, "after": self.after_note,
                 "wall_s": round(self.wall_s, 2), "seeds": self.seeds,
-                "readouts": [r.__dict__ for r in self.readouts], "silenced": list(self.silenced)}
+                "readouts": [r.__dict__ for r in self.readouts], "silenced": list(self.silenced),
+                "missing": list(self.missing), "after_per_seed": list(self.after_per_seed),
+                "after_graded_per_seed": list(self.after_graded_per_seed)}
 
 
 def in_range(hz: float, lo: float, hi: float) -> bool:
@@ -212,8 +234,9 @@ def in_range(hz: float, lo: float, hi: float) -> bool:
 
 
 def after_note(sps: float) -> str:
+    """The after-stimulus verdict on events/s (spikes plus the graded cells' release quanta)."""
     return ("calm" if sps < 1000 else "a small loop keeps firing" if sps < 50000
-            else "RUNAWAY LOOP (see README, 'Limitations')")
+            else "RUNAWAY LOOP (see README, 'Honest limitations')")
 
 
 def kept_learning(brain: FlyBrain):
@@ -231,15 +254,44 @@ def kept_learning(brain: FlyBrain):
     return back
 
 
+def absent(conn, spec: str) -> bool:
+    """True when ``spec`` names no neuron in this connectome (e.g. a nerve-cord motor neuron in the female fly)."""
+    return conn.select(spec).size == 0
+
+
 def run_experiment(brain: FlyBrain, exp: Experiment, seeds=(0,), after_ms: float = 1000.0,
                    verbose: bool = False) -> ExperimentResult:
-    """Run one experiment for each seed; readouts are averaged, the after-stimulus test uses the last.
+    """Run one experiment for each seed; readouts are averaged. The after-stimulus test (does the brain calm
+    down within ``after_ms`` once the stimulus stops?) runs on every seed and reports the worst one, since one
+    seed can calm down and the next keep firing; ``after_ms=0`` skips it (survival() does, it never shows it).
 
     Every seed starts from what the fly had learned when the experiment began (learning during a run
-    counts, as in a real fly, but does not carry into the next seed), and the fly is left as it was."""
-    per: dict[str, list[float]] = {r.label: [] for r in exp.readouts}
+    counts, as in a real fly, but does not carry into the next seed), and the fly is left as it was.
+
+    Experiments are written for the male fly. On a fly that lacks some of their neurons (the female fly):
+    a missing stimulus population is left out; a missing readout is reported as n/a (``ok`` None) and does not
+    count; and the experiment cannot be done (``na``) when all its stimulus is missing, or a population it
+    silences is, or every readout that is not the stimulated population itself is."""
+    conn = brain.conn
+    missing = list(dict.fromkeys(s for s in [*exp.stimulus, *exp.silence, *(r.spec for r in exp.readouts)]
+                                 if absent(conn, s)))
+    if missing:
+        stimulus = {s: hz for s, hz in exp.stimulus.items() if s not in missing}
+        tested = [r for r in exp.readouts if r.spec not in missing and r.spec not in exp.stimulus]
+        na = (bool(exp.stimulus) and not stimulus) or not tested or any(s in missing for s in exp.silence)
+        if na:
+            res = ExperimentResult(exp.name, [ReadoutResult(r.label, r.spec, 0.0, 0.0, r.lo, r.hi, None)
+                                              for r in exp.readouts], 0.0, "", 0.0, list(seeds),
+                                   silenced=list(exp.silence), missing=missing, na=True)
+            if verbose:
+                print(format_result(res))
+            return res
+        exp = replace(exp, stimulus=stimulus)
+    per: dict[str, list[float]] = {r.label: [] for r in exp.readouts if r.spec not in missing}
     t0 = time.time()
-    after_sps = 0.0
+    after: list[float] = []
+    after_graded: list[float] = []
+    gmask = getattr(brain, "_gmask", None)
     restore_learning = kept_learning(brain)
     for spec in exp.silence:                      # the lesion: like expressing tetanus toxin in those cells
         brain.silence(spec)
@@ -255,13 +307,16 @@ def run_experiment(brain: FlyBrain, exp: Experiment, seeds=(0,), after_ms: float
             brain.reset_counts()
             brain.run(exp.ms - exp.settle_ms)
             for r in exp.readouts:
-                per[r.label].append(brain.rate(r.spec))
-            if exp.stimulus:                      # switch the stimulus off: does the brain calm down?
+                if r.label in per:
+                    per[r.label].append(brain.rate(r.spec))
+            if exp.stimulus and after_ms > 0:     # switch the stimulus off: does the brain calm down?
                 brain.clear_stimuli()
                 brain.run(after_ms / 2)
                 brain.reset_counts()
                 brain.run(after_ms / 2)
-                after_sps = brain.spike_count.sum() / (after_ms / 2000.0)
+                secs = after_ms / 2000.0
+                after.append(float(brain.spike_count.sum() / secs))
+                after_graded.append(float(brain.spike_count[gmask].sum() / secs) if gmask is not None and gmask.any() else 0.0)
     finally:
         for spec in exp.silence:
             brain.unsilence(spec)
@@ -269,6 +324,9 @@ def run_experiment(brain: FlyBrain, exp: Experiment, seeds=(0,), after_ms: float
     wall = time.time() - t0
     results = []
     for r in exp.readouts:
+        if r.label not in per:
+            results.append(ReadoutResult(r.label, r.spec, 0.0, 0.0, r.lo, r.hi, None))
+            continue
         vals = per[r.label]
         mean = float(np.mean(vals))
         results.append(ReadoutResult(r.label, r.spec, mean, float(np.std(vals)) if len(vals) > 1 else 0.0,
@@ -276,8 +334,10 @@ def run_experiment(brain: FlyBrain, exp: Experiment, seeds=(0,), after_ms: float
                                      seeds_out=sum(not in_range(v, r.lo, r.hi) for v in vals)))
     brain.clear_stimuli()
     brain.reset()
-    res = ExperimentResult(exp.name, results, float(after_sps), after_note(after_sps) if exp.stimulus else "",
-                           wall, list(seeds), silenced=list(exp.silence))
+    after_sps = max(after, default=0.0)
+    res = ExperimentResult(exp.name, results, after_sps, after_note(after_sps) if after else "",
+                           wall, list(seeds), silenced=list(exp.silence), missing=missing, after_per_seed=after,
+                           after_graded_per_seed=after_graded)
     if verbose:
         print(format_result(res))
     return res
@@ -286,16 +346,33 @@ def run_experiment(brain: FlyBrain, exp: Experiment, seeds=(0,), after_ms: float
 def format_result(res: ExperimentResult) -> str:
     lines = []
     for k, r in enumerate(res.readouts):
+        if r.ok is None:
+            why = "not in this fly" if r.spec in res.missing else "not run"
+            lines.append(f" {res.name if k == 0 else '':34} {r.label:32}    n/a         {why}")
+            continue
         sd = f" ±{r.sd:4.1f}" if r.sd else ""
         flag = "ok" if r.ok else "<-- not the usual result"
         if r.ok and r.seeds_out:
             flag = f"ok on the mean, but {r.seeds_out} of {len(r.per_seed)} seeds outside"
         lines.append(f" {res.name if k == 0 else '':34} {r.label:32} {r.hz:6.1f}{sd:6} Hz  {r.lo:g}-{r.hi:g} Hz  {flag}")
-    if res.silenced:
+    if res.silenced and not res.na:
         lines.append(f" {'':34} (output blocked in {', '.join(res.silenced)})")
+    if res.missing:
+        lines.append(f" {'':34} ({'cannot be done: ' if res.na else ''}this fly has no {', '.join(res.missing)})")
     if res.after_note:
-        lines.append(f" {'':34} {'1 s after it stops':32} {res.after_sps:8,.0f} spikes/s  {res.after_note}")
-    lines.append(f" {'':34} ({res.wall_s:.1f} s wall time, seeds {res.seeds})")
+        n = len(res.after_per_seed)
+        k = res.after_per_seed.index(res.after_sps) if res.after_sps in res.after_per_seed else -1
+        graded = res.after_graded_per_seed[k] if 0 <= k < len(res.after_graded_per_seed) else 0.0
+        split = f" ({res.after_sps - graded:,.0f} spikes + {graded:,.0f} graded quanta)" if graded else ""
+        lines.append(f" {'':34} {'1 s after it stops':32} {res.after_sps:8,.0f} events/s{split}  {res.after_note}")
+        if n > 1:
+            states = [after_note(v).split(" (")[0] for v in res.after_per_seed]
+            tally = ", ".join(f"{states.count(st)} {st}" for st in ("calm", "a small loop keeps firing",
+                                                                    "RUNAWAY LOOP") if states.count(st))
+            per = ", ".join(f"{v / 1000:.1f}k" if v >= 1000 else f"{v:.0f}" for v in res.after_per_seed)
+            lines.append(f" {'':34} {'':32} per seed: {per} ({tally}; the worst is shown)")
+    if not res.na:
+        lines.append(f" {'':34} ({res.wall_s:.1f} s wall time, seeds {res.seeds})")
     return "\n".join(lines)
 
 

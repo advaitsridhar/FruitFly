@@ -33,7 +33,7 @@ async function loadLayout() {
     try { const r = await fetch("api/layout"); if (!r.ok) throw new Error(r.status); L = await r.json(); }
     catch (e) { await new Promise((res) => setTimeout(res, 1000)); }
   }
-  setText($("sub"), `${L.n.toLocaleString()} neurons · ${(L.edges / 1e6).toFixed(1)} M connections · ${(L.synapses / 1e6).toFixed(0)} M synapses · MaleCNS v1.0`);
+  setText($("sub"), `${L.n.toLocaleString()} neurons · ${(L.edges / 1e6).toFixed(1)} M connections · ${(L.synapses / 1e6).toFixed(0)} M synapses · ${L.sex === "female" ? "FlyWire 783 (female)" : "MaleCNS v1.0"}`);
   buildToolbar();
   arena = new Arena($("arena"), $("stage"), L);
   new ResizeObserver(() => arena.resize()).observe($("stage"));
@@ -128,6 +128,12 @@ function onState(s) {
 function renderState(s) {
   if (!firstState) { firstState = true; setShown($("loading"), false); }
   setText($("stSps"), (s.sps || 0).toLocaleString());
+  const partsOn = !!(s.genome && s.genome.parts && s.genome.parts.on);
+  const graded = Math.min(s.graded_eps || 0, s.sps || 0);   // the parts list's graded cells release quanta, not spikes
+  setText($("stSpsUnit"), partsOn ? "events/s" : "spikes/s");
+  const tip = partsOn ? `events per second in the whole brain: ${((s.sps || 0) - graded).toLocaleString()} spikes and ` +
+    `${graded.toLocaleString()} release quanta of the graded cells (parts list)` : "spikes per second in the whole brain";
+  if ($("stSpsBox").title !== tip) $("stSpsBox").title = tip;
   setText($("stRtf"), s.paused ? "paused" : (s.rtf >= 0.97 ? "real time" : fmt(s.rtf, 2) + "×") + (s.speed !== 1 ? ` (×${fmt(s.speed, 2)})` : ""));
   setText($("stT"), fmt(s.t, 1));
   slowHint(s);
@@ -358,7 +364,9 @@ function wireBrain() {
       ${n.vfb && n.vfb.definition ? `<details><summary>what is this cell type?</summary><div class="def">${esc(n.vfb.definition)}</div></details>` : ""}
       <b>strongest inputs</b><ul>${list(n.inputs || [])}</ul>
       <b>strongest outputs</b><ul>${list(n.outputs || [])}</ul>
-      <div class="row wrap"><a href="https://neuprint.janelia.org/view?bodyid=${n.body_id}&dataset=male-cns%3Av1.0" target="_blank" rel="noopener">neuPrint ↗</a>
+      <div class="row wrap">${L.sex === "female"
+        ? `<span class="muted" title="FlyWire root id (release 783): search for it in FlyWire Codex">root id <code>${esc(n.body_ref || String(n.body_id))}</code></span> <a href="https://codex.flywire.ai" target="_blank" rel="noopener">FlyWire Codex ↗</a>`
+        : `<a href="https://neuprint.janelia.org/view?bodyid=${esc(n.body_ref || String(n.body_id))}&dataset=male-cns%3Av1.0" target="_blank" rel="noopener">neuPrint ↗</a>`}
         ${n.vfb ? `<a href="${esc(n.vfb.url)}" target="_blank" rel="noopener" title="${esc(n.vfb.label)} on Virtual Fly Brain">VFB ↗</a>` : ""}
         <button class="mini" data-act="lab">to the lab</button><button class="mini" data-act="watch">watch ${esc(spec)}</button></div>`;
     pop.querySelector(".close").onclick = () => { setShown(pop, false); brain.picked = -1; };
@@ -378,7 +386,7 @@ function partsRole(p) {
   else if (p.sign !== undefined && p.modulator === null) bits.push(`fast ${p.sign > 0 ? "+" : "−"}`);
   if (p.graded) bits.push("graded");
   if (p.local) bits.push("releases locally, following the Kenyon cells around each target");
-  if (p.receptor_fact) bits.push(`<span title="${esc(p.receptor_fact.why)}">receptors from the literature: ${esc(p.receptor_fact.receptors.join(", "))}</span>`);
+  if (p.receptor_fact) bits.push(`<span title="${esc(p.receptor_fact.why)}">from the literature: ${esc(p.receptor_fact.what || p.receptor_fact.receptors.join(", "))}</span>`);
   return bits.length ? ` <small class="muted">· parts list: ${bits.join("; ")}</small>` : "";
 }
 function vfbRows(n) {
@@ -409,6 +417,10 @@ function receptorRow(rx) {
 
 // ---------------------------------------------------------------- dialogs and keyboard
 function buildDialogs() {
+  if (L.sex === "female") setText($("realIntro"), `The fly's brain is a simulation of the whole female fruit-fly brain: all ${L.n.toLocaleString()} ` +
+    `neurons of FlyWire's connectome, release 783 (Dorkenwald et al., Nature 2024), without the nerve cord. Every neuron is the same ` +
+    `simple "leaky integrate-and-fire" unit, and every connection's strength comes from the synapse count in the wiring diagram ` +
+    `(Shiu et al., Nature 2024, the model as published). Nothing is trained.`);
   const wr = L.whats_real || {};
   $("realWiring").innerHTML = (wr.wiring || []).map((t) => `<li>${esc(t)}</li>`).join("");
   $("realHand").innerHTML = (wr.hand_built || []).map((t) => `<li>${esc(t)}</li>`).join("");

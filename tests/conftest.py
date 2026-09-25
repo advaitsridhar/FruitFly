@@ -58,10 +58,12 @@ def drive(brain, stimulus: dict[str, float], ms: float = 500.0, settle_ms: float
 def _no_vfb_files():
     """The suite never reads the shipped ontology files (their real cell types overlap the synthetic
     names): an empty ontology is installed for the whole session, ``mini_vfb`` swaps in the test slice."""
-    from virtual_fly import vfb
+    from virtual_fly import parts, vfb
     vfb.use(vfb.Ontology(), vfb.Receptors())
+    parts.use_region_table(None)                      # nor the harvested neuPrint region table
     yield
     vfb.use(None, None)
+    parts.use_region_table(None)
 
 
 @pytest.fixture(scope="module")

@@ -15,9 +15,9 @@ from virtual_fly.settings import build_brain
 
 STATE_KEYS = {"seq", "t", "rtf", "speed", "fly", "world", "autopilot", "paused", "senses", "retina", "hz", "motor",
               "driver", "mode", "spikes", "sps", "stims", "calms", "msg", "silenced", "baseline", "modulated", "custom",
-              "done", "state", "learning", "events", "event_seq", "scenario", "recording", "genome"}
+              "done", "state", "learning", "events", "event_seq", "scenario", "recording", "genome", "graded_eps"}
 LAYOUT_KEYS = {"n", "w", "h", "d", "x", "y", "z", "region", "regions", "arena_r", "fly_half", "tick_ms", "presets",
-               "types", "edges", "synapses", "readouts", "checks", "odours", "scenarios", "retina", "profile", "settings",
+               "types", "edges", "synapses", "dataset", "sex", "readouts", "checks", "odours", "scenarios", "retina", "profile", "settings",
                "decoder", "columnar_vision", "whats_real", "genetics", "genome", "parts", "vfb"}
 FLY_KEYS = {"x", "y", "h", "v", "w", "mode", "prob", "legs", "groom", "wingL", "wingR", "abdomen", "jump", "hx", "hy", "dist"}
 
@@ -564,3 +564,12 @@ def test_parts_list_toggle_rebuilds_the_brain_and_retests_the_reflexes(game):
     assert _wait(game, lambda: game.genome["growing"] is None and game.brain.parts is None)
     assert not game.parts_on and game.conn is grown and game.genome["level"] == "type" and "class:DAN" in game.brain.silenced
     assert json.loads(game.state_json)["genome"]["parts"] == {"on": False, "status": None}
+
+
+def test_reward_leaves_out_pam_gamma3(conn):
+    """Sugar reward drives the PAM dopamine neurons except PAM12 (PAM-g3; Yamagata et al. 2016)."""
+    from virtual_fly import game as G
+    assert "!PAM12" in G.REWARD_SPEC
+    idx = conn.select(G.REWARD_SPEC)
+    assert idx.size and not np.isin(idx, conn.select("PAM12")).any()
+    assert np.isin(idx, conn.select("prefix:PAM")).all()

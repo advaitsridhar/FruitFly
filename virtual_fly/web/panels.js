@@ -69,7 +69,7 @@ export class KeyNeurons {
   addRow(r, custom) {
     const name = el("div", "name");
     const shown = custom ? r.key : r.key.replace(/(L|R)$/, " $1").replace(/^GF$/, "DNp01");
-    const tags = (r.genes || []).map((g) => `<span class="gtag" title="${g === "♂" ? "male-specific" : g === "♂♀" ? "sexually dimorphic" : "expresses " + g}">${esc(g)}</span>`).join("");
+    const tags = (r.genes || []).map((g) => `<span class="gtag" title="${g === "♂" ? "male-specific" : g === "♀" ? "female-specific" : g === "♂♀" ? "sexually dimorphic" : "expresses " + g}">${esc(g)}</span>`).join("");
     name.innerHTML = `<span>${esc(shown)} <small>${esc(r.label)}</small>${tags}</span>` + (custom ? `<button title="stop watching">✕</button>` : "");
     name.title = `${r.key}: ${r.spec}`;
     if (custom) name.querySelector("button").onclick = () => post({ type: "unwatch", key: r.key });
@@ -392,7 +392,7 @@ export class PathwayPanel {
 // ================================================================= 8b. Genetics
 export class GeneticsPanel {
   constructor(L, lab) {
-    this.lab = lab; this.G = L.genetics || {}; this.buttons = {};
+    this.lab = lab; this.G = L.genetics || {}; this.buttons = {}; this.sex = L.sex || "male";
     const rows = $("geneRows"); rows.innerHTML = "";
     for (const g of this.G.expression || []) {
       const info = el("div", "g");
@@ -415,21 +415,25 @@ export class GeneticsPanel {
     $("lineName").addEventListener("keydown", (e) => { if (e.key === "Enter") this.neuronsOfLine(); });
     $("linesBtn").onclick = () => this.linesFor();
     $("linesSpec").addEventListener("keydown", (e) => { if (e.key === "Enter") this.linesFor(); });
+    if (this.sex === "female") for (const id of ["lineBtn", "linesBtn"]) {       // NeuronBridge knows MaleCNS bodies only
+      $(id).disabled = true; $(id).title = "NeuronBridge matches MaleCNS neurons only, not the female fly's FlyWire cells";
+    }
   }
   // what the anatomy ontology (via Virtual Fly Brain) says about the transmitters, where it differs from the prediction
   renderVfb(v) {
     if (!v || !v.available) return;
     setShown($("vfbBox"), true);
     const c = v.curated || {};
-    setText($("vfbSummary"), `what the literature says: ${c.differ.toLocaleString()} cell types differ from the prediction (Virtual Fly Brain)`);
+    const female = this.sex === "female", src = female ? "FlyWire" : "MaleCNS";
+    setText($("vfbSummary"), `what the literature says: ${c.differ.toLocaleString()} cell types differ from the prediction (${female ? "FlyWire's literature column and " : ""}Virtual Fly Brain)`);
     $("vfbIntro").innerHTML = `${v.types_mapped.toLocaleString()} of ${v.types_total.toLocaleString()} cell types (${v.neurons_mapped.toLocaleString()} of ${v.neurons_typed.toLocaleString()} typed neurons) carry a class of the FlyBase anatomy ontology, ` +
       `so a neuron's popover can say what its type is and link to <a href="https://virtualflybrain.org" target="_blank" rel="noopener">Virtual Fly Brain</a>, and <code>fbbt:</code> selects a class and everything below it (Neuron lab). ` +
-      `The ontology's transmitter agrees with the MaleCNS prediction for ${c.agree.toLocaleString()} types and differs for ${c.differ.toLocaleString()}; it names one for ${c.unclear_with_curated.toLocaleString()} types the prediction leaves "unclear". ` +
+      `The literature's transmitter agrees with the ${src} prediction for ${c.agree.toLocaleString()} types and differs for ${c.differ.toLocaleString()}; it names one for ${c.unclear_with_curated.toLocaleString()} types the prediction leaves "unclear". ` +
       `With the parts list on (Genome card) the literature's word wins for the modulators and fills "unclear" predictions. The largest disagreements:`;
     const rows = $("vfbRows"); rows.innerHTML = "";
     for (const r of c.differ_rows || []) {
       const info = el("div", "g");
-      info.innerHTML = `<span><b>${esc(r.type)}</b> <small>predicted ${esc(r.predicted)}, ${r.evidence === "literature" ? "literature" : "another connectome"} says ${esc(r.curated.join(" + "))}</small><a href="https://virtualflybrain.org/reports/${esc(r.fbbt.replace(":", "_"))}" target="_blank" rel="noopener" title="${esc(r.label)} on Virtual Fly Brain">VFB ↗</a></span><small>${r.n.toLocaleString()} neurons</small>`;
+      info.innerHTML = `<span><b>${esc(r.type)}</b> <small>predicted ${esc(r.predicted)}, ${r.evidence === "literature" ? "literature" : "another connectome"} says ${esc(r.curated.join(" + "))}${r.source ? ` (${esc(r.source)})` : ""}</small>${r.fbbt ? `<a href="https://virtualflybrain.org/reports/${esc(r.fbbt.replace(":", "_"))}" target="_blank" rel="noopener" title="${esc(r.label)} on Virtual Fly Brain">VFB ↗</a>` : ""}</span><small>${r.n.toLocaleString()} neurons</small>`;
       rows.append(info, this.actions(r.type, true));
     }
   }
@@ -500,7 +504,6 @@ export class GeneticsPanel {
 
 // ================================================================= 8c. Genome
 const TONE_COLOURS = { dopamine: "#d9a2ff", octopamine: "#ffb454", serotonin: "#6ad1ff" };
-const LOBE_NAMES = { "prefix:KCg": "γ lobe", "prefix:KCab": "α/β lobes", "prefix:KCa'b'": "α′/β′ lobes" };   // the Kenyon-cell lobe systems
 
 export class GenomePanel {
   constructor(L) {
@@ -567,7 +570,8 @@ export class GenomePanel {
       const shaky = r.ok && r.fragile ? (r.readouts || []).filter((x) => x.seeds_out).map((x) => `${x.label}: ${x.seeds_out} of ${r.seeds} runs miss`).join(", ") : "";
       const n = r.ok === null ? "n/a" : `${(r.readouts || []).filter((x) => x.ok).length} / ${(r.readouts || []).length}`;
       d.innerHTML = `<i></i><span>${esc(r.name)}${bad ? ` <small>${esc(bad)}</small>` : ""}${shaky ? ` <small>${esc(shaky)}</small>` : ""}</span><span class="n">${n}</span>`;
-      d.title = (r.readouts || []).map((x) => `${x.label}: ${(x.per_seed || [x.hz]).join(", ")} Hz (want ${x.lo}-${x.hi})`).join("\n");
+      d.title = (r.readouts || []).map((x) => `${x.label}: ${(x.per_seed || [x.hz]).join(", ")} Hz (want ${x.lo}-${x.hi})`)
+        .concat(r.missing ? [`this fly has no ${r.missing.join(", ")}`] : []).join("\n");
       box.appendChild(d);
     }
   }
@@ -585,8 +589,8 @@ export class GenomePanel {
         ? `${(c.modulatory_neurons || 0).toLocaleString()} dopamine, octopamine and serotonin neurons act through slow tones on ${(c.modulated_targets || 0).toLocaleString()} targets; ${(c.graded_neurons || 0).toLocaleString()} optic-lobe cells transmit graded signals`
           + (cur.neurons ? `; the literature re-types ${cur.neurons.toLocaleString()} neurons (${cur.types.toLocaleString()} types)` : "")
           + (withData ? `; receptor expression sets the tone's sign on ${withData.toLocaleString()} targets` : "")
-          + (rs.facts || []).filter((f) => f.neurons).map((f) => `; ${f.spec} uses ${f.receptors.join(", ")} (literature)`).join("")
-          + (c.local || []).map((x) => `; ${x.spec} releases locally, by lobe`).join("")
+          + (rs.facts || []).filter((f) => f.neurons).map((f) => f.receptors.length ? `; ${f.spec} uses ${f.receptors.join(", ")} (literature)` : `; ${f.what} in ${f.spec} (literature)`).join("")
+          + (c.local || []).map((x) => `; ${x.spec} releases locally, by ${x.mode === "regions" ? "mushroom-body region" : "lobe"}`).join("")
         : "every neuron is the same machine (Shiu et al. 2024); switch on to give each the parts its genes make");
       setShown($("tones"), !!p.on);
     }
@@ -600,7 +604,7 @@ export class GenomePanel {
     // e.g. "APL is releasing locally: γ lobe 45 %, α′/β′ lobes 80 % of its full output" (hidden while it releases evenly)
     const lines = (p.on && p.status ? p.status.local || [] : []).map((x) => {
       const low = Object.entries(x.release).filter(([, rel]) => rel < 0.995);
-      return low.length ? `${x.spec} is releasing locally: ${low.map(([g, rel]) => `${LOBE_NAMES[g] || g.replace(/^prefix:/, "")} ${Math.round(100 * rel)} %`).join(", ")} of its full output` : "";
+      return low.length ? `${x.spec} is releasing locally: ${low.map(([g, rel]) => `${g} ${Math.round(100 * rel)} %`).join(", ")} of its full output` : "";
     }).filter(Boolean);
     setText($("localInfo"), lines.join("; "));
     setShown($("localInfo"), lines.length > 0);

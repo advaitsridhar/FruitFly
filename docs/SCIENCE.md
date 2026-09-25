@@ -19,7 +19,7 @@ Conventions used throughout:
   which the first 100 ms are discarded, rates = mean spikes/s per neuron over the remaining
   500 ms, "after" = whole-brain spikes/s measured 500-1000 ms after the stimulus stops.
 * Rates in this model are only meaningful relative to each other. Every neuron is identical, so
-  "MN9 fires at 47 Hz" means "the sugar pathway reaches MN9", not that a real MN9 fires at 47 Hz.
+  "MN9 fires at 50 Hz" means "the sugar pathway reaches MN9", not that a real MN9 fires at 50 Hz.
 
 The probe scripts and their raw outputs are referred to by directory name (`olfaction-learning`,
 `synaptic-depression`, `computed-vision`, `courtship-mechano`); the two profile runs quoted in
@@ -160,9 +160,10 @@ Why each `game` choice was made:
 * **plasticity on** with a dopamine floor, because odour alone drives one PPL1 neuron (PPL102) at
   ~100 Hz in this model and must not teach the fly to avoid everything it smells (section 4.7).
 
-The game also keeps a **watchdog** (hand-built, `game.py`): if the whole brain fires above
-150,000 spikes/s for 1.5 s with no sensory input for 0.5 s, or for 4 s regardless, the brain is
-reset to rest and the event is logged as "runaway firing".
+The game also keeps a **watchdog** (hand-built, `game.py`): if the whole brain carries more than
+150,000 events/s (spikes, plus the graded cells' release quanta when the parts list is on) for 1.5 s
+with no sensory input for 0.5 s, or for 4 s regardless, the brain is reset to rest and the event is
+logged as "runaway firing".
 
 ---
 
@@ -185,25 +186,25 @@ The six experiments of Shiu et al. 2024 and the fly-brain-minecraft benches, as 
 Rates in Hz; "after" is whole-brain spikes/s one second after the stimulus ends
 (calm < 1,000; small loop < 50,000; RUNAWAY above).
 
-| readout | expected | pure (starter README) | pure (`fly_brain.py --profile pure`, this kit) | fatigue 0.05 only (`synaptic-depression/log_baseline`) | **game** (`--profile game`) | brakes (`--profile brakes`) |
+| readout | expected | pure (starter README) | pure (`fly_brain.py --profile pure`, this kit) | fatigue 0.05 only (`synaptic-depression/log_baseline`) | **game** (`--profile game`, v2.8) | brakes (`--profile brakes`) |
 |---|---|---|---|---|---|---|
-| GNG232 | 20-60 | 37 | 37 | 40 | **40** | 24 |
+| GNG232 | 20-60 | 37 | 37 | 40 | **40** | 23 |
 | DNg67 | 10-40 | 22 | 22 | 23 | **23** | 0 * |
-| MN9 (sugar) | 30-90 | 69 | 69 | 50 | **47** | 10 * |
+| MN9 (sugar) | 30-90 | 69 | 69 | 50 | **50** | 10 * |
 | Kenyon cells (sugar) | 0-1 | 0 | 0 | 0 | **0** | 0 |
-| GNG087 (bitter) | 100-400 | 295 | 287 | 224 | **225** | 124 |
+| GNG087 (bitter) | 100-400 | 295 | 287 | 224 | **222** | 124 |
 | MN9 (bitter) | 0-5 | 0 | 0 | 0 | **0** | 0 |
 | MN9 (sugar + bitter) | 0-5 | 0 | 0 | 0 | **0** | 0 |
-| DNp01 (loom) | 250-400 | 343 | 343 | 295 | **293** | 195 * |
-| TTMn (loom) | 40-100 | 67 | 68 | 60 | **58** | 7 * |
-| DNg62 (dust) | 100-260 | 158 | 192 | 139 | **144** | 32 * |
-| DNge078 (dust) | 80-200 | 118 | 139 | 104 | **106** | 19 * |
+| DNp01 (loom) | 250-400 | 343 | 343 | 295 | **295** | 195 * |
+| TTMn (loom) | 40-100 | 67 | 68 | 60 | **60** | 7 * |
+| DNg62 (dust) | 100-260 | 158 | 192 | 139 | **142** | 32 * |
+| DNge078 (dust) | 80-200 | 118 | 139 | 104 | **105** | 19 * |
 | readouts in range | | 12/12 | 12/12 | 12/12 | **12/12** | 6/12 |
-| after sugar | | 0 | 0 | 350,270 | **0** | 0 |
+| after sugar | | 0 | 0 | 350,270 | **27,886** | 0 |
 | after bitter | | RUNAWAY | 568,850 | 262,064 | **0** | 0 |
 | after sugar + bitter | | RUNAWAY | 568,194 | 257,554 | **0** | 0 |
-| after loom | | | 15,862 | 4,806 | **3,944** | 710 |
-| after dust | | RUNAWAY | 136,988 | 0 | **6,740** | 0 |
+| after loom | | | 15,862 | 4,806 | **5,566** | 714 |
+| after dust | | RUNAWAY | 136,988 | 0 | **36,590** | 0 |
 
 Notes:
 
@@ -214,8 +215,10 @@ Notes:
   in `synaptic-depression/log_perf` a different draw ignited the antennal-lobe loop (147,000
   spikes in 600 ms instead of 31,000-34,000).
 * The `game` profile passes all twelve readouts and every after-stimulus period is calm or a
-  small loop. The small loops after loom and dust are the `DNg33`/serotonin loop the starter
-  README describes; they do not move the body.
+  small loop. The small loops after sugar, loom and dust are the `DNg33`/serotonin loop the starter
+  README describes; they do not move the body. (The column was re-measured for v2.8, parts list off;
+  some of its numbers had moved in earlier versions without the table being updated, e.g. MN9 47 and
+  a calm brain after sugar. On seed 0 the loop after sugar is on; on seeds 2-4 it is not.)
 * The `brakes` profile fails half the readouts (starred). Depression is applied to every neuron,
   including the Poisson-clamped sensory afferents, so a 120 Hz taste neuron's synapses run down to
   a fraction of their strength within 100 ms (section 3.3). It is kept so the trade-off can be seen.
@@ -253,10 +256,11 @@ Two things made single verdicts less trustworthy than they looked.
   uses five seeds by default. An experiment passes when every readout's mean is in range, as
   before. It is marked **fragile** when it passes on the mean but some seed on its own misses. The
   Genome card shows a fragile reflex with an amber square and names the readout; `fly-brain`'s
-  summary lists them. Five seeds cost about 3 s per experiment with the compiled integrator.
+  summary lists them. Five seeds cost about 1.5-2 s per experiment with the compiled integrator,
+  about 4 s with the after-stimulus test on every seed (parts list on).
 
 The ranges are unchanged. The model's absolute rates are not comparable with recordings
-(section 9), so there is no measured value to move most of them to; the fragile mark says where a
+(section 10), so there is no measured value to move most of them to; the fragile mark says where a
 range edge sits inside the model's own spread instead. The tables elsewhere in this document were
 measured on seed 0 and are left as they were measured.
 
@@ -272,8 +276,47 @@ With the parts list on, the vinegar readout that section 8.2 fixed holds on ever
 that single runs had passed are fragile. DNp13 loses the fast octopaminergic and serotonergic drive
 it had in the standard model (section 8), so the courtship command sits close to its floor. More
 worrying is the leak past the silenced fruitless neurons: on two seeds of five, the song motor
-neurons fire 5-10 Hz although the neurons that drive them are silenced. These are the next things to
-look at.
+neurons fire 5-10 Hz although the neurons that drive them are silenced. v2.8 follows both up
+(sections 8.4 and 8.5), and with its tone rule the parts list passes 16 of 16 with nothing fragile:
+
+| configuration (v2.8) | passed | fragile |
+|---|---|---|
+| parts list off | 16 / 16 | vinegar: MBON11 1, 0, 3, 3, 1 Hz |
+| parts list on (default) | 16 / 16 | none |
+| parts list, APL global (`--global-apl`) | 16 / 16 | vinegar: MBON11 0, 0, 3, 3, 1 Hz |
+| parts list, v2.7's tone rule (`--one-sign-rule`) | 16 / 16 | DNp13 and fruitless-silenced ps1, as in v2.7 |
+
+**The after-stimulus test covers every seed (v2.8).** Until v2.7 each seed ran the one-second
+after-stimulus test, but only the last seed's count was reported, so the verdict depended on which seed
+came last. Now the worst seed is reported, with each seed's state:
+
+```
+ 1 s after it stops    54,696 events/s (25,848 spikes + 28,848 graded quanta)  RUNAWAY LOOP (...)
+                       per seed: 50.5k, 45.8k, 54.7k, 50.4k, 23.8k (2 a small loop keeps firing, 3 RUNAWAY LOOP; the worst is shown)
+```
+
+(wide-field motion on the right eye, parts list on)
+
+The unit is events per second. With the parts list on, the graded cells' release quanta count with
+the spikes: each quantum is a spike's worth of transmitter, delivered with the cell's full weights, and
+a graded cell at rest releases nothing, so a quantum says as much as a spike that the brain has not
+settled. The split is shown, and the verdict stays on the total (calm below 1,000, a small loop below
+50,000). Counting spikes only would turn all ten of the male's RUNAWAY seed-runs into small loops with
+no change in the dynamics. Over the 13 distinct stimulus conditions (65 seed-runs), the male fly is
+calm in 34, a small loop in 31 and a runaway in none with the parts off; with the parts on, 43 / 12 / 10
+(v2.7's rule: 24 / 2 / 39). Section 10, limitation 3, says what keeps firing.
+
+**The game's re-test runs in a separate process (v2.8).** When the parts list is switched or a fly is
+grown, the Genome card re-tests the reflexes while the game keeps running. In a thread of the game's own
+process the re-test competed with the game loop for Python's interpreter lock, and the game fell to
+0.74-0.75 of real time. The re-test now runs in a child process at low priority (`nice 19`; below-normal
+priority on Windows) that loads the connectome itself. It skips the after-stimulus test, which the card
+never shows. On a 4-core machine the parts-on re-test takes 27-28 s instead of 73-75 s and the game
+keeps 0.87-0.89 of real time, level with the same brain without a re-test; the parts-off re-test takes
+18 s instead of 40. The rows are identical. A newer re-test cancels an older one, a fly and settings
+tested before come from a cache at once, and if the child cannot start or dies the re-test runs in the
+game's thread as before. The child holds its own copy of the brain, 0.38-0.45 GB while it runs
+(about 0.3 GB more in all, since the game's own process is about 0.1 GB smaller than with the thread).
 
 ## 3. Runaway loops and brakes
 
@@ -322,8 +365,8 @@ stimulated and 3-7x *less* afterwards because there is no seizure to simulate). 
 "exempt the clamped afferents" switch: the Poisson-driven sensory neurons are ordinary neurons
 and their synapses depress like any other. The `brakes` profile (U 0.1, tau_rec 100 ms, fatigue
 0.05, nothing but DANs silenced) therefore lands near the "every neuron + fatigue" row above, and
-on this machine gives 6/12 (section 2.1): sugar reaches MN9 at 10 Hz instead of 47, the giant
-fibre at 195 Hz instead of 293, grooming at 32/19 Hz instead of 144/106. Every loop ends. That is
+on this machine gives 6/12 (section 2.1): sugar reaches MN9 at 10 Hz instead of 50, the giant
+fibre at 195 Hz instead of 295, grooming at 32/19 Hz instead of 142/105. Every loop ends. That is
 the honest trade-off, and it is why the game keeps silencing.
 
 Depression in the pure model *does* end the bitter and dust runaways without touching the ALLNs
@@ -360,6 +403,42 @@ self-sustained state: 16,000-23,000 spikes/s brain-wide right after the odour (`
 1-1.5 s (`olfaction-learning/q1c`, probe-game, kenyon_gain 0.5). It is not an AL loop, it
 decays, and it is the next circuit to seize under noise (table above); it may bias heading
 readouts for a second after a strong smell.
+
+**With the parts list on (v2.8), the optic lobe keeps going.** After dust, wide-field motion and
+looming with the fruitless neurons silenced (and on one seed after sugar), the male brain still carries 7,000-90,000 events/s one
+second after the stimulus (section 2.3), and half or more of them are the graded cells' release
+quanta. CT1 releases at about 300 quanta/s on both sides and the central complex (ExR6, GLNO, PEN_a,
+FB4Y) joins in. The following was measured during v2.8's development, before the octopamine fact was
+narrowed to the VS cells; the counts above are the final ones.
+
+* **The persistent part is the graded optic lobe, in both sexes.** In the male it is a spread-out
+  network: 5,900-7,200 graded cells each release 6-8 quanta/s from within a millivolt of rest, and
+  65-90 % of the events come from cells below 1 mV. Silencing all graded output, or L2 alone, at
+  stimulus offset ends the state within 2.5 s. In the female it is a focal loop: about 100 saturated
+  OFF-pathway cells (Tm4, Tm2, Tm1, T5) carry 27,000-31,000 of 50,000-53,000 graded events/s, and
+  silencing L2 ends it.
+* **The central-complex ring does not hold itself.** In every episode all EPG neurons fire at once
+  (a ring, not the 80-degree bump of a real heading signal; Seelig & Jayaraman 2015), but each
+  episode lasts 0.5-2.5 s (1-3 s with the parts off), and the optic lobe re-ignites it later. In the
+  male the ring amplifies the optic-lobe loop in the first second.
+* **Why the model does this.** A model graded cell releases in proportion to its depolarisation,
+  nothing at rest, and does not adapt. Real graded synapses release tonically and signal by changing
+  that rate (Juusola et al. 1996; the OFF pathway by reducing it). A signed version of graded release
+  (above and below a resting level, with the kit's own slope) ran away at once, at 2.3 million
+  events/s after every stimulus, so that is not the fix either.
+* **GLNO**, the ring's feedback onto PEN_a, is "unclear" in MaleCNS and therefore excitatory in the
+  male, while every other connectome calls it inhibitory (FlyWire GABA or glutamate, BANC glutamate,
+  hemibrain GABA; the female file keeps FlyWire's inhibitory sign). Making it inhibitory in the male
+  removes the ring episodes and most runaways (1 of 65 seed-runs instead of 9) but not the graded
+  loop: the calm count stays at 44. It is not adopted. The principled change would be one rule for
+  "unclear" predictions in both sexes, not a hand-picked type.
+
+In the game, 20 s in a quiet arena with the walking urge on (drawn body, parts list on, v2.8 final),
+all five male seeds enter a growing high state: seeds 3 and 4 within 1-2 s, seeds 0-2 after 11-13 s,
+with 2-10 escape jumps per run. The game's watchdog does not fire, because with the senses active
+it needs 4 s continuously above 150,000 events/s. The female is quieter: three of five seeds stay
+at rest for the whole 20 s, and seeds 2 and 4 enter a slowly growing state after 8-10 s (up to
+51,000-63,000 events/s by 20 s, mostly graded; both groom, and seed 4 makes 2 escape jumps).
 
 ---
 
@@ -509,14 +588,47 @@ PPL101, the γ1pedc neuron that waters MBON11, is bitter-specific: 91 Hz to bitt
 0 to DM1), while **reward is not**: sugar never fires a single PAM neuron in either configuration.
 The game therefore:
 
-* injects reward by hand: while the fly eats sugar (and learning is on) `prefix:PAM` is driven at
-  40 Hz (`REWARD_HZ`); labelled on screen as hand-built;
+* injects reward by hand: while the fly eats sugar (and learning is on) the PAM neurons except
+  PAM-γ3 (`prefix:PAM,!PAM12`, 294 of 316) are driven at 40 Hz (`REWARD_HZ`); labelled on screen
+  as hand-built;
 * lets punishment come from the wiring when the fly tastes bitter, and offers a "shock" tool that
   drives `prefix:PPL1` at 80 Hz for 1 s, the classic conditioning stimulus (Tully & Quinn 1985);
 * silences the DAN class so that PPL101's 2,311 excitatory synapses onto MBON11 cannot drive
   MBON11 directly (in the probe, bitter alone pushed MBON11 to 120 Hz that way; only KC-driven
   activity is meaningful for a readout);
 * keeps a dopamine floor (section 4.7) because PPL102 fires at ~100 Hz to an odour by itself.
+
+**Why sugar does not reach PAM (v2.8).** There are no direct synapses from the 204 sugar receptor
+neurons onto the 316 PAM neurons. Two-hop routes carry 400 synapses onto 26 PAMs, mostly PRW072 →
+PAM11 (PAM-α1; 299 synapses; FlyWire's CB0032, so the route is conserved). A three-hop route runs
+PhG1c → PRW047 (575) → SMP744 (287) → PAM01 (PAM-γ5; 532). PRW072 fires 47-52 Hz under sugar, but the best-connected PAM-α1
+cells reach a mean depolarisation of 1.9-2.5 mV against the 7 mV threshold, and the PAM average is
+about 2 % of threshold. PAM fires 0.00 Hz under sugar on five seeds with the parts list off and on,
+at twice the sugar rates, with the ALLN or DAN outputs unsilenced and without fatigue, and at most
+0.09 Hz with an odour or in the pure profile (PAM11 0 throughout). Raising PAM's input gain does not make reward either: a third of PAM's
+kept input comes from Kenyon cells, so at every gain tried (×2-×6) vinegar and bitter drive PAM
+before sugar does. The literature's sweet-taste route to PAM runs through octopamine (Burke et al.
+2012; Huetteroth et al. 2015; Hermanns et al. 2022). Here octopamine reaches PAM only through
+contacts of 2-4 synapses that the kit's file leaves out, and a tone can only scale inputs. So reward
+stays injected.
+
+**What the injection leaves out (v2.8).** Until v2.7 the injection drove every PAM neuron. It now
+leaves out PAM12 (PAM-γ3): sugar suppresses γ3's ongoing activity and activating it teaches aversion
+(Yamagata et al. 2016), and in this wiring 90 % of PAM12's MBON output goes to MBON09, an
+approach-type (GABA) MBON. The Neuron lab's `prefix:PAM` zap stays the en-masse activation, which also
+teaches reward in real flies. A brain-only pairing (vinegar with hungry sugar and the reward for 3 s,
+then vinegar and a control odour tested with learning off and the Kenyon-cell traces reset before
+each probe; the learned bias is the game's `1.2 · (w_approach - w_avoid)`), five seeds:
+
+| | all PAM (v2.7) | without PAM-γ3 (v2.8) | no reward |
+|---|---|---|---|
+| parts on, 3 s: vinegar (CS+) / control (CS-) | 0.632 / 0.074 | 0.731 / 0.076 | 0.000 / 0.000 |
+| parts on, 7 s: CS+ / CS- | 0.772 / 0.087 | 0.869 / 0.089 | |
+| parts off, 3 s: CS+ / CS- | 0.710 / 0.040 | 0.769 / 0.040 | 0.000 / 0.000 |
+
+The learned preference grows because PAM-γ3 no longer depresses the approach side, but that is a
+consequence of the γ3 evidence, not the reason for the change: no other PAM type is left out without
+equally direct evidence.
 
 ### 4.6 The learning effect, measured
 
@@ -1049,6 +1161,68 @@ single-cell expression atlases matched to these cell types, which is mature only
 system, the olfactory projection neurons and the mushroom body; that is the next level, and it
 would ship as a separate profile judged by the validated experiments.
 
+### 6.7 An optional physics body: NeuroMechFly v2 (v2.8)
+
+`--body physics` swaps the drawn body for NeuroMechFly v2 (Wang-Chen et al. 2024) in MuJoCo, through
+the `flygym` package (`virtual_fly/physics.py`; `pip install -e ".[physics]"`, then
+`pip install --no-deps flygym==1.2.1`). The decoder is
+unchanged; its drives become flygym's two-sided descending signal, one stepping amplitude per body
+side (sign = stepping direction), with flygym's published steering constants: the inner side
+x (1 - 0.6|s|), the outer side x (1 + 0.2|s|). These are the two steering gestures Yang et al. (2024)
+found for DNa02 (shorter strides on the inside) and DNg13 (longer strides on the outside). Six coupled
+oscillators (12 Hz tripod) replay a recorded step on each leg; 42 leg joints are position servos;
+tarsal adhesion is on in stance and, as in flygym's own turning controller, stays off for an eighth
+of a cycle (about 10 ms) after the swing; the floor is MuJoCo contacts at a 0.1 ms step. Brain and body both advance
+25 ms per tick (50 and 250 steps).
+
+Measured (real connectome, game profile, parts list on, seeds 0-4, 3 s unless stated; per-seed values,
+mean in brackets):
+
+| | drawn body | physics body (raw pose, the default) | physics body, `--stride-average` |
+|---|---|---|---|
+| speed at forward drive 0.3 / 0.6 / 1.0 | 4.2 / 8.4 / 13.9 mm/s (chosen) | 4.1 / 8.9 / 14.9 mm/s (measured) | same body |
+| turn rate at full steering, same drives | 264 / 228 / 180 deg/s | 28 / 86 / 174 deg/s | same body |
+| lure 20 mm at 70 deg left, walking urge on: heading change | 97, 79, 253, 94, 257 deg (seeds 2 and 4 jump and circle) | 102, 103, 105, 94, 94 deg (99) | 99, 90, 113, 101, 126 deg (106) |
+| same, right | -94, -102, -89, -100, +82 deg (seed 4 jumps) | -87, -106, -100, -90, -125 deg (-102) | -62, -79, -118, -85, -113 deg (-92) |
+| faces the lure (within 15 deg) | 10 of 10 runs, at 0.95-1.33 s | 8 of 10, at 1.65-2.55 s | 6 of 10, at 1.83-2.83 s |
+| lure 15 mm left, walking urge off | turns 62-73 deg in place (66), faces it at 0.48-0.8 s | turns 0.4 deg (-0.5 to 2.2); lure still 69-71 deg off | turns 0.3 deg (-0.4 to 1.2) |
+| MDN at 60 Hz: distance backward | 18.4, 19.7, 18.6, 17.9, 19.7 mm (18.8) | 20.6, 19.5, 21.6, 21.0, 19.5 mm (20.4); heading drifts 3-10 deg | 19.9, 19.2, 20.1, 19.2, 21.4 mm (20.0); heading drifts 2-9 deg |
+| MDN at 60 Hz: HS / brain while backing | 0-0.6 Hz / 26-30k events/s | 57-84 Hz / 68-103k events/s | 0-0.4 Hz / 27-31k events/s |
+| 10 s in a quiet arena, walking urge on: HS | 5.5, 10.1, 7.9, 72.6, 108.2 Hz | 24.8, 13.7, 14.4, 18.5, 19.0 Hz | 57.7, 11.6, 8.8, 6.9, 9.0 Hz |
+| same: brain | 25.9k, 30.4k, 24.9k, 78.0k, 72.3k events/s | 56.2k, 46.7k, 43.1k, 40.5k, 58.8k | 56.8k, 38.7k, 27.1k, 45.5k, 48.4k |
+| same: a high state (> 60k events/s held ≥ 1 s) | seeds 3 and 4, from 3.9 and 6.2 s, with 7 and 21 escape ticks | seeds 0 and 2, from 8.9 s, around the first wall touch (8.9-9.5 s) | seeds 0 and 3, from 8.1 and 8.6 s |
+| same: backing up with no wall touch in the last 1.5 s | none | none | seed 4, 21 ticks from 3.8 s |
+| real-time factor | 0.90-1.23 | 0.086-0.113 (MuJoCo alone 0.095-0.130) | 0.089-0.116 (MuJoCo alone 0.098-0.132) |
+| peak memory | 876 MB | 1.32-1.35 GB | same |
+
+What this shows. Steering in a physical body modulates an ongoing rhythm, so a fly that is not stepping
+does not turn: with the walking urge off, the decoder asks for a hard turn (yaw -0.65 to -0.73) and the
+physics fly stays put, where the drawn body turns in place. In this connectome the small-object pathway
+steers but never asks to walk: LC10a/L at 70 Hz gives DNa02/L 78 Hz and DNp09, DNg100, DNge053 and
+DNge050 all 0 Hz (DNg97 2-3 Hz; five seeds, with or without the parts list), although P9/DNp09 drives
+object-directed walking in real flies (Bidaye et al. 2020). The drawn body hides this by turning in
+place. With the urge on, the physics fly does turn to the lure and faces it on 8 of 10 runs, later
+than the drawn body (1.65-2.55 s against 0.95-1.33 s). That it faces the lure at all is mostly the
+brain's doing: the v2.8 brain asks for a turn 1.5-1.9x stronger than v2.7's did (decoder yaw -0.65 to
+-0.73 with the urge off, against -0.38 to -0.45), and a check with that adhesion delay
+removed still faced the lure.
+
+The body's stride-by-stride yaw wobble, fed raw to the retina, drives T4/T5 → HS: while the fly backs
+up under MDN, HS fires 57-84 Hz and the brain runs at 68,000-103,000 events/s, against 26,000-30,000 for
+the drawn body. Real flies stabilise gaze while walking (Cruz et al. 2021), and HS cells carry
+non-visual self-motion signals (Fujiwara et al. 2017, 2022). `--stride-average` (hand-built, opt-in)
+shows the senses the thorax pose averaged over the last stride instead. It removes the HS drive while
+backing but does not make the quiet arena calmer and slows closed-loop turning, so the raw pose stays
+the default. The physics body's own wall contact never fired in these runs: the kit's bristles, which
+use the drawn geometry, fire first, so the fly turns or backs away before its head touches.
+
+Hand-built, still: the decoder's weights, the forward term of the drive, the stride averaging, and the
+proboscis, wings and abdomen (drawn; the model has no joints there). Not modelled: the escape jump.
+Cost: about a tenth of real time, about 0.45 GB more memory and about 680 MB of dependencies. No OpenGL
+is needed (MUJOCO_GL=disable); rendering video needs EGL, OSMesa or a display. The drawn body is
+unchanged and bit-identical with or without flygym installed. The physics body runs on the female fly
+too (section 9.5).
+
 ## 7. The genome as a wiring recipe (v2.3)
 
 A genome of some 140 million letters cannot list the fly's 90 million synapses; it holds rules
@@ -1137,10 +1311,10 @@ on its targets: one unit per ten synapses, decaying with a time constant of 0.5 
 Cohn, Morantte & Ruta 2015 see dopamine transients of about a second in the mushroom body),
 1 s (octopamine) or 2 s (serotonin). The tone scales the target's synaptic input,
 `gain = 1 + a · level / (level + 5)`, saturating at +30 % for dopamine and serotonin and +50 % for
-octopamine (Suver, Mamiya & Dickinson 2012 measured about that much gain on the lobula-plate
-tangential cells from octopamine during flight; Dacks et al. 2009 saw serotonin enhance
-antennal-lobe projection-neuron responses over seconds). The sign is one choice per transmitter,
-and that is the model's honest gap: each target's receptors decide whether a tone excites
+octopamine (Suver, Mamiya & Dickinson 2012 measured about that much gain on the VS cells, lobula-plate
+tangential cells, from octopamine during flight; Dacks et al. 2009 saw serotonin enhance
+antennal-lobe projection-neuron responses over seconds). In v2.4 the sign was one choice per
+transmitter, and that was the model's honest gap (sections 8.1 and 8.4 replace it): each target's receptors decide whether a tone excites
 (Gs-coupled Dop1R1, Oamb, 5-HT7) or inhibits it (Gi-coupled Dop2R, 5-HT1A), and receptor
 expression per cell type is not in this data. The dopamine neurons keep their role in plasticity
 (section 4.5) unchanged; silencing or modulating a modulatory population silences or scales its
@@ -1168,8 +1342,8 @@ from the terminal), so measured values, from patch recordings or one day from io
 expression per cell type in the Fly Cell Atlas, can be dropped in without touching the model. It
 ships empty: no per-type threshold in the literature is solid enough to hard-code.
 
-**What it does to the validated experiments** (game profile, every experiment of sections 2, 4-6
-and 6.6, parts list off against on; `fly-brain --profile game --parts`):
+**What it did to the validated experiments** in v2.4 (game profile, every experiment of sections 2,
+4-6 and 6.6, parts list off against on, seed 0; section 8.4 has the numbers for v2.8):
 
 | experiment | parts off | parts on |
 |---|---|---|
@@ -1209,7 +1383,13 @@ motion, smell and sound at once) costs 1.15 s with the parts on against 0.73 s o
 compiled backend, a third more, mostly because the graded cells emit a third more events (316,000
 against 235,000 a second under a typical game load). In the game that means a real-time factor of
 0.8-0.9 under heavy stimulation on this machine, against 1.0 with the parts off; `--fast` (a 1 ms
-step) restores real time. In NumPy the parts add about 60 %.
+step) restores real time. In NumPy the parts add about 60 %. In v2.8 a busy second costs 1.07-1.10 s
+against 0.70-0.73 s with the parts off, but the parts list emits about as many events as the brain
+without it (a busy second: 385,000 against 378,000; a typical game load: 199,000 against 190,000;
+with v2.7's rule, which raised the gain of every target without receptor data, 481,000 and 268,000).
+The extra time is the parts' own arithmetic. After that busy second the octopamine tone stands
+at 41 % of its full effect on 18,389 targets, dopamine at 18 % and serotonin at 49 %, but under v2.8's
+rule only the targets with receptor data feel them.
 
 ### 8.1 What Virtual Fly Brain adds (v2.5)
 
@@ -1319,13 +1499,14 @@ DopEcR 65 %: dopamine weight −0.14); LC10a's own adult optic-lobe cluster (Öz
 95 %, so dopamine and serotonin both lower its gain; the photoreceptors express only DopEcR among
 these receptors. Pupal, larval and embryonic clusters are never used, nor the day-70 aging atlas
 (VFB gives it no stage); where no adult cluster exists within two steps up the class tree (most of
-the central brain's small types, the giant fibre, MN9, the HS cells) the one-sign rule stands.
+the central brain's small types, the giant fibre, MN9, the HS cells) the one-sign rule stood until
+v2.7. Since v2.8 such a target feels no tone (section 8.4).
 Coverage on this connectome: 15,232 of the 38,998 modulated targets have an adult cluster, and
 their weight is net inhibitory on 2,004 of them for dopamine, 124 for octopamine and 8,478 for
 serotonin.
 
-**What it does to the validated experiments** (game profile; `fly-brain --profile game --parts
---curated off|modulators|all`):
+**What it did to the validated experiments** in v2.5 (game profile, seed 0, one-sign rule; `fly-brain
+--profile game --parts --curated off|modulators|all`; section 8.4 has the policies under v2.8's rule):
 
 | | parts off | v2.4 parts list | + receptor signs | + curated transmitters (the default) | `curated="all"` |
 |---|---|---|---|---|---|
@@ -1395,9 +1576,10 @@ Two findings about the real APL bear on this:
 **What v2.6 does.** Two new tables in `parts.py`, both in the default parts list:
 
 * `RECEPTOR_FACTS`: receptors a cell type is shown to use by direct evidence in that type, for types
-  that no atlas cluster covers, and only for the modulators they name. It has one row: APL uses
-  Dop2R, so dopamine lowers its gain. Octopamine and serotonin keep the one-sign rule on APL because
-  nothing is known.
+  that no atlas cluster covers, and only for the modulators they name. In v2.6 it had one row: APL
+  uses Dop2R, so dopamine lowers its gain. Octopamine and serotonin kept the one-sign rule on APL
+  because nothing is known; since v2.8 they have no effect on it, and a second row gives the VS
+  cells octopamine's measured effect (section 8.4).
 * `LOCAL`: wide-field neurons whose release follows the activity around each target. It has one row:
   APL, with the three Kenyon-cell lobe systems (γ, α/β, α'/β') as its compartments. Every 10 ms each
   compartment's activity (the Kenyon-cell spikes arriving at APL's synapses in that lobe, decaying
@@ -1454,12 +1636,46 @@ against 7.5 %, where real flies use roughly 5-10 % (section 4.3). Every subtype 
 `curated="off"`, where DPM has no fast GABA, local release still fixes MBON11 (20-31 Hz) and the
 Kenyon cells stay at 2.3-2.5 Hz. The switch between APL and DPM is itself an artefact of two spiking
 point neurons inhibiting each other. The real pair is also coupled by heterotypic gap junctions
-(Wu et al. 2011), which the model does not have. Two more limits: the kit's connectome has no synapse positions, so APL's synapses on
-Kenyon-cell dendrites in the calyx, where all lobes meet, are placed in the lobe of the cell they
-touch, which probably overstates the locality there. And without receptor signs every tone raises
-the gain, which on top of local release drives the vinegar readouts past their ceilings.
+(Wu et al. 2011), which the model does not have. One more limit: without receptor signs every tone
+raises the gain, which on top of local release drives the vinegar readouts past their ceilings on
+some seeds.
 `fly-brain --parts --global-apl` (or `PartsList(local=())`) gives the v2.5 behaviour of APL back
 with everything else unchanged.
+
+**Where APL's synapses really are (v2.8).** The kit's connectome holds one synapse count per pair of
+neurons and no positions, so v2.6 placed each APL synapse in the lobe of the Kenyon cell it touches.
+`tools/harvest_neuprint_rois.py` asks neuPrint (`male-cns:v1.0`, through the repository's GitHub
+Actions workflow and its token) for every connection into and out of APL and DPM, split by neuPrint's
+primary regions: `data/mb_roi_connectivity.json.gz`, 5,646 neurons and 75,475 pair-region rows. Its
+per-pair totals match the kit's synapse counts exactly, and they match the public per-synapse release
+of the same data (gs://flyem-male-cns) region by region. About a third of APL's Kenyon-cell synapses
+are not where v2.6 put them. 15.5 % are in the calyx and 8 % in the pedunculus, where Kenyon cells of
+every lobe meet, and 11 % lie outside every mushroom-body region (the accessory calyces among them).
+
+When the table is present (it ships with the kit), `LOCAL`'s compartments are neuPrint's
+mushroom-body regions: calyx, pedunculus, and the γ, α, β, α′ and β′ lobes, per side. A synapse outside
+them keeps the whole cell's release. The rule itself is unchanged: each compartment's Kenyon-cell
+input density against APL's mean, capped at 1, with the 20 ms time constant. A target's mix is now
+where APL's synapses onto it are, so no Kenyon-cell lobe is assumed. Without the table, and on grown or
+rewired flies (the table lists the real fly's pairs, not theirs), the v2.6 lobe placement is used. During vinegar
+(game profile, default parts list), the release onto each region, weighted by APL's output synapses
+there, is:
+
+| seed | γ lobe | α′ lobe | β′ lobe | α, β lobes, calyx, pedunculus |
+|---|---|---|---|---|
+| 0 | 0.55 | 0.93 | 0.89 | 1.0 |
+| 1 | 0.53 | 0.83 | 0.75 | 1.0 |
+
+(v2.8's tone rule, section 8.4; with v2.7's rule the table read 0.57 / 0.92 / 0.87 and 0.53 / 0.88 /
+0.86.) With v2.7's rule, MBON11 fired 43, 44, 36, 33 and 38 Hz on five fresh seeds (v2.6: 51, 34, 43,
+38, 38) and 15.7-16.4 % of Kenyon cells fired to vinegar. All 16 validated experiments passed, with
+the same two fragile readouts as before (section 2.3), and only vinegar drives the Kenyon cells, so
+the other 15 gave identical numbers. The change corrects the anatomy but no verdict. With v2.8's rule
+MBON11 fires 42, 31, 48, 38 and 34 Hz and 14.6-16.0 % of Kenyon cells fire. It does not make the Kenyon-cell code sparser either, since
+the density comes from the APL/DPM switch above, and the switch is unchanged. A separate check under
+v2.7's rule, with every unlabelled synapse given the region of its nearest labelled neighbour, and with seven regions
+not split by side, gave the same picture on twenty seeds (MBON11 41.0 ± 10.4 Hz, Kenyon cells 15.3 %
+active).
 
 ### 8.3 Electrical synapses between APL and DPM: tried, not adopted (v2.7)
 
@@ -1497,7 +1713,363 @@ the antennal-lobe local neurons are silenced in the game profile. The dense code
 from DPM itself. Its fast GABA onto APL (3,521 synapses) follows the curated transmitter, but DPM is
 a spiking point here and has no resting activity, which a real DPM does.
 
-## 9. Honest limitations
+### 8.4 A tone needs a receptor (v2.8)
+
+In v2.7, with the parts list on, the fruitless-silenced courtship experiment leaked. With every fru
+neuron's output blocked, pC1 at 60 Hz still made the ps1 wing motor neurons fire 0, 10, 2.5, 5 and 0
+Hz on the five seeds (range 0-3 Hz; 0 on all five with the parts off). The leak runs through wiring in
+which no neuron carries a fru or dsx label: pC1_11a/b → DNpe025 → AN07B004 (a left-right pair that
+excite each other) → PS058 and PS359 → DNp31 → ps1, with a parallel arm through CRE004, DNpe053 and
+DNpe023. Lesions confirm it: silencing AN07B004 or DNp31 on top of fru gives ps1 0 Hz on all five
+seeds. Neither the MaleCNS annotation nor the literature makes any of the relays fru+ (DNp31 runs from
+the posterior slope to the wing, haltere and neck neuropils; Namiki et al. 2018).
+
+In the standard model the route mostly stays below threshold (AN07B004 ignites on 9 of 30 seeds). With
+the v2.7 parts list it ignited on 23 of 30, because of the one-sign rule. None of the route's cell
+types has an adult single-cell cluster, so every modulator raised its gain, dopamine, octopamine and
+serotonin alike (1.0-1.9x during the run; AN07B004 1.4-1.5x, CRE004 and DNpe053 1.8-1.9x). The tone comes from OA-VUMa1, OA-VUMa3/4, GNG572 and
+PPM1205, none of them fru+. Switching off only the tones' effect on gain removes the leak (ps1 0 on
+all five seeds); APL's local release, the receptor facts and the graded cells do not matter to it.
+
+**The rule since v2.8: no receptor evidence, no modelled effect.** A tone changes a target's gain only
+through receptors the kit has data for: an adult atlas cluster (section 8.1) or a receptor fact. A target
+with neither feels no tone (`PartsList(unknown_sign=0.0)`; `fly-brain --one-sign-rule` gives the v2.7
+rule back). One measured effect needed a new kind of fact, because its receptor was never identified:
+octopamine raises the VS cells' responses to motion (Suver et al. 2012 recorded VS cells in flight),
+the effect the octopamine tone's size was set from. `RECEPTOR_FACTS` carries it as a measured sign for
+the VS cells (`VS,regex:^VS[0-9]+$`, 18 neurons). A tone reaches only the cells that modulatory neurons
+synapse onto, and octopamine neurons synapse onto one of the 18 (5 synapses), so in this wiring the
+fact sets the gain of that one cell (in the female, 2 of her 16 VS cells, VS6 and VS7, one synapse
+each). The HS cells, the "twin" types VST1/VST2 and the VS-like VSm are left out, because nobody
+recorded them under octopamine.
+
+This is a rule, not the data's verdict, and it was chosen knowing the alternatives. The covered
+targets' receptor data do not say zero for dopamine and octopamine: over the covered targets each
+modulator reaches, their mean sign is +0.67 and +0.71 (weighted by neurons); only serotonin's is
+negative (-0.54). (The API's `coverage[].mean_sign` averages over all covered targets instead: +0.54,
++0.70 and -0.19.) Filling the unknown targets with
+those means removes the leak too, but takes MN9 under sugar out of its range (24.8 Hz, all five seeds
+low). Zero was the only fill tried that kept every validated experiment. The choice is therefore
+also a selection, which is why the v2.7 rule stays one switch away.
+
+Male fly, game profile, parts list on, five seeds (30 seeds where stated):
+
+| | v2.7's rule (`--one-sign-rule`) | v2.8 |
+|---|---|---|
+| passed | 16 / 16 | 16 / 16 |
+| fragile | DNp13 8.8, 2.5, 11.2, 10.0, 6.2; fruitless-silenced ps1 0, 10, 2.5, 5.0, 0 | none |
+| fruitless silenced: ps1 (0-3 Hz) | 3.5; over 30 seeds 3.71 ± 3.17, 11 seeds out | 1.0 (2.5, 0, 0, 2.5, 0); over 30 seeds 0.75 ± 1.46, 2 out (parts off: 1.08 ± 1.64, 2 out) |
+| courtship: DNp13 (5-90 Hz) | 7.8 | 17.5; over 30 seeds 22.4 ± 5.7, none out (section 8.5) |
+| sugar: MN9 (30-90 Hz) | 51.2 | 37.8; over 30 seeds 35.0 ± 3.0, 2 out |
+| sugar, fruitless silenced: MN9 (15-60 Hz) | 42.2 | 24.2; over 30 seeds 23.1 ± 4.9, 1 out |
+| vinegar: MBON11 (1-60 Hz) | 38.8 | 38.6 (42, 31, 48, 38, 34); over 30 seeds 43.3 ± 4.8 |
+| bitter → punishment: PPL101 (30-150 Hz) | 132.4 | 77.2 |
+| after the stimulus, 65 seed-runs: calm / small loop / RUNAWAY | 24 / 2 / 39 | 43 / 12 / 10 |
+
+The leak is closed: the fruitless-silenced ps1 readout sits at the parts-off level, and no block of
+five consecutive seeds fails (at most 1.5 Hz; of all 142,506 five-seed sets of the 30 seeds, 10 reach
+3.5 Hz, above the 3 Hz ceiling). DNp13 is no longer fragile. Two readouts move towards their floors.
+MN9 under sugar reads 38 Hz, lower than with v2.7's rule (51) or with the parts off (53); over 30 seeds
+its five-seed mean never falls below 30.4. Which lost tone or fast input accounts for that drop was not
+traced. The same holds for the fruitless-silenced sugar test, whose lowest five-seed mean over 30 seeds
+is 16.0 against a floor of 15. The brain also calms down after a stimulus much more often. The change
+is global: 15,235 of the 38,998 modulated targets keep a tone (their types have receptor data or a
+fact), and every other target, most of the central brain's small types among them, no longer responds
+to modulators at all.
+
+The curated-transmitter policies of section 8.1 under the new rule (five seeds):
+
+| | passed | failing or fragile readouts (per seed) | Kenyon cells active, vinegar |
+|---|---|---|---|
+| `curated="off"` | 16 / 16 | fragile: fruitless-silenced ps1 2.5, 0, 5, 0, 0 | 9.5-9.8 % |
+| `curated="modulators"` (default) | 16 / 16 | none | 14.6-16.0 % |
+| `curated="all"` | 13 / 16 | sugar MN9 13, 3, 8, 7, 4; bitter → PPL101 26, 27, 26, 25, 26; fruitless-silenced sugar MN9 5, 11.2, 13.8, 7.5, 6.2 | 14.8-15.9 % |
+| `receptor_signs=False` (every tone +1) | 15 / 16 | fruitless-silenced ps1 0, 2.5, 10, 2.5, 8.8; fragile: vinegar MBON11, DNp13, DNa02 left | 8.5-19.7 % |
+| `--global-apl` | 16 / 16 | fragile: vinegar MBON11 0, 0, 3, 3, 1 | 7.9-8.4 % |
+
+With the default policy and APL's local release, DPM holds APL well below its full rate during vinegar
+(APL 50-128 Hz against 172-185 when APL wins; DPM 91-183 Hz, higher than APL on three of five seeds),
+and the Kenyon-cell code stays about twice as dense as real flies' (section 8.2). Without DPM's fast
+GABA (`curated="off"`) or with APL releasing as one cell, APL wins (172-185 Hz) and 8-10 % of Kenyon
+cells respond; with APL releasing as one cell MBON11 then sits at its floor (0-3 Hz), while without
+DPM's GABA it reads 24-29 Hz. The dopamine tone now lowers
+APL's input gain to 0.72-0.74 (v2.7: about 1.35, because octopamine and serotonin also raised it).
+
+### 8.5 DNp13 under the courtship command (v2.8)
+
+In v2.7 DNp13 was the parts list's weakest readout: 8.8, 2.5, 11.2, 10.0 and 6.2 Hz on the five seeds
+against a floor of 5 Hz, fragile (section 2.3). With the parts off it reads 38.8, 20.0, 37.5, 27.5 and
+33.8 Hz. DNp13 sits at a balance of excitation and inhibition. In the standard model pC1 recruits it
+only because of 20 fast connections (257 of its 16,960 input synapses) from 12 aminergic neurons, which
+the parts list removes: cutting just those 20 in the standard model drops it from 36.2 to 12.1 Hz (15
+seeds). They supply +2,147 (right cell) and +2,939 mV/s (left) during the command; without them the
+right cell's net drive is +623 mV/s and the left's -1,742. In v2.7 the one-sign rule then doubled
+DNp13's input gain (1.9-2.05; DNp13 has no atlas cluster), which amplified that net inhibition, and
+the left cell was silent on 8 of 15 seeds. Under v2.8's rule (section 8.4) DNp13 feels no tone and
+reads 22.5, 13.8, 17.5, 18.8 and 15.0 Hz (17.5), and 22.4 ± 5.7 Hz over 30 seeds, none of them below
+5 Hz.
+
+Neither the literature nor Virtual Fly Brain supports a fast excitatory transmitter for the removed
+octopamine inputs (OA-VUMd1, OA-VUMa1, OA-VUMa8; Busch et al. 2009). Glutamate is the co-transmitter
+reported across octopamine neurons in general (Sherer et al. 2020), and VFB curates acetylcholine for
+OA-VUMd4 (DNg66), which keeps its fast synapses here. Giving every octopamine neuron inhibitory
+glutamate would push DNp13 lower. The weakest link is SIP106m, a potentially male-specific neuron
+whose dopamine call is 52 % confident in the MaleCNS only (Berg et al. 2026), the one dopamine call
+among 41 SIP1xxm types. It acts twice: its fast synapses are removed and it adds a dopamine tone. If
+it is cholinergic, DNp13 would read about 20 Hz (v2.7 rule, 15 seeds), so a future transmitter call
+for it should trigger a re-measure. No recording gives DNp13's rate. The female's DNp13 is a command
+neuron for ovipositor extrusion (Wang et al. 2020), and VFB describes different functions in males
+and females. The 5-90 Hz range stays.
+
+### 8.6 A resting drive: tried, not adopted (v2.8)
+
+The dense Kenyon-cell code (about 15 % of Kenyon cells fire to vinegar, against 5-10 % in real flies)
+comes from the APL/DPM switch of section 8.2. One hypothesis was that the model lacks the spontaneous
+activity real cells have. Few of the relevant cells have a measured resting rate. PPL1-α′2α2 (PPL105)
+fires about 6 spikes/s in vivo (6.1 ± 0.3/s, Kannan et al. 2018; 6-10/s, Huang et al. 2018). MBON-α3
+(MBON14) fires spontaneously in whole-cell recordings ex vivo (Hafez et al. 2023; the test below used
+12 Hz). The DM4 olfactory receptor neurons fire 3.4 Hz and projection neurons 1-5 Hz (Kazama & Wilson
+2009), and Kenyon cells respond sparsely, with high thresholds (Turner et al. 2008). DPM's activity is
+known from imaging only (Yu et al. 2005; Haynes et al. 2015; Zeng et al. 2023), and APL does not spike
+(Amin et al. 2020), so neither has a rate to put in a table.
+
+The test, run with v2.7's tone rule: each listed cell was given a tonic drive that produces its
+measured rate in isolation (a constant current or Poisson kicks, 3 s to settle, `reset()` returning to
+that resting state). The code does not get sparser: Kenyon cells active under vinegar 15.9, 16.3, 16.8,
+16.6 and 17.1 % (default 16.0 %), MBON11 50-64 Hz, all 16 validated experiments still pass, and the
+brain calms down after a stimulus less often (44 of 65 seed-runs above 50,000 events/s against 39).
+Broader tables run away at rest: every MBON at 12 Hz, or every olfactory receptor neuron at 3.4 Hz
+(which does reproduce the projection neurons' resting rate), puts the resting brain at 99,000-133,000
+events/s.
+
+The APL/DPM coupling is where the density comes from: cutting DPM's 3,521 synapses onto APL gives
+9.1-9.9 % active on every seed and changes only mushroom-body readouts. DPM is GABAergic in the
+literature, though, so the cut is not grounded without evidence of how DPM's GABA acts on APL, or a
+non-spiking APL. The outcome of the APL/DPM switch per seed is chaotic (small changes to the resting
+state move single seeds between 12 and 17 %), so density claims for this circuit need the five-seed
+mean and spread. No resting drive is in the kit.
+
+## 9. The female fly (v2.8)
+
+The published model (Shiu et al. 2024) ran on FlyWire, the whole brain of an adult **female** fly
+(Dorkenwald et al. 2024; annotations Schlegel et al. 2024). `load_connectome(female=True)`,
+`python fly_brain.py --female` and `python fly_game.py --female` run the whole kit on it.
+
+### 9.1 What the female fly is
+
+`virtual_fly/flywire.py` builds it on first use from two public files, each pinned to one commit and
+checked by SHA-256: the connectivity table the published model itself uses (`Connectivity_783.parquet`,
+philshiu/Drosophila_brain_model) and FlyWire's neuron annotations (`Supplemental_file1_neuron_annotations.tsv`,
+flyconnectome/flywire_annotations). Neither is redistributed; the built file is about 45 MB. Reading
+the parquet file needs `pyarrow` (`pip install -e ".[female]"`).
+
+* **The published model's wiring.** The female file keeps every connection (15,091,983 pairs,
+  54,492,922 synapses, 139,262 neurons), because the published model uses all of them and its
+  0.275 mV per synapse was fitted on them. The kit's male file keeps only connections of 5 or more
+  synapses, and its gain of 0.65 is a calibration for the male data (section 1.3). So the default
+  gain follows the connectome: 0.65 for the male, **1.0** (the paper's value) for the female
+  (`brain.DEFAULT_GAIN`). `build_female(min_synapses=5)` builds a file cut like the male one.
+* **Checked against the sources.** Both files match their pinned SHA-256 hashes, and the built file
+  reproduces them exactly: every one of the 15,091,983 connections has the same presynaptic and
+  postsynaptic neuron and the same synapse count, the 139,262 neurons are the annotated plus the
+  connected ones, and every annotated neuron's cell type is the annotation file's.
+* **Signs** come from each neuron's predicted transmitter in the annotation file (FlyWire's current
+  prediction), the same rule as for the male. This is the one place where the female fly is not the
+  published model to the letter. The model's own `Excitatory` column comes from a different version
+  of the same kind of prediction (its repository does not say which), and the two disagree on 6,028
+  neurons (4.4 % of the 138,005 with outputs), 1.24 % of connections and 1.14 % of synapses (on
+  connections of 5 or more synapses, 1.08 %). The disagreements are uncertain calls: the median
+  confidence of these neurons' prediction is 0.43, and 72 % are below 0.5. They are mostly optic-lobe
+  (2,823) and sensory neurons (2,615, among them 1,512 photoreceptors), and fall into three kinds:
+  2,941 neurons the annotation file calls glutamatergic (inhibitory here) are excitatory in the model,
+  1,719 it calls cholinergic (excitatory here) are inhibitory there, and 1,348 it calls GABAergic
+  (inhibitory here) are excitatory there. Where FlyWire's literature column says what the cells
+  release, the annotation file's signs mostly fit it better. L4, L5, Mi1, T4d and T5d are cholinergic:
+  92-99 % of them are excitatory here, 77-97 % in the model. The GABAergic antennal-lobe local
+  neurons lLN2F_a, lLN2P_b and lLN2X04 are inhibitory here and excitatory in the model (il3LN6 is split
+  one and one here, excitatory there). Mi15 is the exception (cholinergic; 85 % excitatory here, 92 %
+  in the model). Both get the photoreceptors mostly wrong. FlyWire's predictor (Eckstein et al. 2024)
+  was trained on six transmitters (acetylcholine, GABA, glutamate, dopamine, serotonin, octopamine)
+  and has no histamine class: not one of her neurons is predicted histaminergic. So every
+  photoreceptor is forced into one of the six, with low confidence (median 0.39-0.48). Of her 8,452
+  R1-6 cells, 5,343 are called cholinergic, 1,675 glutamatergic and 530 GABAergic, so only 26 % are
+  inhibitory here (13 % in the model), although the literature column gives histamine for all of them
+  (Davis et al. 2020). R7, R8, the eyelet photoreceptors and the two ascending histaminergic neurons
+  (MsAHN, MtAHN) are affected in the same way. The male's predictor has a histamine class, and all his
+  R1-R6 and R7 cells are histaminergic and inhibitory. With the parts list on, the curated rule fills
+  the low-confidence calls from the literature (6,104 of the 8,452 R1-6 become inhibitory; the 2,348
+  confident cholinergic calls stay, and `--curated all` makes all of them inhibitory). Nothing in the
+  kit drives the photoreceptors (the retina feeds T4/T5 directly), so no experiment depends on their
+  sign; a zap of R1-6 in the Neuron lab would mostly excite her lamina. A possible improvement, not
+  adopted because the kit avoids overriding the data with the literature where it can: take the sign
+  from the literature column wherever it names histamine, a transmitter the predictor cannot output
+  (R1-6, R7, the eyelet photoreceptors and MsAHN/MtAHN; R8, which releases acetylcholine as well,
+  would keep its prediction). That would make her photoreceptors inhibitory, as the male's are. With the model's signs swapped
+  in, every female experiment (pure profile, game with the parts list off and on, five seeds each)
+  keeps its verdict and its after-stimulus tally. Readouts move a little; the largest shifts are MN9
+  under sugar with the fruitless neurons silenced (parts on) 82.5 → 73.0 Hz, DNa02 right under
+  wide-field motion (parts on) 70 → 60 Hz, MN9 under sugar (pure) 77.6 → 72.4 Hz and MBON11 under
+  vinegar (parts off) 9.8 → 6.2 Hz. So the kit keeps FlyWire's current signs.
+* **Transmitter labels**, which the parts list reads, follow the male file's
+  rules, because FlyWire's predictor has no histamine class and calls whole types dopaminergic or
+  serotonergic that are not. It labels 5,172 of her 5,177 Kenyon cells dopaminergic (every γ, α/β and
+  α′/β′ type; 4,652 of them with confidence 0.5 or more), and several
+  olfactory receptor types serotonergic. Taken as they are, these labels would make 6,754 female
+  neurons slow modulators with their fast synapses removed (male: 2,146), and the Kenyon cells
+  would no longer drive the mushroom body. Two rules restore parity. A prediction below 0.5
+  confidence is labelled "unclear", as in the male file (the sign stays the prediction's, so the
+  label rule changes no sign; only the parts list reads the label). And FlyWire's literature column
+  `known_nt` (TAPIN-seq, EASI-FISH, immunostaining) is stored per cell type and read by the parts
+  list's curated rule, the way Virtual Fly Brain's classes are read for the male. A transmitter
+  counts for a type when at least half of all its neurons name it; negative results, peptides and
+  nitric oxide are left out, and so is what only a weak source says: a FlyCircuit clone (Chiang et
+  al. 2011, MCFO), whose transmitter is that of the driver line that labelled the clone, or an entry
+  its own source marks "unsure". That gives 987 types. Where Virtual Fly Brain's literature class
+  for the same type names a transmitter too, both count (339 types; a co-transmitter either one
+  lists is kept). The Kenyon cells and olfactory receptor neurons become cholinergic, DPM
+  serotonergic with fast GABA as in the male, and most photoreceptors histaminergic (under the default
+  policy 2,348 R1-6 and 85 R7 cells keep a confident cholinergic prediction, and R8, which the
+  literature gives acetylcholine and histamine, keeps its predicted sign; `--curated all` makes R1-R7
+  all histaminergic). Afterwards the female has 2,318 modulatory neurons. The literature column names
+  more co-transmitters than the ontology does (Delta7 and FC3 with serotonin), so a few female types
+  gain a tone the male's do not. The MBONs' valence (the Learning panel and the learned odour bias)
+  reads the column too: FlyWire leaves MBON03, MBON05 and MBON07 "unclear" and calls one MBON02
+  GABAergic, where the literature says glutamate, and calls three of the nine MBON10 cells
+  glutamatergic (and one unclear), where it says GABA; MBON32 and MBON25,MBON34, which the column does
+  not cover, keep no valence. The Genetics card, the genes in a neuron's popover
+  and the transmitter-gene selectors (`gene:ple`, `gene:Hdc`, ...) read the predictions as they are,
+  after the 0.5 rule but without the literature column: on her, `gene:ple` selects 5,140 neurons,
+  4,652 of them Kenyon cells, and `gene:Hdc` selects none. NeuronBridge's driver-line lookups match
+  MaleCNS neurons only and say so on her.
+* **Anatomy classes.** FlyWire's annotations give many types their FBbt class, and the file keeps them
+  (3,113 types). `vfb.ontology_for(conn)` adds them to the ontology the female's parts list,
+  selectors and popovers use, and a FlyWire type that an alias names (`CB0701` for `MN9`) takes its
+  MaleCNS namesake's classes (`VS`, an alias for her VS1-VS8, gives each of them the VS cell's class).
+  That finds 4,833 of her 8,840 types (72 % of her typed neurons). Without
+  it, FlyWire's spellings (`KCab`, `KCapbp-m`, `R1-6`) had no class and no receptor data, so her α/β
+  and α′/β′ Kenyon cells felt no dopamine tone where the male's do.
+* **Classes** are translated into the male data's vocabulary (e.g. FlyWire's `central` →
+  `cb_intrinsic`), so `class:Kenyon_Cell`, `class:ALLN`, `class:DAN` and the profiles work unchanged.
+  fru/dsx labels are FlyWire's `fru`, `dsx` and `coexpress` (no confidence grade), and
+  `dimorphism:female` selects the 363 female-specific or potentially female-specific neurons.
+* **Missing:** FlyWire has no ventral nerve cord, so there are no leg, wing or neck motor neurons (TTMn,
+  ps1, hg, DLMn), and male-specific cells such as pIP10 do not exist. The annotations have no medulla
+  column coordinates, so the computed column-by-column motion vision (section 5.3) switches itself
+  off, and the hand-built feature detectors still drive LC4, LPLC2 and LC10a.
+
+### 9.2 The kit's names in FlyWire
+
+The experiments and senses are written with MaleCNS cell-type names. Where FlyWire calls a cell
+something else, `flywire.ALIASES` maps the name, and the table is stored in the female file, where
+`Connectome.select` reads it. A real cell type of the same name always wins over an alias.
+
+| kit name | in FlyWire | from |
+|---|---|---|
+| `MN9` | `CB0701` | FBbt_00111298, whose VFB synonyms include both names; it is the published model's MN9 cell |
+| `GNG232` (G2N-1) | `CB0616` | FBbt_00051850 (VFB synonyms G2N-1, GNG232, CB0616); it is the published model's G2N-1 |
+| `GNG087` | `CB0219` | FBbt_20004033 (VFB synonyms GNG087, CB0219) |
+| `LB3b`, `LB3c` (sugar) | the 20 sugar cells of the published model | FlyWire types all 122 labellar sugar and water cells as `LB3`; the published model's list is one side |
+| `LB1a`, `LB1d` | `LB1a,LB1d` | one FlyWire type |
+| `LB2a`, `LB2b` | `LB2a-b` | one FlyWire type |
+| `prefix:pC1_` | `prefix:pC1` (pC1a-e, 10 cells) | the doublesex pC1 cluster; the male's 148 `pC1_` cells include the male-specific P1 |
+| `R1-R6`, `prefix:R1-R6` | `R1-6` | the outer photoreceptors (8,452 cells), graded in the parts list |
+| `prefix:KCa'b'` | `prefix:KCa'b',prefix:KCapbp` (917 cells) | the α′/β′ Kenyon cells, one of APL's local-release groups |
+| `VS` | `regex:^VS[0-9]+$` (VS1-VS8, 16 cells) | the VS cells, which FlyWire types one by one |
+
+### 9.3 Experiments on a fly without some of their neurons
+
+`rate()` of a population that does not exist is 0 Hz, which would pass "MN9 stays silent" without
+testing anything. So `run_experiment` checks every population first. A missing stimulus population is
+left out (the female has no leg sugar cells, `LgLG3`). A missing readout is reported as n/a and does
+not count. The experiment cannot be done (n/a) when its whole stimulus is missing, when a population
+it silences is, or when the only readouts left are the stimulated cells themselves. In the female,
+three experiments are n/a (the two song-motor ones and the doublesex lesion) and TTMn and pIP10 are
+n/a readouts. In the game, gauges for cells the fly lacks are not shown.
+
+### 9.4 What the female fly does
+
+Five seeds each, the male numbers from the same code (parts list off). The ranges are the male fly's
+validated results, so on the female they are a comparison, not a test:
+
+| experiment | readout | male | female | range |
+|---|---|---|---|---|
+| sugar (pure) | G2N-1 | 36.6 | 38.0 | 20-60 |
+| sugar (pure) | MN9 | 69.6 | **77.6** | 30-90 |
+| sugar (pure) | Fudog | 20.0 | 1.8 | 10-40 |
+| bitter (pure) | Scapula / MN9 | 290 / 0 | 130 / **0** | 100-400 / 0-5 |
+| sugar + bitter (pure) | MN9 | 0.0 | **3.0** | 0-5 |
+| looming (pure) | giant fibre | 342 | 219 | 250-400 |
+| dust (pure) | aDN1 / aDN2 | 186 / 136 | 5.6 / 5.8 | 100-260 / 80-200 |
+| vinegar (game) | DM1 PN / KC / MBON14 / MBON11 | 289 / 2.0 / 38 / 1.6 | 216 / 2.1 / 57 / 9.8 | all in range |
+| bitter → punishment (game) | PPL101 | 82 | 0.0 | 30-150 |
+| loud sound (game) | giant fibre | 66 | 7.7 | 20-150 |
+| wide-field motion (game) | HS / DNp15 / DNa02 R / DNa02 L | 442 / 180 / 158 / 0 | 348 / 162 / 87 / 44 | ... / 0-20 |
+| courtship command (game) | DNp13 | 31.5 | 0.0 | 5-90 |
+| sugar, fru silenced (game) | MN9 | 34.5 | 80.8 | 15-60 |
+
+The published model's headline results come out on the female: sugar drives MN9, bitter keeps
+it silent, and bitter wins over sugar (pure profile). The antennal grooming route works too with the
+published model's own protocol (its 145 Johnston's-organ cells on one side at 220 Hz): its aDN1 fires
+at 34 Hz. The kit's "dust" stimulus drives both antennae, and in FlyWire the two sides cancel (one
+side alone: aDN1 22 Hz on one side; both: 6 Hz).
+
+Most of the differences are not yet sex differences. The two datasets were reconstructed and their
+synapses detected differently: the median neuron has 200 input synapses in FlyWire, all
+connections counted (106 from connections of 5 or more synapses), against 344 postsynaptic sites in
+neuPrint's MaleCNS counts (every site counted; the kit's male file, which keeps only connections of 5
+or more synapses, gives 199). The giant fibre has 4,300-5,100 input synapses in FlyWire (3,800-4,700
+from connections of 5 or more) against 18,600-24,900 postsynaptic sites in MaleCNS (15,500-20,200 in
+the kit's file). The sugar cells are
+chosen differently (the published model's one-sided list against LB3b and LB3c): they send Fudog 41
+synapses, against 195 in the male. The female pC1 cluster is 10 cells against the male's 148, and it
+sends DNp13 5 synapses against 1,571. That last one is at least partly biology, since female pC1
+lacks the male's P1 cells. Taking a difference between the two flies for biology would need these
+confounds removed first. The kit gives both flies, not that answer.
+
+With the parts list on (game profile, five seeds, the label rules above and section 8.4's tone rule),
+bitter keeps MN9 silent, but Scapula fires 99 Hz, just under the male's floor of 100, and bitter no
+longer wins over sugar: MN9 fires 13.4 Hz with both, above 5 Hz on every seed (in the game profile it
+already misses with the parts list off: MN9 7.2 Hz, 5-8 per seed). Scapula (FlyWire
+`CB0219`) has no receptor data, so it feels no tone; under v2.7's one-sign rule it read 117 Hz and MN9
+under both 5.8 Hz. Vinegar reaches the mushroom body: DM1 projection neuron 229 Hz, Kenyon cells
+4.8 Hz with 16.7 % active, MBON14 85 Hz and MBON11 84 Hz, above the male's 60 Hz ceiling. Without the
+label rules, the olfactory receptor neurons were serotonin modulators and the Kenyon cells dopamine
+ones: the projection neuron fired 67 Hz and MBON14 0 Hz.
+
+Checked, pure profile: the time step (at 0.1 ms, the paper's Brian2 value: MN9 80, giant fibre 211, aDN1
+5.5 Hz), the sign rule (above), and a file cut at 5 synapses like the male's. At gain 0.65 every drive
+is weaker there (MN9 46, Scapula 91, giant fibre 167, aDN1 0 Hz); at gain 1.0 it is close to the full
+file (giant fibre 208, aDN1 8.8 Hz), except that bitter no longer wins over sugar (MN9 9.8 Hz).
+
+
+### 9.5 The v2.8 changes on the female fly
+
+Every v2.8 change runs on the female too, but a change written with MaleCNS names or MaleCNS data
+reaches her only through the aliases and the anatomy classes above, so each was checked on her
+(game profile, parts list on, five seeds):
+
+| change | male | female |
+|---|---|---|
+| tone rule (8.4): modulated targets with receptor data | 15,232 of 38,998 (39 %) | 32,139 of 76,420 (42 %) |
+| receptor facts: APL (Dop2R), the VS cells (octopamine) | 2 and 18 cells (a tone reaches 2 and 1 of them) | 2 and 16 cells (a tone reaches 2 and 2) |
+| APL's local release (8.2) | 15 compartments: neuPrint's 7 mushroom-body regions on each side, and one for everything outside | the three Kenyon-cell lobe groups (γ 2,489, α/β 1,771, α′/β′ 917 cells): the region table is MaleCNS only |
+| graded cells | 42,962 | 43,630, her 8,452 `R1-6` photoreceptors among them |
+| reward (`prefix:PAM,!PAM12`, 4.5) | 294 of 316 PAM cells | 284 of 307 |
+| DNp13 under the courtship command (8.5) | 17.5 Hz | 0 Hz (her pC1 sends DNp13 5 synapses) |
+| song leak (8.4) | ps1 1.0 Hz with fruitless silenced, in range | n/a (no nerve cord) |
+| after the stimulus: calm / small loop / RUNAWAY | 43 / 12 / 10 of 65 seed-runs | 40 / 2 / 13 of 55 |
+| re-test in a separate process (2.3) | yes | yes: the child loads her file, aliases included |
+| physics body (6.7) | yes | yes: she walks, turns and backs up under MDN (4.3-5.9 mm in 1 s over seeds 0-4, 5.2 on average) |
+
+Two of these differ for reasons worth knowing. Her after-stimulus state is not the male's: after
+looming and wide-field motion about 100 saturated OFF-pathway cells (Tm4, Tm2, Tm1, T5) keep a focal
+loop through L2 going, where the male's is a spread-out hum of optic-lobe cells near rest (limitation
+3). And her mushroom body is denser still than the male's under vinegar, because her α′/β′ Kenyon
+cells, found through the new alias, now join APL's local release and feel a dopamine tone.
+
+---
+
+## 10. Honest limitations
 
 The starter kit's list, extended. These are the things a neuroscientist would point at first.
 
@@ -1507,28 +2079,38 @@ The starter kit's list, extended. These are the things a neuroscientist would po
    the HS cells hit under wide-field motion. The mushroom body's two wide-field neurons, APL and
    DPM, are spiking points that inhibit each other; whichever wins sets the inhibition of the
    whole mushroom body. With the parts list, APL's release follows the Kenyon cells around each
-   target, but its calyx synapses are placed by lobe and its gap junctions with DPM are missing
-   (section 8.2; adding them does not make the code sparser, section 8.3).
+   target, by neuPrint's mushroom-body regions, but its gap junctions with DPM are missing
+   (section 8.2; adding them does not make the code sparser, section 8.3). DPM wins during an
+   odour and about 15 % of Kenyon cells respond, twice the real fly's share; cutting DPM's GABA onto
+   APL would fix the density but has no evidence behind it (section 8.6).
 2. **Runaway loops** are a property of the pure model, not of the fly. The game silences 420
    antennal-lobe local neurons and 340 dopamine neurons and adds fatigue to keep the brain sane;
    these are documented fixes, not physiology. Short-term depression, the physiological brake,
    starves the calibrated sensory chains (section 3).
-3. **The central complex rings** for about a second after a strong odour once the antennal lobe
-   is quiet (section 3.5), and it is the next circuit to seize if noise is added. Heading
-   readouts just after a smell are suspect.
+3. **The brain does not always settle.** With the parts list off, the central complex rings for
+   about a second after a strong odour once the antennal lobe is quiet, and it is the next circuit
+   to seize if noise is added. With the parts list on, the graded optic lobe keeps releasing after
+   dust, wide-field motion and looming, and on one seed after sugar (male: 10 of 65 seed-runs above 50,000 events/s one second
+   later, 12 more a small loop; female: 13 of 55), and the central-complex ring joins in episodes.
+   The model's graded cells release nothing at rest and never adapt, where real ones release
+   tonically (section 3.5). In the game's quiet arena every male seed enters a growing high state
+   within 20 s, with escape jumps, and the watchdog does not catch it. Behaviour just after a strong
+   stimulus, and long quiet runs, are suspect.
 4. **No spontaneous activity.** The walking urge, the wander, hunger and thirst are hand-built.
    Background noise was measured and is available, but the window between "nothing" and
-   "seizure" is a few hundredths of a millivolt wide and it triples the cost.
+   "seizure" is a few hundredths of a millivolt wide and it triples the cost. A resting drive from
+   the few measured resting rates does not make the Kenyon-cell code sparser (section 8.6).
 5. **Dopamine is a fast excitatory transmitter** in the data's sign convention, and glutamate is
    inhibitory. The game silences the dopamine neurons' synapses to use them as a slow modulator
    only, and the glutamatergic "avoidance" MBONs can never drive a descending neuron by
    themselves (section 4.8). With the parts list on the tones' signs follow receptor expression
-   only where an adult scRNA-seq cluster exists (section 8.1); elsewhere one sign per transmitter
-   still stands, and where the literature and the connectome disagree on a *fast* transmitter the
-   prediction is kept.
+   only where an adult scRNA-seq cluster exists (section 8.1) or a receptor fact says so; elsewhere,
+   on most of the central brain's small types, a tone has no effect at all (section 8.4), a rule that
+   was also chosen because it keeps every validated experiment. Where the literature and the
+   connectome disagree on a *fast* transmitter the prediction is kept.
 6. **Reward is injected.** Sugar does not reach the PAM dopamine neurons through this wiring
-   (section 4.5); eating sugar drives them by hand. Punishment does come from the wiring, and the
-   shock tool is a labelled injection.
+   (section 4.5); eating sugar drives them by hand, all but PAM-γ3 (PAM12), which sugar suppresses
+   in real flies. Punishment does come from the wiring, and the shock tool is a labelled injection.
 7. **The learning rule's constants are guesses**, the rule covers forward pairing only, and the
    MBON→behaviour link is hand-built (section 4.8): the brain learns, the steering is scripted from
    what it learned.
@@ -1544,21 +2126,25 @@ The starter kit's list, extended. These are the things a neuroscientist would po
    axes are calibrated from the data but are approximations (the lattice is treated as flat and
    uniform; a and c axes are 97° apart, not 90°). Photoreceptors and the lamina do nothing.
 10. **Courtship is primed by hand.** The pheromone route to pC1 is real but ~8x too weak here, so
-    tapping the female also drives pC1 directly (section 6.1). The female has no brain.
+    tapping the female also drives pC1 directly (section 6.1). The female the male courts in the game has no brain.
 11. **Wind is a whisper**, deliberately: the wind-sensing neurons drive grooming and backing in
     this model and no descending neuron encodes wind direction (section 6.4), so upwind search is
     hand-built.
 12. **Descending neurons barely move the leg motor neurons** (a few Hz at most, at any gain,
     section 6.5), so the decoder's weights are chosen by hand; the wiring only says which motor
-    pools each DN reaches. The body is a drawing with speeds chosen to look right.
-13. **Single seeds.** Most probe numbers are one Poisson realisation (seed 0); where a second or
+    pools each DN reaches. The drawn body's speeds are chosen to look right; the optional physics
+    body (section 6.7) walks on NeuroMechFly's legs, at about a tenth of real time.
+13. **Single seeds.** The validated experiments run on five seeds (section 2.3) and the readouts
+    near a range edge were checked on 30 (section 8.4), but most probe numbers are one Poisson
+    realisation (seed 0); where a second or
     third seed was run (KC reliability, MBON baselines, the DNa02 disinhibition, the looming and
     optomotor cases, one depression grid point) the picture held, but rates moved by ±10-20 Hz and
     the pure sugar experiment can flip into a runaway on a different draw. MBON30 is bistable
     across seeds.
-14. **One brain.** Left/right asymmetries (e.g. the DNa02 right-side bias under bilateral MBON
+14. **One brain of each sex.** Left/right asymmetries (e.g. the DNa02 right-side bias under bilateral MBON
     drive, the right-only wind-responsive DNs) may be features of this individual, its
-    reconstruction, or the 5-synapse threshold, not of flies.
+    reconstruction, or the 5-synapse threshold, not of flies. The female fly is another individual,
+    reconstructed differently, so a male-female difference is not yet a sex difference (section 9.4).
 15. **Not modelled at all:** hormones, neuropeptides (the ontology names the peptidergic types;
     nothing is done with them), neuromodulation beyond the tones and the two hand-built cases
     (hunger on the sugar neurons, dopamine gating), electrical synapses (the ontology knows the
@@ -1567,7 +2153,7 @@ The starter kit's list, extended. These are the things a neuroscientist would po
 
 ---
 
-## 10. References
+## 11. References
 
 * Ache JM, Polsky J, Alghailani S, Parekh R, Breads P, Peek MY, Bock DD, von Reyn CR, Card GM
   (2019). Neural basis for looming size and velocity encoding in the *Drosophila* giant fiber
@@ -1590,12 +2176,25 @@ The starter kit's list, extended. These are the things a neuroscientist would po
 * Berg S, Beckett IR, Costa M, Schlegel P, Januszewski M, et al. (2026). Sexual dimorphism in the
   complete *Drosophila* male central nervous system connectome. *Cell* 189(18):5504-5526.
   doi:10.1016/j.cell.2026.08.015. Data: MaleCNS v1.0, CC BY 4.0, https://male-cns.janelia.org/
-* Blenau W, Daniel S, Balfanz S, Thamm M, Baumann A (2017). Dm5-HT2B: pharmacological
-  characterization of the fifth serotonin receptor subtype of *Drosophila melanogaster*. *Frontiers
-  in Systems Neuroscience* 11:28. doi:10.3389/fnsys.2017.00028
+* Bidaye SS, Laturney M, Chang AK, Liu Y, Bockemühl T, Büschges A, Scott K (2020). Two brain pathways
+  initiate distinct forward walking programs in *Drosophila*. *Neuron* 108(3):469-485.
+  doi:10.1016/j.neuron.2020.07.032
 * Blenau W, Thamm M (2011). Distribution of serotonin (5-HT) and its receptors in the insect brain
   with focus on the mushroom bodies. *Arthropod Structure & Development* 40(5):381-394.
   doi:10.1016/j.asd.2011.01.004
+* Blenau W, Daniel S, Balfanz S, Thamm M, Baumann A (2017). Dm5-HT2B: pharmacological
+  characterization of the fifth serotonin receptor subtype of *Drosophila melanogaster*. *Frontiers
+  in Systems Neuroscience* 11:28. doi:10.3389/fnsys.2017.00028
+* Burke CJ, Huetteroth W, Owald D, Perisse E, Krashes MJ, Das G, Gohl D, Silies M, Certel S,
+  Waddell S (2012). Layered reward signalling through octopamine and dopamine in *Drosophila*.
+  *Nature* 492(7429):433-437. doi:10.1038/nature11614
+* Busch S, Selcho M, Ito K, Tanimoto H (2009). A map of octopaminergic neurons in the *Drosophila*
+  brain. *Journal of Comparative Neurology* 513(6):643-667. doi:10.1002/cne.21966
+* Chiang AS, Lin CY, Chuang CC, Chang HM, Hsieh CH, Yeh CW, Shih CT, Wu JJ, et al. (2011).
+  Three-dimensional reconstruction of brain-wide wiring networks in *Drosophila* at single-cell
+  resolution. *Current Biology* 21(1):1-11. doi:10.1016/j.cub.2010.11.056
+* Cohn R, Morantte I, Ruta V (2015). Coordinated and compartmentalized neuromodulation shapes
+  sensory processing in *Drosophila*. *Cell* 163(7):1742-1755. doi:10.1016/j.cell.2015.11.019
 * Colas JF, Launay JM, Kellermann O, Rosay P, Maroteaux L (1995). *Drosophila* 5-HT2 serotonin
   receptor: coexpression with fushi-tarazu during segmentation. *PNAS* 92(12):5441-5445.
   doi:10.1073/pnas.92.12.5441
@@ -1605,8 +2204,11 @@ The starter kit's list, extended. These are the things a neuroscientist would po
   Kir H, Parkinson H, Brown NH, O'Kane CJ, Armstrong JD, Jefferis GSXE, Osumi-Sutherland D (2023).
   Virtual Fly Brain: an interactive atlas of the *Drosophila* nervous system. *Frontiers in
   Physiology* 14:1076533. doi:10.3389/fphys.2023.1076533
-* Cohn R, Morantte I, Ruta V (2015). Coordinated and compartmentalized neuromodulation shapes
-  sensory processing in *Drosophila*. *Cell* 163(7):1742-1755. doi:10.1016/j.cell.2015.11.019
+* Cruz TL, Pérez SM, Chiappe ME (2021). Fast tuning of posture control by visual feedback underlies gaze
+  stabilization in walking *Drosophila*. *Current Biology* 31(20):4596-4607. doi:10.1016/j.cub.2021.08.041
+* Dacks AM, Green DS, Root CM, Nighorn AJ, Wang JW (2009). Serotonin modulates olfactory processing
+  in the antennal lobe of *Drosophila*. *Journal of Neurogenetics* 23(4):366-377.
+  doi:10.3109/01677060903085722
 * Davie K, Janssens J, Koldere D, De Waegeneer M, Pech U, Kreft Ł, Aibar S, Makhzami S,
   Christiaens V, Bravo González-Blas C, Poovathingal S, Hulselmans G, Spanier KI, Moerman T,
   Vanspauwen B, Geurs S, Voet T, Lammertyn J, Thienpont B, Liu S, Konstantinides N, Fiers M,
@@ -1615,9 +2217,11 @@ The starter kit's list, extended. These are the things a neuroscientist would po
 * Davis FP, Nern A, Picard S, Reiser MB, Rubin GM, Eddy SR, Henry GL (2020). A genetic, genomic,
   and computational resource for exploring neural circuit function. *eLife* 9:e50901.
   doi:10.7554/eLife.50901
-* Dacks AM, Green DS, Root CM, Nighorn AJ, Wang JW (2009). Serotonin modulates olfactory processing
-  in the antennal lobe of *Drosophila*. *Journal of Neurogenetics* 23(4):366-377.
-  doi:10.3109/01677060903085722
+* Dorkenwald S, Matsliah A, Sterling AR, Schlegel P, Yu SC, et al. (2024). Neuronal wiring diagram of an
+  adult brain. *Nature* 634:124-138. doi:10.1038/s41586-024-07558-y (FlyWire, the female fly)
+* Eckstein N, Bates AS, Champion A, Du M, Yin Y, Schlegel P, Lu AK, Rymer T, et al. (2024).
+  Neurotransmitter classification from electron microscopy images at synaptic sites in
+  *Drosophila melanogaster*. *Cell* 187(10):2574-2594.e23. doi:10.1016/j.cell.2024.03.016
 * El-Kholy S, Stephano F, Li Y, Bhandari A, Fink C, Roeder T (2015). Expression analysis of
   octopamine and tyramine receptors in *Drosophila*. *Cell and Tissue Research* 361(3):669-684.
   doi:10.1007/s00441-015-2137-4
@@ -1626,21 +2230,28 @@ The starter kit's list, extended. These are the things a neuroscientist would po
 * fly-brain-minecraft (blendi-remade). The compact connectome file, the gain of 0.65, the
   Kenyon-cell input scaling and many of the sensory and motor neuron choices.
   https://github.com/blendi-remade/fly-brain-minecraft (commit `6cfa301`; code MIT, data CC BY 4.0).
+* Fujiwara T, Cruz TL, Bohnslav JP, Chiappe ME (2017). A faithful internal representation of walking
+  movements in the *Drosophila* visual system. *Nature Neuroscience* 20(1):72-81. doi:10.1038/nn.4435
+* Fujiwara T, Brotas M, Chiappe ME (2022). Walking strides direct rapid and flexible recruitment of visual
+  circuits for course control in *Drosophila*. *Neuron* 110(13):2124-2138. doi:10.1016/j.neuron.2022.04.008
 * Gruntman E, Romani S, Reiser MB (2018). Simple integration of fast excitation and offset, delayed
   inhibition computes directional selectivity in *Drosophila*. *Nature Neuroscience* 21:250-257.
   doi:10.1038/s41593-017-0046-4
 * Haag J, Borst A (1996). Amplification of high-frequency synaptic inputs by active dendritic
   membrane processes. *Nature* 379:639-641. doi:10.1038/379639a0
+* Hafez OA, Escribano B, Ziegler RL, Hirtz JJ, Niebur E, Pielage J (2023). The cellular architecture
+  of memory modules in *Drosophila* supports stochastic input integration. *eLife* 12:e77578.
+  doi:10.7554/eLife.77578
+* Hallem EA, Carlson JR (2006). Coding of odors by a receptor repertoire. *Cell* 125(1):143-160.
+  doi:10.1016/j.cell.2006.01.050
+* Hampel S, Franconville R, Simpson JH, Seeds AM (2015). A neural command circuit for grooming
+  movement control. *eLife* 4:e08758. doi:10.7554/eLife.08758
 * Han K-A, Millar NS, Grotewiel MS, Davis RL (1996). DAMB, a novel dopamine receptor expressed
   specifically in *Drosophila* mushroom bodies. *Neuron* 16(6):1127-1135.
   doi:10.1016/S0896-6273(00)80139-7
 * Han K-A, Millar NS, Davis RL (1998). A novel octopamine receptor with preferential expression in
   *Drosophila* mushroom bodies. *Journal of Neuroscience* 18(10):3650-3658.
   doi:10.1523/JNEUROSCI.18-10-03650.1998
-* Hallem EA, Carlson JR (2006). Coding of odors by a receptor repertoire. *Cell* 125(1):143-160.
-  doi:10.1016/j.cell.2006.01.050
-* Hampel S, Franconville R, Simpson JH, Seeds AM (2015). A neural command circuit for grooming
-  movement control. *eLife* 4:e08758. doi:10.7554/eLife.08758
 * Handler A, Graham TGW, Cohn R, Morantte I, Siliciano AF, Zeng J, Li Y, Ruta V (2019). Distinct
   dopamine receptor pathways underlie the temporal sensitivity of associative learning. *Cell*
   178(1):60-75. doi:10.1016/j.cell.2019.05.040
@@ -1649,20 +2260,38 @@ The starter kit's list, extended. These are the things a neuroscientist would po
 * Hassenstein B, Reichardt W (1956). Systemtheoretische Analyse der Zeit-, Reihenfolgen- und
   Vorzeichenauswertung bei der Bewegungsperzeption des Rüsselkäfers *Chlorophanus*. *Zeitschrift
   für Naturforschung B* 11:513-524.
+* Haynes PR, Christmann BL, Griffith LC (2015). A single pair of neurons links sleep to memory
+  consolidation in *Drosophila melanogaster*. *eLife* 4:e03868. doi:10.7554/eLife.03868
 * Hearn MG, Ren Y, McGrath EW, Grant HR, Ziedonis DM, Hearn GC (2002). A *Drosophila* dopamine
   2-like receptor: molecular characterization and identification of multiple alternatively spliced
   variants. *PNAS* 99(22):14554-14559. doi:10.1073/pnas.202498299
+* Hermanns T, Graf-Boxhorn S, Poeck B, Strauss R (2022). Octopamine mediates sugar relief from a
+  chronic-stress-induced depression-like state in *Drosophila*. *Current Biology*
+  32(18):4048-4056.e3. doi:10.1016/j.cub.2022.07.016
+* Hige T, Aso Y, Modi MN, Rubin GM, Turner GC (2015). Heterosynaptic plasticity underlies aversive
+  olfactory learning in *Drosophila*. *Neuron* 88(5):985-998. doi:10.1016/j.neuron.2015.11.003
 * Himmelreich S, Masuho I, Berry JA, MacMullen C, Skamangas NK, Martemyanov KA, Davis RL (2017).
   Dopamine receptor DAMB signals via Gq to mediate forgetting in *Drosophila*. *Cell Reports*
   21(8):2074-2081. doi:10.1016/j.celrep.2017.10.108
-* Hige T, Aso Y, Modi MN, Rubin GM, Turner GC (2015). Heterosynaptic plasticity underlies aversive
-  olfactory learning in *Drosophila*. *Neuron* 88(5):985-998. doi:10.1016/j.neuron.2015.11.003
+* Huang C, Maxey JR, Sinha S, Savall J, Gong Y, Schnitzer MJ (2018). Long-term optical brain imaging
+  in live adult fruit flies. *Nature Communications* 9:872. doi:10.1038/s41467-018-02873-1
+* Huetteroth W, Perisse E, Lin S, Klappenbach M, Burke C, Waddell S (2015). Sweet taste and nutrient
+  value subdivide rewarding dopaminergic neurons in *Drosophila*. *Current Biology* 25(6):751-758.
+  doi:10.1016/j.cub.2015.01.036
 * Inagaki HK, Ben-Tabou de-Leon S, Wong AM, Jagadish S, Ishimoto H, Barnea G, Kitamoto T, Axel R,
   Anderson DJ (2012). Visualizing neuromodulation in vivo: TANGO-mapping of dopamine signaling
   reveals appetite control of sugar sensing. *Cell* 148(3):583-595.
+* Juusola M, French AS, Uusitalo RO, Weckström M (1996). Information processing by graded-potential
+  transmission through tonically active synapses. *Trends in Neurosciences* 19(7):292-297.
+  doi:10.1016/S0166-2236(96)10028-X
+* Kannan M, Vasan G, Huang C, Haziza S, Li JZ, Inan H, Schnitzer MJ, Pieribone VA (2018). Fast, in
+  vivo voltage imaging using a red fluorescent indicator. *Nature Methods* 15(12):1108-1116.
+  doi:10.1038/s41592-018-0188-7
 * Karam CS, Jones SK, Javitch JA (2020). Come Fly with Me: an overview of dopamine receptors in
   *Drosophila melanogaster*. *Basic & Clinical Pharmacology & Toxicology* 126(S6):56-65.
   doi:10.1111/bcpt.13277
+* Kazama H, Wilson RI (2009). Origins of correlated activity in an olfactory circuit.
+  *Nature Neuroscience* 12(9):1136-1144. doi:10.1038/nn.2376
 * Keleş MF, Frye MA (2017). Object-detecting neurons in *Drosophila*. *Current Biology*
   27(5):762-766. doi:10.1016/j.cub.2017.01.012
 * Kim AJ, Fitzgerald JK, Maimon G (2015). Cellular evidence for efference copy in *Drosophila*
@@ -1695,6 +2324,8 @@ The starter kit's list, extended. These are the things a neuroscientist would po
   odorant responses. *Scientific Reports* 6:21841.
 * Nagel KI, Wilson RI (2011). Biophysical mechanisms underlying olfactory receptor neuron dynamics.
   *Nature Neuroscience* 14:208-216. doi:10.1038/nn.2725
+* Namiki S, Dickinson MH, Wong AM, Korff W, Card GM (2018). The functional organization of
+  descending sensory-motor pathways in *Drosophila*. *eLife* 7:e34272. doi:10.7554/eLife.34272
 * Özel MN, Simon F, Jafari S, Holguera I, Chen Y-C, Benhra N, El-Danaf RN, Kapuralin K, Malin
   JA, Konstantinides N, Desplan C (2021). Neuronal diversity and convergence in a visual system
   developmental atlas. *Nature* 589(7840):88-95. doi:10.1038/s41586-020-2879-3
@@ -1709,19 +2340,26 @@ The starter kit's list, extended. These are the things a neuroscientist would po
 * Saudou F, Boschert U, Amlaiky N, Plassat J-L, Hen R (1992). A family of *Drosophila* serotonin
   receptors with distinct intracellular signalling properties and expression patterns. *EMBO
   Journal* 11(1):7-17. doi:10.1002/j.1460-2075.1992.tb05021.x
+* Schlegel P, Yin Y, Bates AS, Dorkenwald S, Eichler K, et al. (2024). Whole-brain annotation and
+  multi-connectome cell typing of *Drosophila*. *Nature* 634:139-152. doi:10.1038/s41586-024-07686-5
 * Schnell B, Joesch M, Forstner F, Raghu SV, Otsuna H, Ito K, Borst A, Reiff DF (2010). Processing
   of horizontal optic flow in three visual interneurons of the *Drosophila* brain. *Journal of
   Neurophysiology* 103(3):1646-1657. doi:10.1152/jn.00950.2009
+* Seelig JD, Jayaraman V (2015). Neural dynamics for landmark orientation and angular path
+  integration. *Nature* 521(7551):186-191. doi:10.1038/nature14446
+* Sherer LM, Catudio Garrett E, Morgan HR, Brewer ED, Sirrs LA, Shearin HK, Williams JL, McCabe BD,
+  Stowers RS, Certel SJ (2020). Octopamine neuron dependent aggression requires dVGLUT from
+  dual-transmitting neurons. *PLoS Genetics* 16(2):e1008609. doi:10.1371/journal.pgen.1008609
 * Shiu PK, Sterne GR, Spiller N, Blumenthal E, et al. (2024). A *Drosophila* computational brain
   model reveals sensorimotor processing. *Nature* 634:210-219. doi:10.1038/s41586-024-07763-9
-* Stensmyr MC, Dweck HKM, Farhan A, Ibba I, Strutz A, Mukunda L, Linz J, Grabe V, Steck K,
-  Lavista-Llanos S, Wicher D, Sachse S, Knaden M, Becher PG, Seki Y, Hansson BS (2012). A conserved
-  dedicated olfactory circuit for detecting harmful microbes in *Drosophila*. *Cell*
-  151(6):1345-1357. doi:10.1016/j.cell.2012.09.046
 * Srivastava DP, Yu EJ, Kennedy K, Chatwin H, Reale V, Hamon M, Smith T, Evans PD (2005). Rapid,
   nongenomic responses to ecdysteroids and catecholamines mediated by a novel *Drosophila*
   G-protein-coupled receptor. *Journal of Neuroscience* 25(26):6145-6155.
   doi:10.1523/JNEUROSCI.1005-05.2005
+* Stensmyr MC, Dweck HKM, Farhan A, Ibba I, Strutz A, Mukunda L, Linz J, Grabe V, Steck K,
+  Lavista-Llanos S, Wicher D, Sachse S, Knaden M, Becher PG, Seki Y, Hansson BS (2012). A conserved
+  dedicated olfactory circuit for detecting harmful microbes in *Drosophila*. *Cell*
+  151(6):1345-1357. doi:10.1016/j.cell.2012.09.046
 * Sugamori KS, Demchyshyn LL, McConkey F, Forte MA, Niznik HB (1995). A primordial dopamine
   D1-like adenylyl cyclase-linked receptor from *Drosophila melanogaster* displaying poor affinity
   for benzazepines. *FEBS Letters* 362(2):131-138. doi:10.1016/0014-5793(95)00224-W
@@ -1743,6 +2381,14 @@ The starter kit's list, extended. These are the things a neuroscientist would po
   neurotransmitter release probability. *PNAS* 94(2):719-723. doi:10.1073/pnas.94.2.719
 * Tully T, Quinn WG (1985). Classical conditioning and retention in normal and mutant *Drosophila
   melanogaster*. *Journal of Comparative Physiology A* 157:263-277. doi:10.1007/BF01350033
+* Turner GC, Bazhenov M, Laurent G (2008). Olfactory representations by *Drosophila* mushroom body
+  neurons. *Journal of Neurophysiology* 99(2):734-746. doi:10.1152/jn.01283.2007
+* Wang F, Wang K, Forknall N, Parekh R, Dickson BJ (2020). Circuit and behavioral mechanisms of
+  sexual rejection by *Drosophila* females. *Current Biology* 30(19):3749-3760.e3.
+  doi:10.1016/j.cub.2020.07.083
+* Wang-Chen S, Stimpfling VA, Lam TKC, Özdil PG, Genoud L, Hurtak F, Ramdya P (2024). NeuroMechFly v2:
+  simulating embodied sensorimotor control in adult *Drosophila*. *Nature Methods* 21(12):2353-2362.
+  doi:10.1038/s41592-024-02497-y
 * Witz P, Amlaiky N, Plassat J-L, Maroteaux L, Borrelli E, Hen R (1990). Cloning and
   characterization of a *Drosophila* serotonin receptor that activates adenylate cyclase. *PNAS*
   87(22):8940-8944. doi:10.1073/pnas.87.22.8940
@@ -1751,12 +2397,23 @@ The starter kit's list, extended. These are the things a neuroscientist would po
   21(10):848-854. doi:10.1016/j.cub.2011.02.041
 * Yaksi E, Wilson RI (2010). Electrical coupling between olfactory glomeruli. *Neuron* 67(6):1034-1047.
   doi:10.1016/j.neuron.2010.08.041
+* Yamagata N, Hiroi M, Kondo S, Abe A, Tanimoto H (2016). Suppression of dopamine neurons mediates
+  reward. *PLoS Biology* 14(12):e1002586. doi:10.1371/journal.pbio.1002586
 * Yang HH, St-Pierre F, Sun X, Ding X, Lin MZ, Clandinin TR (2016). Subcellular imaging of voltage and
   calcium signals reveals neural processing in vivo. *Cell* 166(1):245-257.
   doi:10.1016/j.cell.2016.05.031
+* Yang HH, Brezovec BE, Serratosa Capdevila L, Vanderbeck QX, Adachi A, Mann RS, Wilson RI (2024).
+  Fine-grained descending control of steering in walking *Drosophila*. *Cell* 187(22):6290-6308.
+  doi:10.1016/j.cell.2024.08.033
 * Yorozu S, Wong A, Fischer BJ, Dankert H, Kernan MJ, Kamikouchi A, Ito K, Anderson DJ (2009).
   Distinct sensory representations of wind and near-field sound in the *Drosophila* brain.
   *Nature* 458:201-205.
+* Yu D, Keene AC, Srivatsan A, Waddell S, Davis RL (2005). *Drosophila* DPM neurons form a delayed
+  and branch-specific memory trace after olfactory classical conditioning. *Cell* 123(5):945-957.
+  doi:10.1016/j.cell.2005.09.037
+* Zeng J, Li X, Zhang R, Lv M, Wang Y, Tan K, Xia X, Wan J, et al. (2023). Local 5-HT signaling
+  bi-directionally regulates the coincidence time window for associative learning. *Neuron*
+  111(7):1118-1135.e5. doi:10.1016/j.neuron.2022.12.034
 * Zheng L, de Polavieja GG, Wolfram V, Asyali MH, Hardie RC, Juusola M (2006). Feedback network
   controls photoreceptor output at the layer of first visual synapses in *Drosophila*. *Journal of
   General Physiology* 127(5):495-510. doi:10.1085/jgp.200509470

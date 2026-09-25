@@ -29,13 +29,30 @@ from .connectome import Connectome
 
 APPROACH_NTS = ("acetylcholine", "gaba")     # MBON valence by transmitter (Aso et al. 2014, eLife)
 AVOID_NTS = ("glutamate",)
+FAST_NTS = ("acetylcholine", "gaba", "glutamate")
+
+
+def mbon_transmitters(conn: Connectome, idx) -> np.ndarray:
+    """The MBONs' transmitters, taking the file's literature transmitter where it names exactly one fast one.
+    The female fly's FlyWire prediction leaves MBON03, MBON05 and MBON07 'unclear', calls one MBON02 GABAergic
+    and three MBON10 cells glutamatergic, where her literature column (``meta["known_nt"]``) says glutamate
+    and GABA; the male file has no such table, so its predictions are used as they are."""
+    idx = np.asarray(idx)
+    nt = conn.nt[idx].copy()
+    known = (getattr(conn, "meta", None) or {}).get("known_nt") or {}
+    if known:
+        for k, i in enumerate(idx.tolist()):
+            fast = [x for x in known.get(conn.types[i], {}).get("nt", []) if x in FAST_NTS]
+            if len(fast) == 1:
+                nt[k] = fast[0]
+    return nt
 
 
 def mbon_valence(conn: Connectome, mbon_spec: str = "class:MBON") -> tuple[np.ndarray, np.ndarray]:
     """Per-MBON valence: +1 approach-promoting (cholinergic, GABAergic), -1 avoidance-promoting
     (glutamatergic), 0 unknown. Returns (indices, valence)."""
     idx = conn.select(mbon_spec)
-    nt = conn.nt[idx]
+    nt = mbon_transmitters(conn, idx)
     val = np.where(np.isin(nt, APPROACH_NTS), 1, np.where(np.isin(nt, AVOID_NTS), -1, 0))
     return idx, val.astype(np.int8)
 
@@ -91,6 +108,7 @@ class MushroomBodyPlasticity:
         self.pe = conn.edges_between(self.kc, self.mbon)
         self.pe_kc = self.kc_local[conn.pre_idx[self.pe]]
         self.pe_mbon = mbon_local[conn.post_idx[self.pe]]
+        self.mbon_nt = mbon_transmitters(conn, self.mbon)       # for the valence (the literature's where it has one)
         # dopamine gating: DAN -> MBON direct synapses define each MBON's compartment DANs
         dm = conn.edges_between(self.dan, self.mbon)
         self.dm_dan = self.dan_local[conn.pre_idx[dm]]
@@ -183,7 +201,7 @@ class MushroomBodyPlasticity:
         Kenyon cells active right now, i.e. what the current odour experiences), valence, dopamine."""
         conn = conn or self.brain.conn
         types = conn.types[self.mbon]
-        nt = conn.nt[self.mbon]
+        nt = self.mbon_nt if conn is self.brain.conn else mbon_transmitters(conn, self.mbon)
         per_mbon = np.bincount(self.pe_mbon, weights=self.scale, minlength=self.mbon.size)
         cnt = np.bincount(self.pe_mbon, minlength=self.mbon.size)
         mean = np.where(cnt > 0, per_mbon / np.maximum(cnt, 1), 1.0)

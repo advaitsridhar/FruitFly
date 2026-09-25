@@ -465,7 +465,9 @@ class Retina:
         self.world = world
         self.eyes = {"L": Eye("L"), "R": Eye("R")}
         self.features = FeatureDetectors(self.eyes)
-        self.columnar = ColumnarMotion(conn, self.eyes, COLUMNAR_AXES) if (columnar and conn is not None) else None
+        # (needs medulla column coordinates: the female fly's FlyWire file has none, so it sees without it)
+        has_columns = conn is not None and bool((conn.hex1 >= 0).any())
+        self.columnar = ColumnarMotion(conn, self.eyes, COLUMNAR_AXES) if (columnar and has_columns) else None
 
     def objects(self, pose) -> list[VisibleObject]:
         w = self.world
