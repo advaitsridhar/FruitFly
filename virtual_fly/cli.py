@@ -344,10 +344,13 @@ def main(argv=None):
     n_ok = sum(sum(bool(x.ok) for x in r.readouts) for r in done)
     fragile = [r for r in results if r.fragile]
     na = [r for r in results if r.ok is None]
+    stim = [r for r in done if r.after_per_seed]
+    loose = [r for r in stim if r.after_sps >= 50000]
     print(f"\n{n_ok}/{n_read} readouts in the expected range ({len(done) - len(bad)}/{len(done)} experiments"
           + (f"; {len(fragile)} pass on the mean but miss on some seed: {', '.join(r.name for r in fragile)}" if fragile else "")
           + (f"; {len(na)} cannot be done on this fly: {', '.join(r.name for r in na)}" if na else "")
-          + ").")
+          + ")."
+          + (f" After the stimulus, {len(loose)} of {len(stim)} leave a runaway loop on at least one seed." if loose else ""))
     if args.json:
         E.save_json(results, args.json, brain)
         print(f"wrote {args.json}")

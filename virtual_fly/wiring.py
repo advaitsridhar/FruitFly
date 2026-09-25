@@ -332,6 +332,12 @@ def compare(real: Connectome, grown: Connectome) -> dict:
         rng = np.random.default_rng(0)
         k = rng.choice(real.n_edges, 200_000, replace=False)
         keys_real = real.pre_idx[k].astype(np.int64) * real.n + real.post_idx[k]
-        keys_grown = np.unique(grown.pre_idx.astype(np.int64) * grown.n + grown.post_idx)
-        out["shared_connections_fraction"] = float(np.isin(keys_real, keys_grown).mean())
+        # sorted unique keys and a binary search: np.unique / np.isin on these 6 M keys took 6 s each (NumPy 2.4)
+        keys_grown = np.sort(grown.pre_idx.astype(np.int64) * grown.n + grown.post_idx)
+        keys_grown = keys_grown[np.concatenate(([True], keys_grown[1:] != keys_grown[:-1]))]
+        if keys_grown.size:
+            pos = np.minimum(np.searchsorted(keys_grown, keys_real), keys_grown.size - 1)
+            out["shared_connections_fraction"] = float((keys_grown[pos] == keys_real).mean())
+        else:
+            out["shared_connections_fraction"] = 0.0
     return out

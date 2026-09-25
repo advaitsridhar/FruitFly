@@ -141,19 +141,23 @@ SEEDS = (0, 1, 2, 3, 4)   # a verdict on a fly: every experiment on five seeds (
 
 
 def survival(brain: FlyBrain, experiments=None, profile: str | None = None, on_progress=None,
-             seeds=SEEDS) -> list[dict]:
+             seeds=SEEDS, after_ms: float = 0.0, should_stop=None) -> list[dict]:
     """Run the experiments one by one and report, per experiment, whether every readout was in its
     range (on the mean over ``seeds``): the survival report of a grown fly (see :mod:`virtual_fly.wiring`).
     ``fragile`` marks an experiment that passes on the mean although some seed on its own does not. An
     experiment whose populations do not exist in this connectome is reported as ``ok: None``.
-    ``on_progress(rows)`` is called after each experiment with the rows so far."""
+    ``on_progress(rows)`` is called after each experiment with the rows so far. The report has no
+    after-stimulus column, so the after-stimulus test is skipped (``after_ms=0``; the readouts are the
+    same either way). ``should_stop()``, checked before each experiment, ends the report early."""
     experiments = experiments if experiments is not None else CLASSIC + EXTENDED
     rows: list[dict] = []
     for exp in experiments:
         if profile is not None and exp.profile is not None and exp.profile != profile:
             continue
+        if should_stop is not None and should_stop():
+            break
         try:
-            res = run_experiment(brain, exp, seeds=seeds)
+            res = run_experiment(brain, exp, seeds=seeds, after_ms=after_ms)
             row = {"name": exp.name, "ok": res.ok, "fragile": res.fragile, "seeds": len(res.seeds),
                    "readouts": [{"label": r.label, "hz": round(r.hz, 1), "lo": r.lo, "hi": r.hi, "ok": r.ok,
                                  "per_seed": [round(v, 1) for v in r.per_seed], "seeds_out": r.seeds_out}
@@ -190,13 +194,19 @@ class ReadoutResult:
 class ExperimentResult:
     name: str
     readouts: list[ReadoutResult]
-    after_sps: float            # spikes/s in the whole brain 1 s after the stimulus ends
+    after_sps: float            # spikes/s in the whole brain 1 s after the stimulus ends: the worst seed
     after_note: str
     wall_s: float
     seeds: list[int]
     silenced: list[str] = field(default_factory=list)   # populations whose output was blocked
     missing: list[str] = field(default_factory=list)    # populations this fly does not have (see run_experiment)
     na: bool = False                                    # the experiment cannot be done on this fly
+    after_per_seed: list[float] = field(default_factory=list)   # the after-stimulus spikes/s of each seed
+
+    @property
+    def after_not_calm(self) -> int:
+        """How many seeds leave activity running 1 s after the stimulus (1,000 spikes/s or more)."""
+        return sum(v >= 1000 for v in self.after_per_seed)
 
     @property
     def ok(self) -> bool | None:
@@ -214,7 +224,7 @@ class ExperimentResult:
         return {"name": self.name, "ok": self.ok, "after_spikes_per_s": self.after_sps, "after": self.after_note,
                 "wall_s": round(self.wall_s, 2), "seeds": self.seeds,
                 "readouts": [r.__dict__ for r in self.readouts], "silenced": list(self.silenced),
-                "missing": list(self.missing)}
+                "missing": list(self.missing), "after_per_seed": list(self.after_per_seed)}
 
 
 def in_range(hz: float, lo: float, hi: float) -> bool:
@@ -248,7 +258,9 @@ def absent(conn, spec: str) -> bool:
 
 def run_experiment(brain: FlyBrain, exp: Experiment, seeds=(0,), after_ms: float = 1000.0,
                    verbose: bool = False) -> ExperimentResult:
-    """Run one experiment for each seed; readouts are averaged, the after-stimulus test uses the last.
+    """Run one experiment for each seed; readouts are averaged. The after-stimulus test (does the brain calm
+    down within ``after_ms`` once the stimulus stops?) runs on every seed and reports the worst one, since one
+    seed can calm down and the next keep firing; ``after_ms=0`` skips it (survival() does, it never shows it).
 
     Every seed starts from what the fly had learned when the experiment began (learning during a run
     counts, as in a real fly, but does not carry into the next seed), and the fly is left as it was.
@@ -274,7 +286,7 @@ def run_experiment(brain: FlyBrain, exp: Experiment, seeds=(0,), after_ms: float
         exp = replace(exp, stimulus=stimulus)
     per: dict[str, list[float]] = {r.label: [] for r in exp.readouts if r.spec not in missing}
     t0 = time.time()
-    after_sps = 0.0
+    after: list[float] = []
     restore_learning = kept_learning(brain)
     for spec in exp.silence:                      # the lesion: like expressing tetanus toxin in those cells
         brain.silence(spec)
@@ -292,12 +304,12 @@ def run_experiment(brain: FlyBrain, exp: Experiment, seeds=(0,), after_ms: float
             for r in exp.readouts:
                 if r.label in per:
                     per[r.label].append(brain.rate(r.spec))
-            if exp.stimulus:                      # switch the stimulus off: does the brain calm down?
+            if exp.stimulus and after_ms > 0:     # switch the stimulus off: does the brain calm down?
                 brain.clear_stimuli()
                 brain.run(after_ms / 2)
                 brain.reset_counts()
                 brain.run(after_ms / 2)
-                after_sps = brain.spike_count.sum() / (after_ms / 2000.0)
+                after.append(float(brain.spike_count.sum() / (after_ms / 2000.0)))
     finally:
         for spec in exp.silence:
             brain.unsilence(spec)
@@ -315,8 +327,9 @@ def run_experiment(brain: FlyBrain, exp: Experiment, seeds=(0,), after_ms: float
                                      seeds_out=sum(not in_range(v, r.lo, r.hi) for v in vals)))
     brain.clear_stimuli()
     brain.reset()
-    res = ExperimentResult(exp.name, results, float(after_sps), after_note(after_sps) if exp.stimulus else "",
-                           wall, list(seeds), silenced=list(exp.silence), missing=missing)
+    after_sps = max(after, default=0.0)
+    res = ExperimentResult(exp.name, results, after_sps, after_note(after_sps) if after else "",
+                           wall, list(seeds), silenced=list(exp.silence), missing=missing, after_per_seed=after)
     if verbose:
         print(format_result(res))
     return res
@@ -338,7 +351,9 @@ def format_result(res: ExperimentResult) -> str:
     if res.missing:
         lines.append(f" {'':34} ({'cannot be done: ' if res.na else ''}this fly has no {', '.join(res.missing)})")
     if res.after_note:
-        lines.append(f" {'':34} {'1 s after it stops':32} {res.after_sps:8,.0f} spikes/s  {res.after_note}")
+        n = len(res.after_per_seed)
+        where = (f" (worst of {n} seeds; {res.after_not_calm} not calm)" if n > 1 else "")
+        lines.append(f" {'':34} {'1 s after it stops':32} {res.after_sps:8,.0f} spikes/s  {res.after_note}{where}")
     if not res.na:
         lines.append(f" {'':34} ({res.wall_s:.1f} s wall time, seeds {res.seeds})")
     return "\n".join(lines)

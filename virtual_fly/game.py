@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import queue
 import random
 import threading
@@ -32,6 +33,7 @@ from .brain import FlyBrain
 from .plasticity import APPROACH_NTS, AVOID_NTS
 from . import genetics
 from . import parts as partslib
+from . import retest as retestlib
 from . import vfb
 from . import wiring
 from .experiments import survival as survival_report
@@ -249,12 +251,22 @@ class MotorDecoder:
 
 class Game:
     def __init__(self, brain: FlyBrain, autopilot: bool = True, seed: int = 0, columnar: bool = True,
-                 profile_name: str = "game", brain_factory=None, parts_list=None):
+                 profile_name: str = "game", brain_factory=None, parts_list=None, brain_kwargs: dict | None = None,
+                 retest: str = "auto"):
         self.brain, self.conn = brain, brain.conn
         self.profile_name = profile_name
         # the genome: the real wiring, and flies grown from its rules (see wiring.py)
         self.real_conn = brain.conn
         self.brain_factory = brain_factory or self._default_brain_factory
+        # how a re-test process rebuilds the brain: build_brain(conn, profile, **brain_kwargs, parts=...). Known
+        # for the default factory; a caller with its own factory says so (play.py), or re-tests run in a thread.
+        self._brain_kwargs = brain_kwargs if brain_kwargs is not None else (None if brain_factory else {})
+        if retest not in ("auto", "process", "thread"):
+            raise ValueError("retest must be 'auto', 'process' or 'thread'")
+        self.retest_mode = retest
+        self._retest_handle = None                      # the running re-test process, if any
+        self._survival_cache: dict[tuple, list] = {}     # re-test results: the same fly and settings give the same rows
+        self._retest_lock = threading.Lock()
         self._rules_cache: dict = {}
         self._survival_token = None
         self.genome: dict = {"level": "real", "seed": 0, "growing": None, "survival": None, "wiring": None, "rules": None, "error": None}
@@ -468,18 +480,78 @@ class Game:
         self._survival_token = token
         threading.Thread(target=self._survival_worker, args=(a["conn"], token), daemon=True).start()
 
-    def _survival_worker(self, conn, token):
-        """Run the validated experiments on a private copy of the grown brain (the game keeps going)."""
-        try:
-            brain = self.brain_factory(conn, parts=self.parts_arg(self.parts_on))
+    def _retest_spec(self, conn) -> dict | None:
+        """What a re-test process needs to rebuild this brain, or None when it cannot (then: a thread)."""
+        if self.retest_mode == "thread" or self._brain_kwargs is None:
+            return None
+        path = getattr(self.real_conn, "path", None)
+        if path is None or not os.path.exists(path):
+            return None
+        kw = {k: v for k, v in self.brain.settings().items() if k in self._BRAIN_KWARGS}
+        kw.update(self._brain_kwargs)
+        kw["parts"] = self.parts_arg(self.parts_on)
+        wiring_ = None
+        if conn is not self.real_conn:                   # a grown fly: send its wiring, the neurons are the same
+            wiring_ = {"row_ptr": conn.row_ptr, "post_idx": conn.post_idx, "n_syn": conn.n_syn, "label": "grown"}
+        return {"path": str(path), "wiring": wiring_, "profile": self.profile_name, "brain_kwargs": kw}
 
-            def progress(rows):
-                if self._survival_token is token:
-                    self.genome["survival"] = {"running": True, "results": rows}
-            rows = survival_report(brain, profile=self.profile_name, on_progress=progress)
+    def _survival_key(self, conn) -> tuple:
+        """Everything a survival report depends on. Each seed resets the brain and starts its own random
+        generator, so the same wiring, profile, brain settings and parts list always give the same rows."""
+        kw = {k: v for k, v in self.brain.settings().items() if k in self._BRAIN_KWARGS}
+        kw.update(self._brain_kwargs or {})
+        return (conn.dataset, int(conn.n_edges), self.profile_name, repr(sorted(kw.items())),
+                repr(self.parts_arg(self.parts_on)))
+
+    def _survival_worker(self, conn, token):
+        """Run the validated experiments on a private copy of the new brain while the game keeps going: in a
+        low-priority child process when possible (retest.py), else in this thread. A newer re-test replaces
+        an older one (the older process is terminated, an older thread stops at its next experiment)."""
+        with self._retest_lock:
+            prev, self._retest_handle = self._retest_handle, None
+        if prev is not None:
+            prev.cancel()
+        t0 = time.time()
+
+        def progress(rows):
             if self._survival_token is token:
+                self.genome["survival"] = {"running": True, "results": rows}
+        try:
+            key = self._survival_key(conn)
+            cached = self._survival_cache.get(key)
+            spec = None if cached is not None else self._retest_spec(conn)
+            handle = None
+            if cached is not None:                       # this fly was tested with these settings before
+                rows, where = [dict(r) for r in cached], "cache"
+            elif spec is not None:
+                try:
+                    handle = retestlib.Retest(spec)
+                except Exception as e:                   # no child processes here: re-test in this thread
+                    print("re-testing in a thread:", repr(e))
+            if handle is not None:
+                with self._retest_lock:
+                    if self._survival_token is token:
+                        self._retest_handle = handle
+                    else:                                # superseded while the process was starting
+                        handle.cancel()
+                try:
+                    rows = handle.wait(progress)
+                finally:
+                    with self._retest_lock:                  # done: let go of its queue (no leaked semaphores at exit)
+                        if self._retest_handle is handle:
+                            self._retest_handle = None
+                where = "process"
+            if cached is None and handle is None:
+                brain = self.brain_factory(conn, parts=self.parts_arg(self.parts_on))
+                rows = survival_report(brain, profile=self.profile_name, on_progress=progress,
+                                       should_stop=lambda: self._survival_token is not token)
+                where = "thread"
+            if self._survival_token is token:
+                if cached is None:
+                    self._survival_cache[key] = [dict(r) for r in rows]
                 ok = sum(1 for r in rows if r["ok"]); tested = sum(1 for r in rows if r["ok"] is not None)
-                self.genome["survival"] = {"running": False, "results": rows, "ok": ok, "tested": tested}
+                self.genome["survival"] = {"running": False, "results": rows, "ok": ok, "tested": tested,
+                                           "secs": round(time.time() - t0, 1), "where": where}
                 self.events.add(self.t, "genome", f"reflex survival: {ok} of {tested} experiments pass on this wiring")
         except Exception as e:
             if self._survival_token is token:

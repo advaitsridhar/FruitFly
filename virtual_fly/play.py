@@ -85,7 +85,7 @@ def main(argv=None):
         print(f"Parts list: on ({c['modulatory_neurons']:,} modulatory neurons, {c['graded_neurons']:,} graded cells).", file=sys.stderr)
     game = Game(brain, autopilot=not args.no_autopilot, seed=args.seed, columnar=not args.no_columnar,
                 profile_name=profile, brain_factory=lambda c, **kw: build_brain(c, profile, **{**overrides, **kw}),
-                parts_list=parts_list)
+                parts_list=parts_list, brain_kwargs={k: v for k, v in overrides.items() if k != "parts"})
     if args.no_learning:
         game.learning_on = False
     if args.grow:
