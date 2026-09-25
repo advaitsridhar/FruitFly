@@ -20,7 +20,7 @@ def _ann(root, ctype, sc="central", side="left", nt="acetylcholine", cls="", sub
             "nerve": "", "soma_x": str(soma[0]), "soma_y": str(soma[1]), "soma_z": str(soma[2])}
 
 
-def _female(tmp_path, min_syn=1, more=()):
+def _female(tmp_path, min_syn=1, more=(), meta_extra=None):
     ann = [_ann(SUGAR[0], "LB3", "sensory", cls="gustatory", sub="sugar/water"),
            _ann(SUGAR[1], "LB3", "sensory", "right", cls="gustatory", sub="sugar/water"),
            _ann(SUGAR[2], "LB3", "sensory", cls="gustatory", sub="sugar/water"),
@@ -44,7 +44,7 @@ def _female(tmp_path, min_syn=1, more=()):
     extra = sorted({int(x) for x in np.concatenate([pre, post])} - {int(a["root_id"]) for a in ann})
     rows = flywire.neuron_rows(ann, extra)
     meta = {"sex": "female", "aliases": flywire.aliases({r["root"] for r in rows}),
-            "known_nt": flywire.known_transmitters(ann)}
+            "known_nt": flywire.known_transmitters(ann), **(meta_extra or {})}
     return Connectome(flywire.write_flyb(tmp_path / "female.flyb.gz", rows, pre, post, syn, meta))
 
 
@@ -228,3 +228,54 @@ def test_an_old_female_file_is_rebuilt(tmp_path, monkeypatch):
     assert flywire.ensure_female() == "rebuilt"
     monkeypatch.setattr(flywire, "BUILD", 0)
     assert flywire.ensure_female() == c.path
+
+
+def test_weak_sources_and_the_hemibrain_name_count_as_neuron_rows_do():
+    ann = [_ann(1, "PFR", known="tyramine; serotonin", conf="0.9"),
+           _ann(2, "SMP039", known="serotonin"), _ann(3, "SMP039", known="serotonin"),
+           _ann(4, "cL16", known="dopamine; dopamine"), _ann(5, "cL16", known="dopamine; gaba"),
+           {**_ann(6, ""), "hemibrain_type": "HBonly", "known_nt": "glutamate"}]
+    ann[1]["known_nt_source"] = ann[2]["known_nt_source"] = "Chiang et al., 2011 (MCFO)"             # a clone's driver line
+    ann[3]["known_nt_source"] = "Chiang et al., 2011 (MCFO); Mao and Davis 2009 (immuno)"         # one of two is weak
+    ann[4]["known_nt_source"] = "Mao & Davis 2009 (immuno); Ito et al., 2013 (immuno, lineage based, unsure)"
+    ann[5]["known_nt_source"] = "Davis et al., 2020 (TAPIN)"
+    k = flywire.known_transmitters(ann)
+    assert "SMP039" not in k                                            # only FlyCircuit says so
+    assert k["cL16"]["nt"] == ["dopamine"] and "gaba" not in k["cL16"]["nt"]     # the 'unsure' part is left out
+    assert k["HBonly"]["nt"] == ["glutamate"]                            # the name neuron_rows gives the type
+    assert flywire._trusted_transmitters("gaba", "Ito (immuno); Chiang (MCFO)") == {"gaba"}   # misaligned: kept
+    assert flywire._trusted_transmitters("gaba", "Chiang (MCFO, unsure)") == set()
+
+
+def test_the_new_aliases_find_flywires_spellings(tmp_path):
+    c = _female(tmp_path, more=[_ann(400, "R1-6", "sensory", cls="visual"), _ann(401, "KCapbp-m"),
+                                _ann(402, "KCapbp-ap1")])
+    assert c.select("R1-R6").tolist() == c.select("R1-6").tolist() and c.select("prefix:R1-R6").size == 1
+    assert c.select("prefix:KCa'b'").size == 2
+    from virtual_fly import parts as P
+    cp = P.PartsList().compile(c)
+    assert cp.graded_mask[c.select("R1-6")].all()                     # the parts list's graded photoreceptors
+
+
+def test_the_ontology_sees_the_files_classes_and_aliases(tmp_path, mini_vfb, conn):
+    from virtual_fly import vfb
+    assert vfb.ontology_for(conn) is vfb.ontology()                    # the male file: the map as it is
+    c = _female(tmp_path, more=[_ann(500, "KCab"), _ann(501, "LC4fw")],
+                meta_extra={"fbbt": {"KCab": ["FBbt:00100248", "FBbt:99999999"], "PAM01": ["FBbt:00100248"]}})
+    c.aliases = {**c.aliases, "LC4": "LC4fw"}                          # FlyWire's LC4 by another name
+    ont = vfb.ontology_for(c)
+    assert ont.types["KCab"] == {"fbbt": ["FBbt:00100248"], "route": "file"}     # unknown classes dropped
+    assert ont.types["LC4fw"]["fbbt"] == ["FBbt:00003874"] and ont.types["LC4fw"]["route"] == "alias"
+    assert ont.types["PAM01"] == vfb.ontology().types["PAM01"]          # the map's own entry wins
+    assert vfb.ontology_for(c) is ont                                   # cached per file
+    assert c.select("fbbt:adult Kenyon cell").tolist() == c.select("KCab").tolist()
+    assert c.select("fbbt:FBbt:00003874").tolist() == c.select("LC4fw").tolist()
+    assert "KCab" not in vfb.ontology().types                          # the shared map is untouched
+
+
+def test_both_literatures_count_for_a_female_type(tmp_path, mini_vfb):
+    from virtual_fly import vfb
+    c = _female(tmp_path, more=[_ann(600, "MBON11", known="glutamate"), _ann(601, "MBON20", known="acetylcholine")])
+    own = vfb.file_curated(c)
+    assert own["MBON11"]["nt"] == ["glutamate", "gaba"] and own["MBON11"]["source"].endswith("; Virtual Fly Brain")
+    assert own["MBON20"]["nt"] == ["acetylcholine"] and "Virtual Fly Brain" not in own["MBON20"]["source"]  # a connectome guess

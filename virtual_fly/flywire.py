@@ -56,7 +56,7 @@ import numpy as np
 from .connectome import PROJECT_DIR
 
 FEMALE_FILE = PROJECT_DIR / "data" / "flywire-v783.flyb.gz"
-BUILD = 3                             # bump when the builder changes what goes in the file: older files are rebuilt
+BUILD = 4                             # bump when the builder changes what goes in the file: older files are rebuilt
 SOURCE_DIR = PROJECT_DIR / "data" / "flywire-src"
 DATASET = "flywire:v783"
 MIN_SYNAPSES = 1                      # every connection, as the published model uses them
@@ -110,6 +110,10 @@ ALIASES = {
     "LB1a": ("LB1a,LB1d", "FlyWire types LB1a and LB1d together"),
     "LB2a": ("LB2a-b", "FlyWire types LB2a and LB2b together"),
     "LB2b": ("LB2a-b", "FlyWire types LB2a and LB2b together"),
+    "R1-R6": ("R1-6", "the outer photoreceptors, spelled R1-6 in FlyWire"),
+    "prefix:R1-R6": ("R1-6", "the outer photoreceptors, spelled R1-6 in FlyWire (the parts list's graded cells)"),
+    "prefix:KCa'b'": ("prefix:KCa'b',prefix:KCapbp", "the alpha'/beta' Kenyon cells, spelled KCapbp-* in FlyWire "
+                                                   "(APL's local-release groups)"),
     "LB1d": ("LB1a,LB1d", "FlyWire types LB1a and LB1d together"),
     "prefix:pC1_": ("prefix:pC1", "the doublesex pC1 cluster: pC1a-e in the female (the male's pC1_ types include P1)"),
 }
@@ -197,6 +201,38 @@ def neuron_rows(annotations: list[dict], extra_ids=()) -> list[dict]:
 KNOWN_NTS = ("acetylcholine", "gaba", "glutamate", "histamine", "dopamine", "octopamine", "serotonin")
 
 
+def _weak_source(src: str) -> bool:
+    """A source the kit does not take a transmitter from: one its own authors mark 'unsure', and FlyCircuit clones
+    (Chiang et al. 2011, MCFO), whose transmitter is the driver line's that labelled the clone, not the neuron's."""
+    s = src.lower()
+    return "unsure" in s or ("chiang" in s and "mcfo" in s)
+
+
+def _trusted_transmitters(known: str, sources: str) -> set[str]:
+    """The kit's transmitters in one neuron's ``known_nt``, leaving out what only weak sources say. The column's
+    ';'-separated parts line up with ``known_nt_source``'s in nearly every row; where they do not, the row is kept
+    unless every one of its sources is weak."""
+    parts, srcs = known.split(";"), sources.split(";")
+    if len(parts) == len(srcs):
+        parts = [p for p, src in zip(parts, srcs) if not _weak_source(src)]
+    elif srcs and all(_weak_source(src) for src in srcs if src.strip()):
+        parts = []
+    return {x.strip() for p in parts for x in re.split(r"[;,]", p)} & set(KNOWN_NTS)
+
+
+def fbbt_classes(annotations: list[dict]) -> dict[str, list[str]]:
+    """Per cell type, the anatomy-ontology classes (FBbt) FlyWire's annotations give its neurons: how the kit's
+    ontology and receptor atlas find FlyWire-spelled types (KCab, KCapbp-m, ...) that its MaleCNS map lacks."""
+    out: dict[str, set[str]] = collections.defaultdict(set)
+    for a in annotations:
+        t = a.get("cell_type") or a.get("hemibrain_type") or ""
+        for cid in (a.get("fbbt_id") or "").split(","):
+            cid = cid.strip().replace("_", ":")
+            if t and cid.startswith("FBbt:"):
+                out[t].add(cid)
+    return {t: sorted(v) for t, v in out.items()}
+
+
 def known_transmitters(annotations: list[dict]) -> dict[str, dict]:
     """Per cell type, the transmitters FlyWire's ``known_nt`` column gives from the literature (Davis et al. 2020
     TAPIN-seq, Nern et al. 2024 EASI-FISH, immunostaining ...). FlyWire's *predicted* transmitters come from a
@@ -204,15 +240,17 @@ def known_transmitters(annotations: list[dict]) -> dict[str, dict]:
     (all 1,643 alpha/beta Kenyon cells, many olfactory receptor neurons); the parts list reads this table the way
     it reads Virtual Fly Brain's curated classes for the male fly. A transmitter counts for a type when at least
     half of all its neurons name it (one labelled cell does not speak for 173 unlabelled ones); negative results
-    ("gaba-negative"), peptides and nitric oxide are left out."""
+    ("gaba-negative"), peptides and nitric oxide are left out, and so is what only a weak source says
+    (:func:`_weak_source`)."""
     per: dict[str, list[set[str]]] = collections.defaultdict(list)
     src: dict[str, collections.Counter] = collections.defaultdict(collections.Counter)
     for a in annotations:
-        t, k = a.get("cell_type") or "", a.get("known_nt") or ""
+        t, k = a.get("cell_type") or a.get("hemibrain_type") or "", a.get("known_nt") or ""   # as neuron_rows
         if not t:
             continue
-        per[t].append({x.strip() for x in re.split(r"[;,]", k)} & set(KNOWN_NTS))
-        if k:
+        got = _trusted_transmitters(k, a.get("known_nt_source") or "") if k else set()
+        per[t].append(got)
+        if got:
             src[t][a.get("known_nt_source") or ""] += 1
     out = {}
     for t, sets in per.items():
@@ -297,6 +335,7 @@ def build_female(out: Path | str = FEMALE_FILE, src_dir: Path | str = SOURCE_DIR
     meta = {"dataset": DATASET, "sex": "female", "built": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "build": BUILD, "aliases": aliases({r["root"] for r in rows}),
             "alias_notes": {k: v[1] for k, v in ALIASES.items()}, "known_nt": known_transmitters(ann),
+            "fbbt": fbbt_classes(ann),
             "min_weight": min_synapses, "nt_signs": NT_SIGN, "nt_conf_fallback": NT_CONF_FALLBACK, "neurons": len(rows), "edges": int(pre.size),
             "synapses_in_edges": int(syn.sum()), "unannotated_connected_neurons": len(extra),
             "sources": {k: {"url": s["url"], "sha256": s["sha256"]} for k, s in SOURCES.items()},

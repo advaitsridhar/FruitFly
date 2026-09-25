@@ -15,7 +15,7 @@ from virtual_fly.settings import build_brain
 
 STATE_KEYS = {"seq", "t", "rtf", "speed", "fly", "world", "autopilot", "paused", "senses", "retina", "hz", "motor",
               "driver", "mode", "spikes", "sps", "stims", "calms", "msg", "silenced", "baseline", "modulated", "custom",
-              "done", "state", "learning", "events", "event_seq", "scenario", "recording", "genome"}
+              "done", "state", "learning", "events", "event_seq", "scenario", "recording", "genome", "graded_eps"}
 LAYOUT_KEYS = {"n", "w", "h", "d", "x", "y", "z", "region", "regions", "arena_r", "fly_half", "tick_ms", "presets",
                "types", "edges", "synapses", "dataset", "sex", "readouts", "checks", "odours", "scenarios", "retina", "profile", "settings",
                "decoder", "columnar_vision", "whats_real", "genetics", "genome", "parts", "vfb"}

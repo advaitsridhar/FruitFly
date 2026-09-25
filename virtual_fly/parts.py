@@ -197,8 +197,9 @@ LOCAL: tuple[Local, ...] = (
           "APL does not spike, and both its activity and its inhibition of Kenyon cells stay local, so it inhibits "
           "each mushroom-body compartment according to the Kenyon cells active there (Amin et al. 2020). Here APL "
           "keeps its spikes as the measure of its overall depolarisation, but its release onto a target follows the "
-          "Kenyon cells of the lobe system (γ, α/β, α'/β') that target sits among: less where they are quieter than "
-          "APL's average input, never more than the whole cell releases."),
+          "Kenyon cells active where APL's synapses onto that target are: by neuPrint's mushroom-body regions (calyx, "
+          "pedunculus, each lobe) when the region table is installed, else by the target's Kenyon-cell lobe system "
+          "(γ, α/β, α'/β'). Less where they are quieter than APL's average input, never more than the whole cell."),
 )
 
 RECEPTOR_FACTS: tuple[ReceptorFact, ...] = (
@@ -206,11 +207,12 @@ RECEPTOR_FACTS: tuple[ReceptorFact, ...] = (
                  "Dopamine neurons synapse onto APL and suppress it through the D2-like receptor Dop2R; knocking Dop2R "
                  "down in APL impairs aversive learning (Zhou et al. 2019). APL is one cell per side, so the "
                  "single-cell atlases have no cluster for it."),
-    ReceptorFact("prefix:HS,prefix:VS", (), "the HS and VS cells, the lobula plate's wide-field motion neurons",
-                 "Octopamine released during flight raises the HS and VS cells' motion responses (Suver, Mamiya & "
-                 "Dickinson 2012, with an octopamine agonist; Longden & Krapp 2009 in the blowfly); the receptor was "
-                 "not identified, and the adult atlases have no cluster for these few large cells. This is the "
-                 "measured effect the octopamine tone's gain was set from.",
+    ReceptorFact("VS,regex:^VS[0-9]+$", (), "the VS cells, the lobula plate's vertical-motion neurons",
+                 "Octopamine released during flight boosts the VS cells' response to visual motion; octopamine applied "
+                 "to quiescent flies mimics the boost, and octopamine neurons are necessary and sufficient for it (Suver, "
+                 "Mamiya & Dickinson 2012). The receptor was not identified, and the adult atlases have no cluster for "
+                 "these few large cells. This is the measured effect the octopamine tone's gain was set from; it names the "
+                 "recorded VS cells only (not the VS-like or 'twin' types, nor the HS cells).",
                  effects=(("octopamine", 1.0),)),
 )
 

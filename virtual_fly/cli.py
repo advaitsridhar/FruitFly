@@ -226,12 +226,13 @@ def main(argv=None):
         c = overrides["parts"].compile(conn).counts
         cur = c["curated"]
         with_data = max((r["with_data"] for r in c["receptor_signs"]["coverage"]), default=0)
+        by_fact = sum(f["targets"] for f in c["receptor_signs"].get("facts", []))    # signed by a fact, not the atlas
         print(f"parts list on: {c['modulatory_neurons']:,} modulatory neurons ({', '.join(m['nt'] for m in c['modulators'])}) act through "
               f"slow tones on {c['modulated_targets']:,} targets; {c['graded_neurons']:,} graded cells"
               + (f"; curated transmitters ({cur['policy']}): {cur['neurons']:,} neurons in {cur['types']:,} types changed" if cur.get("neurons") else "")
               + (f"; receptor signs on {with_data:,} modulated targets" if with_data else "")
               + ("; the one-sign rule for targets without receptor data (v2.7)" if args.one_sign_rule
-                 else f"; no tone on the {c['modulated_targets'] - with_data:,} targets without receptor data" if with_data else "")
+                 else f"; no tone on the {c['modulated_targets'] - with_data - by_fact:,} targets without receptor data" if with_data else "")
               + "".join(f"; receptors from the literature for {f['spec']} ({f['what']})" for f in c["receptor_signs"].get("facts", []) if f["neurons"])
               + "".join(f"; {x['spec']} releases locally ({x['compartments']} compartments, by "
                         f"{'neuPrint region' if x.get('mode') == 'regions' else 'lobe'})" for x in c["local"])

@@ -128,6 +128,11 @@ function onState(s) {
 function renderState(s) {
   if (!firstState) { firstState = true; setShown($("loading"), false); }
   setText($("stSps"), (s.sps || 0).toLocaleString());
+  const graded = s.graded_eps || 0;                 // the parts list's graded cells release quanta, not spikes
+  setText($("stSpsUnit"), graded ? "events/s" : "spikes/s");
+  const tip = graded ? `events per second in the whole brain: ${((s.sps || 0) - graded).toLocaleString()} spikes and ` +
+    `${graded.toLocaleString()} release quanta of the graded cells (parts list)` : "spikes per second in the whole brain";
+  if ($("stSpsBox").title !== tip) $("stSpsBox").title = tip;
   setText($("stRtf"), s.paused ? "paused" : (s.rtf >= 0.97 ? "real time" : fmt(s.rtf, 2) + "×") + (s.speed !== 1 ? ` (×${fmt(s.speed, 2)})` : ""));
   setText($("stT"), fmt(s.t, 1));
   slowHint(s);

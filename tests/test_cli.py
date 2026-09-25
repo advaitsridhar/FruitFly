@@ -79,11 +79,16 @@ def test_parts_list_flags(capsys):
         main(["--part", "GNG232", "--stim", "LB3b:40"])
 
 
-def test_curated_and_receptor_flags(capsys, mini_vfb):
+def test_curated_and_receptor_flags(capsys, mini_vfb, conn):
     main(["--curated", "all", "--stim", "LB1a,LB1b:150", "--watch", "MN9", "--ms", "300"])
     out = capsys.readouterr().out
     assert "curated transmitters (all):" in out and "neurons in 4 types changed" in out and "receptor signs on" in out
     assert "APL releases locally (3 compartments, by lobe)" in out and "receptors from the literature for APL (Dop2R)" in out
+    from virtual_fly.parts import PartsList
+    c = PartsList(curated="all").compile(conn).counts
+    rs = c["receptor_signs"]
+    unsigned = c["modulated_targets"] - max(r["with_data"] for r in rs["coverage"]) - sum(f["targets"] for f in rs["facts"])
+    assert f"no tone on the {unsigned:,} targets without receptor data" in out     # a fact's targets have a tone
     assert float([l for l in out.splitlines() if l.strip().startswith("MN9")][0].split()[-2]) > 5   # bitter now excites (test slice; 0 under "modulators")
     main(["--parts", "--no-receptor-signs", "--curated", "off", "--stim", "LB1a,LB1b:150", "--watch", "MN9", "--ms", "300"])
     out = capsys.readouterr().out

@@ -455,6 +455,46 @@ def ontology() -> Ontology:
     return _ONT
 
 
+_VIEWS: dict = {}
+
+
+def ontology_for(conn=None) -> Ontology:
+    """The ontology as one connectome's cell types see it. The kit's type map is keyed by MaleCNS names; a file
+    can name more classes for its own types: the female fly's FlyWire file carries the FBbt classes FlyWire gives
+    each type (``meta["fbbt"]``: KCab, KCapbp-m ...), and its aliases say which MaleCNS type a FlyWire type is
+    (CB0701 is MN9), so it takes that type's classes. Types the map already has keep their entry. For the male
+    file (neither) this is :func:`ontology` itself."""
+    ont = ontology()
+    if conn is None or ont.empty:
+        return ont
+    file_fbbt = (getattr(conn, "meta", None) or {}).get("fbbt") or {}
+    aliases = getattr(conn, "aliases", None) or {}
+    if not file_fbbt and not aliases:
+        return ont
+    key = (id(ont), _GENERATION, getattr(conn, "dataset", ""), id(getattr(conn, "meta", None)))
+    view = _VIEWS.get(key)
+    if view is not None:
+        return view
+    names = set(conn.tables["types"])
+    extra: dict[str, dict] = {}
+    for t, cids in file_fbbt.items():
+        known = [c for c in cids if c in ont.classes]
+        if t in names and t not in ont.types and known:
+            extra[t] = {"fbbt": known, "route": "file"}
+    for name, target in aliases.items():                 # the kit's name -> this file's type of that name
+        e = ont.types.get(name)
+        if e and target in names and target not in ont.types:
+            cur = extra.setdefault(target, {"fbbt": [], "route": "alias"})
+            cur["fbbt"] = sorted(set(cur["fbbt"]) | set(e.get("fbbt", [])))
+    view = ont if not extra else Ontology(
+        {"types": {**ont.types, **extra}, "overlay_source": ont.overlay_source},
+        {"classes": ont.classes, "roots": ont.roots, "source": ont.source})
+    if len(_VIEWS) > 8:
+        _VIEWS.clear()
+    _VIEWS[key] = view
+    return view
+
+
 def receptors() -> Receptors:
     global _RX
     if _RX is None:
@@ -483,7 +523,7 @@ def _type_mask(conn, names) -> np.ndarray:
 
 def fbbt_mask(conn, value: str) -> np.ndarray:
     """``fbbt:<id or label>``: every neuron whose type maps to the class or to anything below it."""
-    ont = ontology()
+    ont = ontology_for(conn)
     cids = ont.resolve(value)
     if not cids:
         raise ValueError(f"no FBbt class called '{value}' among the ones the kit's cell types map to")
@@ -502,7 +542,7 @@ def rx_mask(conn, value: str) -> np.ndarray:
     if not m:
         raise ValueError(f"a receptor filter looks like rx:Dop2R or rx:Dop2R>0.5, not '{value}'")
     gene, op, thr = m.group(1), m.group(2), m.group(3)
-    rx, ont = receptors(), ontology()
+    rx, ont = receptors(), ontology_for(conn)
     if rx.empty:
         raise ValueError("rx: needs the receptor expression table (data/vfb_receptors.json.gz), which is not installed")
     known = {g.lower(): g for g in rx.genes}
@@ -546,12 +586,18 @@ def file_curated(conn) -> dict[str, dict]:
     table = (getattr(conn, "meta", None) or {}).get("known_nt") or {}
     if not table:
         return {}
-    ont = ontology()
+    ont = ontology_for(conn)
     out = {}
     for t, v in table.items():
         e = None if ont.empty else ont.types.get(t)
-        out[t] = {"nt": list(v["nt"]), "evidence": "literature", "fbbt": list(e["fbbt"]) if e and e.get("fbbt") else [""],
-                  "source": v.get("source", "")}
+        nts, source = list(v["nt"]), v.get("source", "")
+        if e and e.get("nt") and e.get("evidence") == "literature" and not e.get("coarse"):
+            # both are literature: take what either reports (a co-transmitter one of them lists is kept; where the
+            # two give fast transmitters of opposite signs, the rule then changes no sign)
+            nts = nts + [x for x in e["nt"] if x not in nts]
+            source = f"{source}; Virtual Fly Brain"
+        out[t] = {"nt": nts, "evidence": "literature", "fbbt": list(e["fbbt"]) if e and e.get("fbbt") else [""],
+                  "source": source}
     return out
 
 
@@ -580,7 +626,7 @@ def transmitter_overrides(conn, policy: str = "modulators", modulators=MODULATOR
     action = np.full(n, None, dtype=object)
     curated = np.full(n, None, dtype=object)
     rows: list[dict] = []
-    ont = ontology()
+    ont = ontology_for(conn)
     counts = collections.Counter()
     own = file_curated(conn)
     if policy == "off" or (ont.empty and not own):
@@ -678,7 +724,7 @@ def receptor_signs(conn, targets: np.ndarray, modulators, unknown: float = 0.0) 
     row per modulator."""
     K, T = len(modulators), int(targets.size)
     out = np.full((K, T), unknown, dtype=np.float32)
-    rx, ont = receptors(), ontology()
+    rx, ont = receptors(), ontology_for(conn)
     coverage = [{"nt": m.nt, "targets": T, "with_data": 0, "mean_sign": 1.0, "negative": 0} for m in modulators]
     if rx.empty or ont.empty or T == 0:
         return out, coverage
@@ -701,7 +747,7 @@ def receptor_signs(conn, targets: np.ndarray, modulators, unknown: float = 0.0) 
 
 def receptors_of_type(type_name: str, conn=None) -> dict | None:
     """For the popover: the receptors a type's adult cluster expresses, with the data set."""
-    rx, ont = receptors(), ontology()
+    rx, ont = receptors(), ontology_for(conn)
     hit = rx.for_type(type_name, ont, conn)
     if hit is None:
         return None
@@ -715,4 +761,4 @@ def receptors_of_type(type_name: str, conn=None) -> dict | None:
 
 
 def describe_type(type_name: str, conn=None) -> dict | None:
-    return ontology().describe_type(type_name, conn)
+    return ontology_for(conn).describe_type(type_name, conn)

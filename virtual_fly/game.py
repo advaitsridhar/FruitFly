@@ -348,6 +348,7 @@ class Game:
         self.mode = "idle"
         self.wander = dict(walking=True, left=2.0, yaw=0.0)
         self.runaway_s = 0.0
+        self.graded_eps = 0.0                         # the graded cells' release quanta per second (parts list)
         self.since_input = 0.0
         self.calms = 0
         self.message, self.message_left = "", 0.0
@@ -540,12 +541,20 @@ class Game:
                     else:                                # superseded while the process was starting
                         handle.cancel()
                 try:
-                    rows = handle.wait(progress)
+                    rows, where = handle.wait(progress), "process"
+                except RuntimeError as e:
+                    if handle.cancelled or self._survival_token is not token:
+                        raise
+                    print("the re-test process failed, re-testing in a thread:", e)   # e.g. it could not import
+                    failed = handle
+                else:
+                    failed = None
                 finally:
                     with self._retest_lock:                  # done: let go of its queue (no leaked semaphores at exit)
                         if self._retest_handle is handle:
                             self._retest_handle = None
-                where = "process"
+                if failed is not None:
+                    handle = None
             if cached is None and handle is None:
                 brain = self.brain_factory(conn, parts=self.parts_arg(self.parts_on))
                 rows = survival_report(brain, profile=self.profile_name, on_progress=progress,
@@ -1068,7 +1077,10 @@ class Game:
             self.hz_shown[k] = self.hz_shown.get(k, 0.0) + (v - self.hz_shown.get(k, 0.0)) * min(1.0, dt / 0.15)
         self.t += dt
         self.message_left -= dt
-        # watchdog: this simple model can lock into runaway firing (mostly the smell centre)
+        # watchdog: this simple model can lock into runaway firing. It counts events: spikes plus the graded cells'
+        # release quanta (parts list), each one a spike's worth of transmitter; the graded share is shown apart
+        n_graded = int(b._gmask[spikes].sum()) if spikes.size and b._graded_idx.size else 0
+        self.graded_eps = n_graded / dt
         sps = spikes.size / dt
         self.since_input = 0.0 if rates else self.since_input + dt
         self.runaway_s = self.runaway_s + dt if sps > 150000 else 0.0
@@ -1126,7 +1138,8 @@ class Game:
             "hz": {k: round(v, 1) for k, v in hz.items()},
             "motor": {k: round(v, 3) for k, v in self.decoder.m.items()},
             "driver": self.driver, "mode": self.mode,
-            "spikes": vis.tolist(), "sps": int(sps), "stims": len(self.brain.stim),
+            "spikes": vis.tolist(), "sps": int(sps), "graded_eps": int(self.graded_eps),
+            "stims": len(self.brain.stim),
             "calms": self.calms, "msg": self.message if self.message_left > 0 else "",
             "silenced": sorted(self.user_silenced),
             "baseline": sorted(set(self.brain.silenced) - self.user_silenced),
@@ -1227,7 +1240,7 @@ class Game:
             "genome": {"levels": [{"level": lv, "label": lb} for lv, lb in wiring.LEVELS],
                        "rules": {"type_groups": None}},
             "parts": {"tables": self.parts_list().describe(), "counts": self.parts_counts()},
-            "vfb": vfb.ontology().summary(c),
+            "vfb": vfb.ontology_for(c).summary(c),
             "settings": self.brain.settings(),
             "decoder": self.decoder.dn_targets,
             "columnar_vision": self.columnar_on,

@@ -62,7 +62,7 @@ def test_modulators_lose_their_fast_synapses_and_leave_a_tone(conn):
                                          "modulated_targets": parts.parts.mod_targets.size,
                                          "modulators": ["dopamine", "octopamine", "serotonin"], "graded_rate_hz": 300.0,
                                          "curated": "modulators", "receptor_signs": True, "unknown_sign": 1.0, "co_release_neurons": 0,
-                                         "curated_neurons": 0, "local": ["APL"], "receptor_facts": ["APL", "prefix:HS,prefix:VS"]}
+                                         "curated_neurons": 0, "local": ["APL"], "receptor_facts": ["APL", "VS,regex:^VS[0-9]+$"]}
     # dopamine drives the MBONs directly in the published model; with the parts list it does not
     assert _measure(plain, {"PPL101": 300}).rate("MBON11") > 20
     assert _measure(parts, {"PPL101": 300}).rate("MBON11") == 0 and parts.rate("PPL101") > 150
@@ -298,12 +298,15 @@ def test_a_target_without_receptor_data_feels_no_tone(conn):
 
 
 def test_a_measured_effect_stands_in_for_an_unknown_receptor(conn):
-    """The HS/VS fact: octopamine raises their gain (Suver et al. 2012), receptor unknown; the other modulators,
-    with no data, do nothing to them."""
-    cp = P.PartsList().compile(conn)
+    """A fact with a measured effect and no receptor (the default names the VS cells: octopamine raises their
+    gain, Suver et al. 2012); the other modulators, with no data, do nothing to its cells."""
+    assert any(f.spec.startswith("VS,") and f.effects == (("octopamine", 1.0),) and not f.receptors
+               for f in P.RECEPTOR_FACTS)
+    fact = P.ReceptorFact("HSN,HSS", (), "test cells", effects=(("octopamine", 1.0),))
+    cp = P.PartsList(receptor_facts=(*P.RECEPTOR_FACTS, fact)).compile(conn)
     k = {m.nt: j for j, m in enumerate(cp.parts.modulators)}
-    row = next(f for f in cp.counts["receptor_signs"]["facts"] if f["spec"] == "prefix:HS,prefix:VS")
-    idx = conn.select("prefix:HS,prefix:VS")
+    row = next(f for f in cp.counts["receptor_signs"]["facts"] if f["spec"] == "HSN,HSS")
+    idx = conn.select("HSN,HSS")
     own = idx[~np.isin(conn.types[idx], row["left_to_the_atlas"])]        # an atlas cluster, where there is one, wins
     pos = cp.target_pos[own]
     pos = pos[pos >= 0]

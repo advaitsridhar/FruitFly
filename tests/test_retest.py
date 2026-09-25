@@ -98,3 +98,21 @@ def test_a_fly_tested_before_with_the_same_settings_comes_from_the_cache(conn):
         rows.append((g.genome["survival"]["where"], g.genome["survival"]["results"]))
     assert rows[0][0] == "thread" and rows[2][0] == "cache" and rows[2][1] == rows[0][1]
     assert rows[1][0] == "thread"                          # parts off on this fly: not tested before
+
+
+def test_a_retest_process_that_dies_falls_back_to_a_thread(conn, monkeypatch):
+    class Broken:                                            # a child that could not start (e.g. an import failed)
+        def __init__(self, spec):
+            self.cancelled = False
+
+        def cancel(self):
+            self.cancelled = True
+
+        def wait(self, on_progress=None):
+            raise RuntimeError("the re-test process stopped (exit code 1)")
+    monkeypatch.setattr(RT, "Retest", Broken)
+    g = Game(build_brain(conn, "game", seed=0), autopilot=False, seed=1, retest="process")
+    assert g.action({"type": "parts", "on": True})["ok"]
+    assert _wait(g, lambda: g.genome["survival"] and not g.genome["survival"]["running"], secs=120)
+    sv = g.genome["survival"]
+    assert "error" not in sv and sv["where"] == "thread" and sv["tested"] > 0

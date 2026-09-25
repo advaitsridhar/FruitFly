@@ -123,7 +123,7 @@ def make_handler(game):
                     info["parts"] = game.brain.parts.role(i) if game.brain.parts is not None else None
                     return self._json({"ok": True, "neuron": info})
                 if path == "/api/ontology":
-                    ont = vfb.ontology()
+                    ont = vfb.ontology_for(conn)
                     if get("id"):
                         info = ont.class_info(get("id"), conn)
                         if info is None:
