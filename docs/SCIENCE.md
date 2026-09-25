@@ -1900,7 +1900,11 @@ the parquet file needs `pyarrow` (`pip install -e ".[female]"`).
   the low-confidence calls from the literature (6,104 of the 8,452 R1-6 become inhibitory; the 2,348
   confident cholinergic calls stay, and `--curated all` makes all of them inhibitory). Nothing in the
   kit drives the photoreceptors (the retina feeds T4/T5 directly), so no experiment depends on their
-  sign; a zap of R1-6 in the Neuron lab would mostly excite her lamina. With the model's signs swapped
+  sign; a zap of R1-6 in the Neuron lab would mostly excite her lamina. A possible improvement, not
+  adopted because the kit avoids overriding the data with the literature where it can: take the sign
+  from the literature column wherever it names histamine, a transmitter the predictor cannot output
+  (R1-6, R7, the eyelet photoreceptors and MsAHN/MtAHN; R8, which releases acetylcholine as well,
+  would keep its prediction). That would make her photoreceptors inhibitory, as the male's are. With the model's signs swapped
   in, every female experiment (pure profile, game with the parts list off and on, five seeds each)
   keeps its verdict and its after-stimulus tally. Readouts move a little; the largest shifts are MN9
   under sugar with the fruitless neurons silenced (parts on) 82.5 → 73.0 Hz, DNa02 right under
