@@ -1454,12 +1454,43 @@ against 7.5 %, where real flies use roughly 5-10 % (section 4.3). Every subtype 
 `curated="off"`, where DPM has no fast GABA, local release still fixes MBON11 (20-31 Hz) and the
 Kenyon cells stay at 2.3-2.5 Hz. The switch between APL and DPM is itself an artefact of two spiking
 point neurons inhibiting each other. The real pair is also coupled by heterotypic gap junctions
-(Wu et al. 2011), which the model does not have. Two more limits: the kit's connectome has no synapse positions, so APL's synapses on
-Kenyon-cell dendrites in the calyx, where all lobes meet, are placed in the lobe of the cell they
-touch, which probably overstates the locality there. And without receptor signs every tone raises
-the gain, which on top of local release drives the vinegar readouts past their ceilings.
+(Wu et al. 2011), which the model does not have. One more limit: without receptor signs every tone
+raises the gain, which on top of local release drives the vinegar readouts past their ceilings.
 `fly-brain --parts --global-apl` (or `PartsList(local=())`) gives the v2.5 behaviour of APL back
 with everything else unchanged.
+
+**Where APL's synapses really are (v2.8).** The kit's connectome holds one synapse count per pair of
+neurons and no positions, so v2.6 placed each APL synapse in the lobe of the Kenyon cell it touches.
+`tools/harvest_neuprint_rois.py` asks neuPrint (`male-cns:v1.0`, through the repository's GitHub
+Actions workflow and its token) for every connection into and out of APL and DPM, split by neuPrint's
+primary regions: `data/mb_roi_connectivity.json.gz`, 5,646 neurons and 75,475 pair-region rows. Its
+per-pair totals match the kit's synapse counts exactly, and they match the public per-synapse release
+of the same data (gs://flyem-male-cns) region by region. About a third of APL's Kenyon-cell synapses
+are not where v2.6 put them. 15.5 % are in the calyx and 8 % in the pedunculus, where Kenyon cells of
+every lobe meet, and 11 % lie outside every mushroom-body region (the accessory calyces among them).
+
+When the table is present (it ships with the kit), `LOCAL`'s compartments are neuPrint's
+mushroom-body regions: calyx, pedunculus, and the γ, α, β, α′ and β′ lobes, per side. A synapse outside
+them keeps the whole cell's release. The rule itself is unchanged: each compartment's Kenyon-cell
+input density against APL's mean, capped at 1, with the 20 ms time constant. A target's mix is now
+where APL's synapses onto it are, so no Kenyon-cell lobe is assumed. Without the table, and on grown or
+rewired flies whose pairs the table does not cover, the v2.6 lobe placement is used. During vinegar
+(game profile, default parts list), the release onto each region, weighted by APL's output synapses
+there, is:
+
+| seed | γ lobe | α′ lobe | β′ lobe | α, β lobes, calyx, pedunculus |
+|---|---|---|---|---|
+| 0 | 0.57 | 0.92 | 0.87 | 1.0 |
+| 1 | 0.53 | 0.88 | 0.86 | 1.0 |
+
+MBON11 fires 43, 44, 36, 33 and 38 Hz on five fresh seeds (v2.6: 51, 34, 43, 38, 38). 16.3-16.4 % of
+Kenyon cells fire to vinegar. All 16 validated experiments pass, with the same two fragile readouts as
+before (section 2.3). Only vinegar drives the Kenyon cells, so the other 15 give identical numbers. The
+change corrects the anatomy but no verdict. It does not make the Kenyon-cell code sparser either, since
+the density comes from the APL/DPM switch above, and the switch is unchanged. A separate check with
+every unlabelled synapse given the region of its nearest labelled neighbour, and with seven regions
+not split by side, gave the same picture on twenty seeds (MBON11 41.0 ± 10.4 Hz, Kenyon cells 15.3 %
+active).
 
 ### 8.3 Electrical synapses between APL and DPM: tried, not adopted (v2.7)
 
@@ -1609,7 +1640,7 @@ The starter kit's list, extended. These are the things a neuroscientist would po
    the HS cells hit under wide-field motion. The mushroom body's two wide-field neurons, APL and
    DPM, are spiking points that inhibit each other; whichever wins sets the inhibition of the
    whole mushroom body. With the parts list, APL's release follows the Kenyon cells around each
-   target, but its calyx synapses are placed by lobe and its gap junctions with DPM are missing
+   target, by neuPrint's mushroom-body regions, but its gap junctions with DPM are missing
    (section 8.2; adding them does not make the code sparser, section 8.3).
 2. **Runaway loops** are a property of the pure model, not of the fly. The game silences 420
    antennal-lobe local neurons and 340 dopamine neurons and adds fatigue to keep the brain sane;

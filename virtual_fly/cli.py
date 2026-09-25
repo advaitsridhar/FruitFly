@@ -227,7 +227,8 @@ def main(argv=None):
               + (f"; curated transmitters ({cur['policy']}): {cur['neurons']:,} neurons in {cur['types']:,} types changed" if cur.get("neurons") else "")
               + (f"; receptor signs on {with_data:,} modulated targets" if with_data else "")
               + "".join(f"; receptors from the literature for {f['spec']} ({', '.join(f['receptors'])})" for f in c["receptor_signs"].get("facts", []) if f["neurons"])
-              + "".join(f"; {x['spec']} releases locally ({len(x['groups'])} compartments)" for x in c["local"])
+              + "".join(f"; {x['spec']} releases locally ({x['compartments']} compartments, by "
+                        f"{'neuPrint region' if x.get('mode') == 'regions' else 'lobe'})" for x in c["local"])
               + (f"; overrides: {', '.join(p['spec'] + ' -> ' + ', '.join(f'{k} {v}' for k, v in p.items() if k in ('theta_mv', 'graded') and v is not None) for p in c['params'])}" if c["params"] else ""))
     if args.genome_sweep:
         from .experiments import survival
