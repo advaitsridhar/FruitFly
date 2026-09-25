@@ -208,7 +208,10 @@ for the odour being smelled. **Record** saves the session (and, optionally, ever
 
 **Switch to the female fly.** `py fly_game.py --female` and `py fly_brain.py --female` run the same
 kit on FlyWire, the whole female brain the published model was built on (Dorkenwald et al. 2024), with
-the model exactly as published: every connection, and 0.275 mV per synapse. The experiments and senses
+the published model's wiring: every connection, and 0.275 mV per synapse. Each neuron's sign (excitatory
+or inhibitory) comes from FlyWire's current transmitter prediction, which differs from the published
+model's own table on 1.2 % of connections, mostly uncertain calls in the optic lobe; it matches the
+literature better, and the model's signs change no result (`docs/SCIENCE.md` section 9.1). The experiments and senses
 find her cells under the male names (`MN9` is FlyWire's `CB0701`, and so on). Cells she doesn't have
 come out as n/a, never as 0 Hz: she has no nerve cord, and no male-specific cells such as pIP10. Sugar
 drives her MN9 and, in the published model's profile (`fly_brain.py --female`), bitter wins over it, as
@@ -296,7 +299,7 @@ feels none. That rule closed a leak of song past the
 silenced fruitless neurons (`python fly_brain.py --one-sign-rule` brings back the old rule, under which
 every tone raised every target's gain; the game always uses the new one). The reflexes are re-tested on
 the switch (the eleven the Genome card lists; all 16 validated experiments pass in `fly_brain.py
---parts`, none of them fragile; `python fly_brain.py --global-apl` puts APL back to one cell releasing
+--profile game --parts`, none of them fragile; `python fly_brain.py --global-apl` puts APL back to one cell releasing
 the same everywhere). Every
 re-test runs each experiment five times on a fly with nothing learned carried over between runs, in a
 separate low-priority process so the game keeps its speed, and a reflex that passes on average but

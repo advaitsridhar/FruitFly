@@ -1234,7 +1234,8 @@ class Game:
             "edges": int(c.n_edges), "synapses": int(c.n_syn.sum()),
             "dataset": c.dataset, "sex": c.sex,
             "readouts": self.readout_meta,
-            "checks": [{"id": i, "text": t} for i, t in CHECKS if i != "court" or self.readouts["pIP10"].size],
+            "checks": [{"id": i, "text": t} for i, t in CHECKS                    # none this fly cannot do
+                       if (i != "court" or self.readouts["pIP10"].size) and not (c.sex == "female" and i in ("groom", "sound"))],
             "odours": [{"id": o.id, "name": o.name, "glomeruli": o.glomeruli, "innate": o.innate, "colour": o.colour,
                         "note": o.note} for o in ODOURS.values()],
             "scenarios": [{"id": k, "name": s.name, "description": s.description} for k, s in SCENARIOS.items()],
@@ -1261,21 +1262,25 @@ class Game:
         src = "MaleCNS" if male else "FlyWire"
         return {
             "wiring": [
-                "Sugar taste neurons → MN9, the proboscis motor neuron. Bitter taste keeps MN9 silent, even on top of sugar.",
+                "Sugar taste neurons → MN9, the proboscis motor neuron. Bitter taste keeps MN9 silent"
+                + (", even on top of sugar." if male else "; on top of sugar only with the published model's settings "
+                   "(fly_brain.py --female), not the game's (MN9 7-13 Hz)."),
                 "Looming detectors (LC4, LPLC2) → giant fibre DNp01, the escape command.",
                 "A small moving object seen on one side (LC10a, a courtship-chase cell type) → DNa02 on that same side → a turn toward it.",
-                "Head bristles → MDN, the 'moonwalker' backward-walking neurons. Antennal sensors (Johnston's organ) → aDN1/aDN2 grooming neurons.",
+                "Head bristles → MDN, the 'moonwalker' backward-walking neurons."
+                + (" Antennal sensors (Johnston's organ) → aDN1/aDN2 grooming neurons." if male else ""),
                 "Odour receptor neurons → projection neurons → a sparse, odour-specific Kenyon-cell code → mushroom body output neurons.",
-                "Bitter taste → PPL1 dopamine neurons (the punishment signal for learning).",
+                *(["Bitter taste → PPL1 dopamine neurons (the punishment signal for learning)."] if male else []),
                 "Which Kenyon-cell synapses are plastic and which dopamine neurons gate each MBON: read from the wiring (DAN→MBON synapses).",
-                ("pC1 courtship neurons → pIP10 → wing motor neurons (song), and → DNp13; a female seen as a small moving object → LC10a → DNa02 (the chase)."
-                 if male else "A small moving object seen on one side → LC10a → DNa02 on that side (the male's chase route; this female brain has no pIP10 and no nerve cord)."),
-                "A loud sound → Johnston's organ A/B neurons → the giant fibre (a startle jump), and wind on the antennae → grooming and backing neurons.",
+                *(["pC1 courtship neurons → pIP10 → wing motor neurons (song), and → DNp13; a female seen as a small moving object → LC10a → DNa02 (the chase)."] if male else []),
+                ("A loud sound → Johnston's organ A/B neurons → the giant fibre (a startle jump), and wind on the antennae → grooming and backing neurons."
+                 if male else "In this female brain Johnston's organ reaches the giant fibre and the grooming neurons only weakly (5-9 Hz): "
+                 "a clap does not startle her and dust does not make her groom (docs/SCIENCE.md 9.4)."),
                 "Wide-field motion → T4/T5 (" + ("driven column by column from the retina" if self.columnar_on else
                                                  "driven as whole populations from the retina's motion signal") +
                 ") → HS cells → DNa02 and DNp15 on the same side: the optomotor reflex.",
                 ("Which neurons express fruitless and doublesex, and which are male-specific or dimorphic: the MaleCNS annotation, read from the data. Silencing the fruitless neurons stops the song (pIP10 and its route to the wing motor neurons are fru+) and leaves feeding and escape alone."
-                 if male else "Which neurons express fruitless and doublesex, and which are female-specific or dimorphic: FlyWire's annotation (Schlegel et al. 2024), read from the data."),
+                 if male else "Which neurons express fruitless and doublesex, and which are female-specific or dimorphic: FlyWire's annotation (Schlegel et al. 2024), read from the data. This female brain has no pIP10 and no nerve cord, so no song."),
                 *(["A grown fly (Genome card) keeps the connectome's cell-type wiring rules and nothing else: 9 of the 11 validated reflexes survive on type-level rules, none on class-level rules."] if male else []),
                 f"The parts list (Genome card): which neurons make dopamine, octopamine or serotonin is the {src} transmitter prediction"
                 + ("" if male else ", corrected from FlyWire's literature column (known_nt)") +
@@ -1292,7 +1297,8 @@ class Game:
                  "How descending-neuron firing becomes movement: speeds, turn rates, the jump, and what wins when commands compete."),
                 "The walking urge, hunger and thirst, odour-guided steering (innate valence + the learned KC→MBON bias), the female's behaviour.",
                 "Sugar reward → PAM dopamine except PAM-γ3 (the wiring's taste-to-PAM routes give the best-connected PAM-α1 cells about a third of the drive they need; SCIENCE.md 4.5); the 'shock' tool → PPL1.",
-                "Courtship arousal: tapping the female fires the tarsal taste neurons (wiring), but their route to pC1 is ~8x too weak in this model, so contact also drives pC1 directly.",
+                ("Courtship arousal: tapping the female fires the tarsal taste neurons (wiring), but their route to pC1 is ~8x too weak in this model, so contact also drives pC1 directly."
+                 if male else "Courtship arousal: contact drives pC1 directly (this brain has no tarsal taste neurons)."),
                 "Wind on Johnston's organ is kept weak: at the rates real wind would give, the same neurons drive grooming in this model; there is no wind-steering route, so heading upwind is hand-built.",
                 "Efference copy: the eyes' motion signal is damped while the fly turns on purpose, as in real flies.",
                 "The learning rule's constants (rate, time windows, floor, forgetting).",

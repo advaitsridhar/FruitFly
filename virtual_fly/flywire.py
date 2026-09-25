@@ -16,10 +16,13 @@ The data files are not redistributed here: they come from their sources and the 
 your machine (about 130 MB to download once; the result is about 45 MB). Reading the parquet file needs
 ``pyarrow`` (``pip install pyarrow``).
 
-The female fly is the published model as published: every connection (the male file keeps only those of 5 or
-more synapses, the published model uses all of them), the paper's 0.275 mV per synapse (gain 1.0, see
-``brain.DEFAULT_GAIN``), and a sign from each neuron's predicted transmitter (on 98.9 % of connections the same
-sign as the published model's table; the annotations' predictions are newer). ``build_female(min_synapses=5)``
+The female fly has the published model's wiring: every connection (the male file keeps only those of 5 or
+more synapses, the published model uses all of them) and the paper's 0.275 mV per synapse (gain 1.0, see
+``brain.DEFAULT_GAIN``). Each neuron's sign comes from its predicted transmitter in the annotation file,
+FlyWire's current prediction. The published model's own table used a different version of the prediction;
+the two disagree on 6,028 neurons (1.24 % of connections, mostly low-confidence optic-lobe and sensory
+calls), the annotation file's signs fit the literature better, and no experiment's verdict depends on the
+choice (docs/SCIENCE.md 9.1). ``build_female(min_synapses=5)``
 builds a file cut like the male one, for comparisons.
 
 Transmitter *labels*, which the parts list reads, follow the male file's rules (the genetics panel reads the
@@ -85,7 +88,7 @@ NT_SIGN = {"acetylcholine": 1, "glutamate": -1, "gaba": -1, "histamine": -1, "do
            "serotonin": 1, "unclear": 1, "": 1}                        # as in the male file
 VOXEL_NM = (4.0, 4.0, 40.0)                                            # FlyWire's annotation voxel size
 # As in the male file: a transmitter predicted with less than this confidence is labelled "unclear". The sign stays
-# the prediction's, so the model without the parts list is the published one; the parts list (which reads the
+# the prediction's, so the label rule changes no sign; the parts list (which reads the
 # labels) then no longer takes a low-confidence "serotonin" for a modulator, and literature can fill the label.
 NT_CONF_FALLBACK = 0.5
 

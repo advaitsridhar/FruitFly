@@ -32,7 +32,7 @@ Returned once at start-up (gzip-compressed if the client accepts it; ~2.4 MB raw
 | `genetics` | `{expression: [{key, label, spec, n, high, types, gene, flybase}], transmitters: [{nt, spec, n, sign, synapse_share, genes: [{symbol, flybase}]}], unclear, genes: [...], readouts: {key: {n, fru, dsx, male, female, dimorphic, nt, tags}}, source}`; each `readouts[]` row also carries `genes` (its tags: `fru`, `dsx`, `♂`, `♀`, `♂♀`); `high` is null for the female fly, whose labels have no confidence grade |
 | `genome` | `{levels: [{level, label}]}`: the wiring levels the `grow` action accepts |
 | `parts` | `{tables: {modulators: [{nt, label, genes[], receptors, tau_ms, gain, why}], graded: [{spec, label, why}], params: [...], graded_rate_hz, curated, receptor_signs, unknown_sign, receptors: [{gene, fbgn, modulator, coupling, sign, why}], receptor_facts: [{spec, receptors[], effects: {<modulator>: sign}, what, label, why}], local: [{spec, groups[], label, tau_ms, by_region, why}]}, counts: {modulators: [{nt, neurons, synapses, targets, co_release, ...}], modulatory_neurons, modulated_targets, co_release_neurons, graded: [{spec, label, neurons, why}], graded_neurons, params, local: [{spec, label, neurons, groups: [{spec, neurons}], mode, compartments, by_label: {<compartment>: {input_synapses, output_synapses}}, outputs, placed, tau_ms, why}], curated: {policy, types, neurons, by_action, signs_changed, confident_signs_flipped, rows: [{type, n, predicted, curated[], evidence, action, fbbt, label, source?}]}, receptor_signs: {on, coverage: [{nt, targets, with_data, mean_sign, negative}], facts: [{spec, label, receptors[], effects, what, neurons, targets, signs, left_to_the_atlas[], why}], receptors[]}}}`: the parts list (`parts.py`) and what it finds in this connectome, including what the curated transmitters change and how many modulated targets have receptor data (for the female fly, rows from FlyWire's own literature column carry `source` and may have an empty `fbbt`) |
-| `vfb` | `{available, source, overlay_source, types_mapped, types_total, neurons_mapped, neurons_typed, classes, curated: {agree, differ, unclear_with_curated, differ_rows: [{type, n, predicted, curated[], evidence, fbbt, label}]}}` (or `{available: false}` without the data files): the anatomy-ontology join (`vfb.py`) |
+| `vfb` | `{available, source, overlay_source, types_mapped, types_total, neurons_mapped, neurons_typed, classes, curated: {agree, differ, unclear_with_curated, differ_rows: [{type, n, predicted, curated[], evidence, fbbt, label, source?}]}}` (or `{available: false}` without the data files): the anatomy-ontology join (`vfb.py`); the counts cover only this fly's types, and for the female fly they include FlyWire's own literature column (known_nt): those rows carry `source`, and one whose type has no FBbt class has an empty `fbbt` and the type name as `label` |
 | `decoder` | per decoder DN spec: motor synapses it reaches (`direct_motor_synapses`, `two_hop_motor_synapses_by_neuromere`) |
 | `columnar_vision` | bool: T4/T5 columns driven from the retina |
 | `whats_real` | `{wiring[], hand_built[], not_modelled[]}` text for the "What's real here?" dialog |
@@ -151,7 +151,7 @@ Driver lines whose expression images match the population's neurons, from Janeli
 searched, spread over the population. `{spec, n, sampled: [bodyId], unmatched: [bodyId],
 lines: [{line, library, score, neurons, split}], version}`; `score` is NeuronBridge's colour-depth
 match score, `neurons` how many of the searched neurons the line matched, `split` whether it is a
-split-GAL4 line. 400 for a bad spec, 502 when NeuronBridge cannot be reached.
+split-GAL4 line. 400 for a bad spec, and on the female fly (NeuronBridge matches MaleCNS neurons only); 502 when NeuronBridge cannot be reached.
 
 ### `GET /api/driver?line=SS02385`
 
@@ -160,7 +160,7 @@ line can have dozens): `{line, library, images, searched, neurons: [{body, index
 type, side, nb_type, score, in_kit}], spec, version}`. `nb_type` is the cell type NeuronBridge
 holds (an earlier MaleCNS version), `type` the kit's for the same body, `in_kit` whether the body
 exists in this data; `spec` (`body:...,body:...`) selects the best matches for `zap`, `silence` or
-`watch`. 400 for an unknown line, 502 when NeuronBridge cannot be reached.
+`watch`. 400 for an unknown line, and on the female fly; 502 when NeuronBridge cannot be reached.
 
 `GET /api/neuron` additionally returns `genes: [{symbol, flybase, why}]`: *fru* and *dsx* when the
 neuron is annotated as expressing them, and the synthesis/transport genes of its transmitter.

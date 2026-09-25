@@ -1863,15 +1863,49 @@ philshiu/Drosophila_brain_model) and FlyWire's neuron annotations (`Supplemental
 flyconnectome/flywire_annotations). Neither is redistributed; the built file is about 45 MB. Reading
 the parquet file needs `pyarrow` (`pip install -e ".[female]"`).
 
-* **The published model as published.** The female file keeps every connection (15,091,983 pairs,
+* **The published model's wiring.** The female file keeps every connection (15,091,983 pairs,
   54,492,922 synapses, 139,262 neurons), because the published model uses all of them and its
   0.275 mV per synapse was fitted on them. The kit's male file keeps only connections of 5 or more
   synapses, and its gain of 0.65 is a calibration for the male data (section 1.3). So the default
   gain follows the connectome: 0.65 for the male, **1.0** (the paper's value) for the female
   (`brain.DEFAULT_GAIN`). `build_female(min_synapses=5)` builds a file cut like the male one.
-* **Signs** come from each neuron's predicted transmitter in the annotations, the same rule as for
-  the male. They agree with the published model's own `Excitatory` column on 98.9 % of the
-  connections of 5 or more synapses (the annotations' predictions are newer).
+* **Checked against the sources.** Both files match their pinned SHA-256 hashes, and the built file
+  reproduces them exactly: every one of the 15,091,983 connections has the same presynaptic and
+  postsynaptic neuron and the same synapse count, the 139,262 neurons are the annotated plus the
+  connected ones, and every annotated neuron's cell type is the annotation file's.
+* **Signs** come from each neuron's predicted transmitter in the annotation file (FlyWire's current
+  prediction), the same rule as for the male. This is the one place where the female fly is not the
+  published model to the letter. The model's own `Excitatory` column comes from a different version
+  of the same kind of prediction (its repository does not say which), and the two disagree on 6,028
+  neurons (4.4 % of the 138,005 with outputs), 1.24 % of connections and 1.14 % of synapses (on
+  connections of 5 or more synapses, 1.08 %). The disagreements are uncertain calls: the median
+  confidence of these neurons' prediction is 0.43, and 72 % are below 0.5. They are mostly optic-lobe
+  (2,823) and sensory neurons (2,615, among them 1,512 photoreceptors), and fall into three kinds:
+  2,941 neurons the annotation file calls glutamatergic (inhibitory here) are excitatory in the model,
+  1,719 it calls cholinergic (excitatory here) are inhibitory there, and 1,348 it calls GABAergic
+  (inhibitory here) are excitatory there. Where FlyWire's literature column says what the cells
+  release, the annotation file's signs mostly fit it better. L4, L5, Mi1, T4d and T5d are cholinergic:
+  92-99 % of them are excitatory here, 77-97 % in the model. The GABAergic antennal-lobe local
+  neurons lLN2F_a, lLN2P_b and lLN2X04 are inhibitory here and excitatory in the model (il3LN6 is split
+  one and one here, excitatory there). Mi15 is the exception (cholinergic; 85 % excitatory here, 92 %
+  in the model). Both get the photoreceptors mostly wrong. FlyWire's predictor (Eckstein et al. 2024)
+  was trained on six transmitters (acetylcholine, GABA, glutamate, dopamine, serotonin, octopamine)
+  and has no histamine class: not one of her neurons is predicted histaminergic. So every
+  photoreceptor is forced into one of the six, with low confidence (median 0.39-0.48). Of her 8,452
+  R1-6 cells, 5,343 are called cholinergic, 1,675 glutamatergic and 530 GABAergic, so only 26 % are
+  inhibitory here (13 % in the model), although the literature column gives histamine for all of them
+  (Davis et al. 2020). R7, R8, the eyelet photoreceptors and the two ascending histaminergic neurons
+  (MsAHN, MtAHN) are affected in the same way. The male's predictor has a histamine class, and all his
+  R1-R6 and R7 cells are histaminergic and inhibitory. With the parts list on, the curated rule fills
+  the low-confidence calls from the literature (6,104 of the 8,452 R1-6 become inhibitory; the 2,348
+  confident cholinergic calls stay, and `--curated all` makes all of them inhibitory). Nothing in the
+  kit drives the photoreceptors (the retina feeds T4/T5 directly), so no experiment depends on their
+  sign; a zap of R1-6 in the Neuron lab would mostly excite her lamina. With the model's signs swapped
+  in, every female experiment (pure profile, game with the parts list off and on, five seeds each)
+  keeps its verdict and its after-stimulus tally. Readouts move a little; the largest shifts are MN9
+  under sugar with the fruitless neurons silenced (parts on) 82.5 → 73.0 Hz, DNa02 right under
+  wide-field motion (parts on) 70 → 60 Hz, MN9 under sugar (pure) 77.6 → 72.4 Hz and MBON11 under
+  vinegar (parts off) 9.8 → 6.2 Hz. So the kit keeps FlyWire's current signs.
 * **Transmitter labels**, which the parts list reads, follow the male file's
   rules, because FlyWire's predictor has no histamine class and calls whole types dopaminergic or
   serotonergic that are not. It labels 5,172 of her 5,177 Kenyon cells dopaminergic (every γ, α/β and
@@ -1880,7 +1914,7 @@ the parquet file needs `pyarrow` (`pip install -e ".[female]"`).
   neurons slow modulators with their fast synapses removed (male: 2,146), and the Kenyon cells
   would no longer drive the mushroom body. Two rules restore parity. A prediction below 0.5
   confidence is labelled "unclear", as in the male file (the sign stays the prediction's, so the
-  model without the parts list is still the published one). And FlyWire's literature column
+  label rule changes no sign; only the parts list reads the label). And FlyWire's literature column
   `known_nt` (TAPIN-seq, EASI-FISH, immunostaining) is stored per cell type and read by the parts
   list's curated rule, the way Virtual Fly Brain's classes are read for the male. A transmitter
   counts for a type when at least half of all its neurons name it; negative results, peptides and
@@ -1896,7 +1930,9 @@ the parquet file needs `pyarrow` (`pip install -e ".[female]"`).
   more co-transmitters than the ontology does (Delta7 and FC3 with serotonin), so a few female types
   gain a tone the male's do not. The MBONs' valence (the Learning panel and the learned odour bias)
   reads the column too: FlyWire leaves MBON03, MBON05 and MBON07 "unclear" and calls one MBON02
-  GABAergic, where the literature says glutamate. The Genetics card, the genes in a neuron's popover
+  GABAergic, where the literature says glutamate, and calls three of the nine MBON10 cells
+  glutamatergic (and one unclear), where it says GABA; MBON32 and MBON25,MBON34, which the column does
+  not cover, keep no valence. The Genetics card, the genes in a neuron's popover
   and the transmitter-gene selectors (`gene:ple`, `gene:Hdc`, ...) read the predictions as they are,
   after the 0.5 rule but without the literature column: on her, `gene:ple` selects 5,140 neurons,
   4,652 of them Kenyon cells, and `gene:Hdc` selects none. NeuronBridge's driver-line lookups match
@@ -2139,12 +2175,12 @@ The starter kit's list, extended. These are the things a neuroscientist would po
 * Bidaye SS, Laturney M, Chang AK, Liu Y, Bockemühl T, Büschges A, Scott K (2020). Two brain pathways
   initiate distinct forward walking programs in *Drosophila*. *Neuron* 108(3):469-485.
   doi:10.1016/j.neuron.2020.07.032
-* Blenau W, Daniel S, Balfanz S, Thamm M, Baumann A (2017). Dm5-HT2B: pharmacological
-  characterization of the fifth serotonin receptor subtype of *Drosophila melanogaster*. *Frontiers
-  in Systems Neuroscience* 11:28. doi:10.3389/fnsys.2017.00028
 * Blenau W, Thamm M (2011). Distribution of serotonin (5-HT) and its receptors in the insect brain
   with focus on the mushroom bodies. *Arthropod Structure & Development* 40(5):381-394.
   doi:10.1016/j.asd.2011.01.004
+* Blenau W, Daniel S, Balfanz S, Thamm M, Baumann A (2017). Dm5-HT2B: pharmacological
+  characterization of the fifth serotonin receptor subtype of *Drosophila melanogaster*. *Frontiers
+  in Systems Neuroscience* 11:28. doi:10.3389/fnsys.2017.00028
 * Burke CJ, Huetteroth W, Owald D, Perisse E, Krashes MJ, Das G, Gohl D, Silies M, Certel S,
   Waddell S (2012). Layered reward signalling through octopamine and dopamine in *Drosophila*.
   *Nature* 492(7429):433-437. doi:10.1038/nature11614
@@ -2153,6 +2189,8 @@ The starter kit's list, extended. These are the things a neuroscientist would po
 * Chiang AS, Lin CY, Chuang CC, Chang HM, Hsieh CH, Yeh CW, Shih CT, Wu JJ, et al. (2011).
   Three-dimensional reconstruction of brain-wide wiring networks in *Drosophila* at single-cell
   resolution. *Current Biology* 21(1):1-11. doi:10.1016/j.cub.2010.11.056
+* Cohn R, Morantte I, Ruta V (2015). Coordinated and compartmentalized neuromodulation shapes
+  sensory processing in *Drosophila*. *Cell* 163(7):1742-1755. doi:10.1016/j.cell.2015.11.019
 * Colas JF, Launay JM, Kellermann O, Rosay P, Maroteaux L (1995). *Drosophila* 5-HT2 serotonin
   receptor: coexpression with fushi-tarazu during segmentation. *PNAS* 92(12):5441-5445.
   doi:10.1073/pnas.92.12.5441
@@ -2162,10 +2200,11 @@ The starter kit's list, extended. These are the things a neuroscientist would po
   Kir H, Parkinson H, Brown NH, O'Kane CJ, Armstrong JD, Jefferis GSXE, Osumi-Sutherland D (2023).
   Virtual Fly Brain: an interactive atlas of the *Drosophila* nervous system. *Frontiers in
   Physiology* 14:1076533. doi:10.3389/fphys.2023.1076533
-* Cohn R, Morantte I, Ruta V (2015). Coordinated and compartmentalized neuromodulation shapes
-  sensory processing in *Drosophila*. *Cell* 163(7):1742-1755. doi:10.1016/j.cell.2015.11.019
 * Cruz TL, Pérez SM, Chiappe ME (2021). Fast tuning of posture control by visual feedback underlies gaze
   stabilization in walking *Drosophila*. *Current Biology* 31(20):4596-4607. doi:10.1016/j.cub.2021.08.041
+* Dacks AM, Green DS, Root CM, Nighorn AJ, Wang JW (2009). Serotonin modulates olfactory processing
+  in the antennal lobe of *Drosophila*. *Journal of Neurogenetics* 23(4):366-377.
+  doi:10.3109/01677060903085722
 * Davie K, Janssens J, Koldere D, De Waegeneer M, Pech U, Kreft Ł, Aibar S, Makhzami S,
   Christiaens V, Bravo González-Blas C, Poovathingal S, Hulselmans G, Spanier KI, Moerman T,
   Vanspauwen B, Geurs S, Voet T, Lammertyn J, Thienpont B, Liu S, Konstantinides N, Fiers M,
@@ -2174,11 +2213,11 @@ The starter kit's list, extended. These are the things a neuroscientist would po
 * Davis FP, Nern A, Picard S, Reiser MB, Rubin GM, Eddy SR, Henry GL (2020). A genetic, genomic,
   and computational resource for exploring neural circuit function. *eLife* 9:e50901.
   doi:10.7554/eLife.50901
-* Dacks AM, Green DS, Root CM, Nighorn AJ, Wang JW (2009). Serotonin modulates olfactory processing
-  in the antennal lobe of *Drosophila*. *Journal of Neurogenetics* 23(4):366-377.
-  doi:10.3109/01677060903085722
 * Dorkenwald S, Matsliah A, Sterling AR, Schlegel P, Yu SC, et al. (2024). Neuronal wiring diagram of an
   adult brain. *Nature* 634:124-138. doi:10.1038/s41586-024-07558-y (FlyWire, the female fly)
+* Eckstein N, Bates AS, Champion A, Du M, Yin Y, Schlegel P, Lu AK, Rymer T, et al. (2024).
+  Neurotransmitter classification from electron microscopy images at synaptic sites in
+  *Drosophila melanogaster*. *Cell* 187(10):2574-2594.e23. doi:10.1016/j.cell.2024.03.016
 * El-Kholy S, Stephano F, Li Y, Bhandari A, Fink C, Roeder T (2015). Expression analysis of
   octopamine and tyramine receptors in *Drosophila*. *Cell and Tissue Research* 361(3):669-684.
   doi:10.1007/s00441-015-2137-4
@@ -2187,10 +2226,10 @@ The starter kit's list, extended. These are the things a neuroscientist would po
 * fly-brain-minecraft (blendi-remade). The compact connectome file, the gain of 0.65, the
   Kenyon-cell input scaling and many of the sensory and motor neuron choices.
   https://github.com/blendi-remade/fly-brain-minecraft (commit `6cfa301`; code MIT, data CC BY 4.0).
-* Fujiwara T, Brotas M, Chiappe ME (2022). Walking strides direct rapid and flexible recruitment of visual
-  circuits for course control in *Drosophila*. *Neuron* 110(13):2124-2138. doi:10.1016/j.neuron.2022.04.008
 * Fujiwara T, Cruz TL, Bohnslav JP, Chiappe ME (2017). A faithful internal representation of walking
   movements in the *Drosophila* visual system. *Nature Neuroscience* 20(1):72-81. doi:10.1038/nn.4435
+* Fujiwara T, Brotas M, Chiappe ME (2022). Walking strides direct rapid and flexible recruitment of visual
+  circuits for course control in *Drosophila*. *Neuron* 110(13):2124-2138. doi:10.1016/j.neuron.2022.04.008
 * Gruntman E, Romani S, Reiser MB (2018). Simple integration of fast excitation and offset, delayed
   inhibition computes directional selectivity in *Drosophila*. *Nature Neuroscience* 21:250-257.
   doi:10.1038/s41593-017-0046-4
@@ -2199,16 +2238,16 @@ The starter kit's list, extended. These are the things a neuroscientist would po
 * Hafez OA, Escribano B, Ziegler RL, Hirtz JJ, Niebur E, Pielage J (2023). The cellular architecture
   of memory modules in *Drosophila* supports stochastic input integration. *eLife* 12:e77578.
   doi:10.7554/eLife.77578
+* Hallem EA, Carlson JR (2006). Coding of odors by a receptor repertoire. *Cell* 125(1):143-160.
+  doi:10.1016/j.cell.2006.01.050
+* Hampel S, Franconville R, Simpson JH, Seeds AM (2015). A neural command circuit for grooming
+  movement control. *eLife* 4:e08758. doi:10.7554/eLife.08758
 * Han K-A, Millar NS, Grotewiel MS, Davis RL (1996). DAMB, a novel dopamine receptor expressed
   specifically in *Drosophila* mushroom bodies. *Neuron* 16(6):1127-1135.
   doi:10.1016/S0896-6273(00)80139-7
 * Han K-A, Millar NS, Davis RL (1998). A novel octopamine receptor with preferential expression in
   *Drosophila* mushroom bodies. *Journal of Neuroscience* 18(10):3650-3658.
   doi:10.1523/JNEUROSCI.18-10-03650.1998
-* Hallem EA, Carlson JR (2006). Coding of odors by a receptor repertoire. *Cell* 125(1):143-160.
-  doi:10.1016/j.cell.2006.01.050
-* Hampel S, Franconville R, Simpson JH, Seeds AM (2015). A neural command circuit for grooming
-  movement control. *eLife* 4:e08758. doi:10.7554/eLife.08758
 * Handler A, Graham TGW, Cohn R, Morantte I, Siliciano AF, Zeng J, Li Y, Ruta V (2019). Distinct
   dopamine receptor pathways underlie the temporal sensitivity of associative learning. *Cell*
   178(1):60-75. doi:10.1016/j.cell.2019.05.040
@@ -2225,11 +2264,11 @@ The starter kit's list, extended. These are the things a neuroscientist would po
 * Hermanns T, Graf-Boxhorn S, Poeck B, Strauss R (2022). Octopamine mediates sugar relief from a
   chronic-stress-induced depression-like state in *Drosophila*. *Current Biology*
   32(18):4048-4056.e3. doi:10.1016/j.cub.2022.07.016
+* Hige T, Aso Y, Modi MN, Rubin GM, Turner GC (2015). Heterosynaptic plasticity underlies aversive
+  olfactory learning in *Drosophila*. *Neuron* 88(5):985-998. doi:10.1016/j.neuron.2015.11.003
 * Himmelreich S, Masuho I, Berry JA, MacMullen C, Skamangas NK, Martemyanov KA, Davis RL (2017).
   Dopamine receptor DAMB signals via Gq to mediate forgetting in *Drosophila*. *Cell Reports*
   21(8):2074-2081. doi:10.1016/j.celrep.2017.10.108
-* Hige T, Aso Y, Modi MN, Rubin GM, Turner GC (2015). Heterosynaptic plasticity underlies aversive
-  olfactory learning in *Drosophila*. *Neuron* 88(5):985-998. doi:10.1016/j.neuron.2015.11.003
 * Huang C, Maxey JR, Sinha S, Savall J, Gong Y, Schnitzer MJ (2018). Long-term optical brain imaging
   in live adult fruit flies. *Nature Communications* 9:872. doi:10.1038/s41467-018-02873-1
 * Huetteroth W, Perisse E, Lin S, Klappenbach M, Burke C, Waddell S (2015). Sweet taste and nutrient
@@ -2309,14 +2348,14 @@ The starter kit's list, extended. These are the things a neuroscientist would po
   dual-transmitting neurons. *PLoS Genetics* 16(2):e1008609. doi:10.1371/journal.pgen.1008609
 * Shiu PK, Sterne GR, Spiller N, Blumenthal E, et al. (2024). A *Drosophila* computational brain
   model reveals sensorimotor processing. *Nature* 634:210-219. doi:10.1038/s41586-024-07763-9
-* Stensmyr MC, Dweck HKM, Farhan A, Ibba I, Strutz A, Mukunda L, Linz J, Grabe V, Steck K,
-  Lavista-Llanos S, Wicher D, Sachse S, Knaden M, Becher PG, Seki Y, Hansson BS (2012). A conserved
-  dedicated olfactory circuit for detecting harmful microbes in *Drosophila*. *Cell*
-  151(6):1345-1357. doi:10.1016/j.cell.2012.09.046
 * Srivastava DP, Yu EJ, Kennedy K, Chatwin H, Reale V, Hamon M, Smith T, Evans PD (2005). Rapid,
   nongenomic responses to ecdysteroids and catecholamines mediated by a novel *Drosophila*
   G-protein-coupled receptor. *Journal of Neuroscience* 25(26):6145-6155.
   doi:10.1523/JNEUROSCI.1005-05.2005
+* Stensmyr MC, Dweck HKM, Farhan A, Ibba I, Strutz A, Mukunda L, Linz J, Grabe V, Steck K,
+  Lavista-Llanos S, Wicher D, Sachse S, Knaden M, Becher PG, Seki Y, Hansson BS (2012). A conserved
+  dedicated olfactory circuit for detecting harmful microbes in *Drosophila*. *Cell*
+  151(6):1345-1357. doi:10.1016/j.cell.2012.09.046
 * Sugamori KS, Demchyshyn LL, McConkey F, Forte MA, Niznik HB (1995). A primordial dopamine
   D1-like adenylyl cyclase-linked receptor from *Drosophila melanogaster* displaying poor affinity
   for benzazepines. *FEBS Letters* 362(2):131-138. doi:10.1016/0014-5793(95)00224-W
@@ -2356,12 +2395,12 @@ The starter kit's list, extended. These are the things a neuroscientist would po
   doi:10.1016/j.neuron.2010.08.041
 * Yamagata N, Hiroi M, Kondo S, Abe A, Tanimoto H (2016). Suppression of dopamine neurons mediates
   reward. *PLoS Biology* 14(12):e1002586. doi:10.1371/journal.pbio.1002586
-* Yang HH, Brezovec BE, Serratosa Capdevila L, Vanderbeck QX, Adachi A, Mann RS, Wilson RI (2024).
-  Fine-grained descending control of steering in walking *Drosophila*. *Cell* 187(22):6290-6308.
-  doi:10.1016/j.cell.2024.08.033
 * Yang HH, St-Pierre F, Sun X, Ding X, Lin MZ, Clandinin TR (2016). Subcellular imaging of voltage and
   calcium signals reveals neural processing in vivo. *Cell* 166(1):245-257.
   doi:10.1016/j.cell.2016.05.031
+* Yang HH, Brezovec BE, Serratosa Capdevila L, Vanderbeck QX, Adachi A, Mann RS, Wilson RI (2024).
+  Fine-grained descending control of steering in walking *Drosophila*. *Cell* 187(22):6290-6308.
+  doi:10.1016/j.cell.2024.08.033
 * Yorozu S, Wong A, Fischer BJ, Dankert H, Kernan MJ, Kamikouchi A, Ito K, Anderson DJ (2009).
   Distinct sensory representations of wind and near-field sound in the *Drosophila* brain.
   *Nature* 458:201-205.

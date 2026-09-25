@@ -34,9 +34,9 @@ FAST_NTS = ("acetylcholine", "gaba", "glutamate")
 
 def mbon_transmitters(conn: Connectome, idx) -> np.ndarray:
     """The MBONs' transmitters, taking the file's literature transmitter where it names exactly one fast one.
-    The female fly's FlyWire prediction leaves MBON03, MBON05 and MBON07 'unclear' and calls one MBON02
-    GABAergic, where her literature column (``meta["known_nt"]``) says glutamate; the male file has no such
-    table, so its predictions are used as they are."""
+    The female fly's FlyWire prediction leaves MBON03, MBON05 and MBON07 'unclear', calls one MBON02 GABAergic
+    and three MBON10 cells glutamatergic, where her literature column (``meta["known_nt"]``) says glutamate
+    and GABA; the male file has no such table, so its predictions are used as they are."""
     idx = np.asarray(idx)
     nt = conn.nt[idx].copy()
     known = (getattr(conn, "meta", None) or {}).get("known_nt") or {}

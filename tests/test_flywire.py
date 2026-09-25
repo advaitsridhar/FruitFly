@@ -333,7 +333,9 @@ def test_the_game_describes_the_female_fly_and_hides_what_she_lacks(female):
     real = " ".join(lay["whats_real"]["wiring"] + lay["whats_real"]["hand_built"])
     assert "FlyWire" in real and "→ pIP10 →" not in real and "MaleCNS annotation" not in real
     assert "column by column" not in real and "1 antennal-lobe local neurons" in real      # her one lLN1
-    assert all(p["spec"] != "pIP10" for p in lay["presets"]) and all(c["id"] != "court" for c in lay["checks"])
+    assert all(p["spec"] != "pIP10" for p in lay["presets"])
+    assert not {"court", "groom", "sound"} & {c["id"] for c in lay["checks"]}        # she cannot do these here
+    assert "PPL1" not in " ".join(lay["whats_real"]["wiring"]) and "even on top of sugar" not in real
     g.tick()
     hz = json.loads(g.state_json)["hz"]
     assert "MN9" in hz and "pIP10" not in hz and "TTMn" not in hz
