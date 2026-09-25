@@ -424,8 +424,8 @@ export class GeneticsPanel {
     setText($("vfbSummary"), `what the literature says: ${c.differ.toLocaleString()} cell types differ from the prediction (Virtual Fly Brain)`);
     $("vfbIntro").innerHTML = `${v.types_mapped.toLocaleString()} of ${v.types_total.toLocaleString()} cell types (${v.neurons_mapped.toLocaleString()} of ${v.neurons_typed.toLocaleString()} typed neurons) carry a class of the FlyBase anatomy ontology, ` +
       `so a neuron's popover can say what its type is and link to <a href="https://virtualflybrain.org" target="_blank" rel="noopener">Virtual Fly Brain</a>, and <code>fbbt:</code> selects a class and everything below it (Neuron lab). ` +
-      `The ontology's curated transmitter agrees with the MaleCNS prediction for ${c.agree.toLocaleString()} types and differs for ${c.differ.toLocaleString()}; ${c.unclear_with_curated.toLocaleString()} types the prediction leaves "unclear" get one. ` +
-      `With the parts list on (Genome card) the literature's word wins for the modulators. The largest disagreements:`;
+      `The ontology's transmitter agrees with the MaleCNS prediction for ${c.agree.toLocaleString()} types and differs for ${c.differ.toLocaleString()}; it names one for ${c.unclear_with_curated.toLocaleString()} types the prediction leaves "unclear". ` +
+      `With the parts list on (Genome card) the literature's word wins for the modulators and fills "unclear" predictions. The largest disagreements:`;
     const rows = $("vfbRows"); rows.innerHTML = "";
     for (const r of c.differ_rows || []) {
       const info = el("div", "g");
@@ -572,7 +572,7 @@ export class GenomePanel {
       setClass($("partsBtn"), "primary", !!p.on);
       const c = (this.L.parts && this.L.parts.counts) || {};
       const cur = c.curated || {}, rs = c.receptor_signs || {};
-      const withData = (rs.coverage || []).reduce((a, x) => a + (x.with_data || 0), 0);
+      const withData = (rs.coverage || []).reduce((a, x) => Math.max(a, x.with_data || 0), 0);   // the same targets for every modulator
       setText($("partsInfo"), p.on
         ? `${(c.modulatory_neurons || 0).toLocaleString()} dopamine, octopamine and serotonin neurons act through slow tones on ${(c.modulated_targets || 0).toLocaleString()} targets; ${(c.graded_neurons || 0).toLocaleString()} optic-lobe cells transmit graded signals`
           + (cur.neurons ? `; the literature re-types ${cur.neurons.toLocaleString()} neurons (${cur.types.toLocaleString()} types)` : "")

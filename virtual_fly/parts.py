@@ -30,10 +30,11 @@ Two more inputs come from Virtual Fly Brain through :mod:`virtual_fly.vfb` (v2.5
 * **Curated transmitters.** Where the fly anatomy ontology's literature-curated class of a cell type
   says its transmitter differs from the connectome's synapse-shape prediction (the DPM neuron is
   GABAergic and serotonergic, not dopaminergic; OA-ASM3 is octopaminergic, not serotonergic; Mi15
-  releases dopamine as well as acetylcholine), or where the prediction is "unclear" and any class
-  asserts one, the parts list gives the neuron the literature's machine: the right tone, its fast
-  synapses kept or removed, the right sign. ``curated`` picks the policy (see
-  :func:`virtual_fly.vfb.transmitter_overrides`).
+  releases dopamine as well as acetylcholine), or where the prediction is "unclear" and the curated
+  class asserts one, the parts list gives the neuron the literature's machine: the right tone, its
+  fast synapses kept or removed, the right sign. ``curated`` picks the policy (see
+  :func:`virtual_fly.vfb.transmitter_overrides`; ``"all"`` also lets the literature overrule confident
+  fast predictions and other connectomes' predictions fill "unclear" ones).
 * **Receptor signs.** A modulator's effect on a target follows the receptors the target's cell type
   expresses in the adult single-cell RNA-seq atlases (:data:`RECEPTORS`): Gs- and Gq-coupled receptors
   raise the target's gain, Gi-coupled ones lower it, each weighted by the fraction of cells expressing

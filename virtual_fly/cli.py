@@ -211,7 +211,7 @@ def main(argv=None):
             raise SystemExit(f"--part: {e}")
         c = overrides["parts"].compile(conn).counts
         cur = c["curated"]
-        with_data = sum(r["with_data"] for r in c["receptor_signs"]["coverage"])
+        with_data = max((r["with_data"] for r in c["receptor_signs"]["coverage"]), default=0)
         print(f"parts list on: {c['modulatory_neurons']:,} modulatory neurons ({', '.join(m['nt'] for m in c['modulators'])}) act through "
               f"slow tones on {c['modulated_targets']:,} targets; {c['graded_neurons']:,} graded cells"
               + (f"; curated transmitters ({cur['policy']}): {cur['neurons']:,} neurons in {cur['types']:,} types changed" if cur.get("neurons") else "")

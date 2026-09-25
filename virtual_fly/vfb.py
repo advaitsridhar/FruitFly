@@ -542,17 +542,18 @@ class Overrides:
 def transmitter_overrides(conn, policy: str = "modulators", modulators=MODULATOR_NTS) -> Overrides:
     """Apply the ontology's curated transmitters to the connectome's predictions.
 
-    ``off``: nothing. ``modulators``: fill "unclear" predictions from any class; for literature-curated
-    classes change *what kind of modulator* a neuron is (a co-releasing neuron keeps its fast synapses
-    and gains a tone; a neuron the literature calls octopaminergic and the prediction cholinergic gains
-    an octopamine tone and keeps its predicted synapses; one the prediction calls serotonergic and the
-    literature cholinergic loses its tone), never the sign of a confident fast prediction. ``all``: the
-    literature also wins over a confident fast prediction: its sign is flipped where the class asserts
-    fast transmitters of the other sign only, and a neuron the literature calls purely modulatory loses
-    its predicted fast synapses. Only literature-curated classes change a confident prediction; the
-    connectome-derived classes (FBbt:2xxxxxxx) and the coarse matches (a ``_a`` type mapped to its
-    stem's class, a neuron's class read from one VFB individual) only ever annotate. ``modulators`` are
-    the modulator names the caller models; a curated modulator outside them is ignored."""
+    ``off``: nothing. ``modulators`` (the default): the literature-curated classes fill "unclear"
+    predictions and change *what kind of modulator* a neuron is (a co-releasing neuron keeps its fast
+    synapses and gains a tone; a neuron the literature calls octopaminergic and the prediction
+    cholinergic gains an octopamine tone and keeps its predicted synapses; one the prediction calls
+    serotonergic and the literature cholinergic loses its tone), never the sign of a confident fast
+    prediction. ``all``: the literature also wins over a confident fast prediction (its sign is flipped
+    where the class asserts fast transmitters of the other sign only, and a neuron the literature calls
+    purely modulatory loses its predicted fast synapses), and the connectome-derived classes
+    (FBbt:2xxxxxxx: another data set's own prediction for the same type) fill "unclear" predictions.
+    They never change a confident one, and coarse matches (a ``_a`` type mapped to its stem's class, a
+    neuron's class read from one VFB individual) only ever annotate. ``modulators`` are the modulator
+    names the caller models; a curated modulator outside them is ignored."""
     if policy not in POLICIES:
         raise ValueError(f"curated policy must be one of {POLICIES}, not '{policy}'")
     n = conn.n
@@ -588,8 +589,8 @@ def transmitter_overrides(conn, policy: str = "modulators", modulators=MODULATOR
         for i in idx.tolist():
             k = conn.nt[i]
             unclear = k in ("", "unclear")
-            if not unclear and not literature:
-                continue                                     # another connectome's prediction: annotation only
+            if not literature and not (unclear and policy == "all"):
+                continue                                     # another connectome's prediction: only fills "unclear", only under "all"
             if k in S:
                 if mods and k in FAST_SIGN:                  # e.g. Mi15: cholinergic and dopaminergic
                     mod_nt[i], keep_fast[i] = mods[0], True

@@ -1188,25 +1188,25 @@ and not a lateral-horn neuron with the same symbol; prefer the adult class; neve
 one) and no guessing: a name that still matches two classes is left unresolved. RELATED synonyms
 are never used, because they are old names that collide (Tm36 is a RELATED synonym of TmY21, Li28
 of Li16). Comma-joined names map to every member and a `_a`/`_b` suffix falls back to its stem's
-class, marked *coarse*. That resolves {{OBO_TYPES}} types ({{OBO_PCT}} % of the typed neurons)
+class, marked *coarse*. That resolves 9,434 types (86.2 % of the typed neurons)
 without touching the network. The names the OBO lacks are VFB's own `name_in_male-cns` synonyms,
 which live only on VFB's server: a one-time harvest through the VFB connector (`search_terms` with
 one row per matching synonym, then `get_term_info` to check that the class carries the exact
-MaleCNS name) adds {{OVERLAY_TYPES}} more types ({{OVERLAY_NEURONS}} neurons: the 3,377
+MaleCNS name) adds 256 more types (9,436 neurons: the 3,377
 photoreceptors `R1-R6`, the 745 interommatidial bristle neurons `BM_InOm`, `KCab-m`, the LC10c
 subtypes, `MN9`, `pIP10`, `GNG232`, ...; for the 40 `pC1_*` subtypes and a dozen sensory groups
 that no class names, the class is read off one of the type's own neurons on VFB, found by its
-bodyId, and marked coarse). The same check on {{VERIFY_N}} of the offline matches (every
+bodyId, and marked coarse). The same check on 363 of the offline matches (every
 EXACT-synonym match, every type whose curated transmitter disagrees with the prediction, and random
-samples of the symbol and stem matches) confirmed {{VERIFY_OK}} and contradicted {{VERIFY_BAD}}: a
+samples of the symbol and stem matches) confirmed 352 and contradicted 11: a
 `_b` type whose stem class lists its MaleCNS members without it (`PS008_b`, `DNg36_b`, `CB1287_b`,
 ...) is left unresolved, and where VFB shows the MaleCNS name on a different class than the OBO
 match (hemibrain and MaleCNS reused a name for different cells: `SMP053`, `SLP305`, four `LHAV`
 types) the map uses that class, each checked by hand (`tools/vfb_overlay.json` records it). One
 in seven of the sampled stem matches is contradicted this way, which is why stem matches never
-drive the model (below). The result is `data/fbbt_map.json.gz` ({{MAP_TYPES}} types, {{MAP_PCT}} % of the typed neurons;
+drive the model (below). The result is `data/fbbt_map.json.gz` (9,690 types, 92.0 % of the typed neurons;
 `tools/vfb_overlay.json` holds the harvest so the build is reproducible) and
-`data/fbbt_tree.json.gz`, the {{TREE_CLASSES}} classes above them with labels, parents, symbols
+`data/fbbt_tree.json.gz`, the 9,833 classes above them with labels, parents, symbols
 and short definitions. The unresolved remainder is mostly names MaleCNS coined and no ontology
 class carries yet (`TmY9a`, `Tm38`, `MeTu3c`, most `SNta`/`SNpp` sensory groups, the `pC1_*`
 subtypes) and the 11,916 untyped neurons.
@@ -1222,15 +1222,16 @@ transmitter the literature asserts, and a link to VFB.
 
 **Curated transmitters.** The ontology asserts a transmitter for a class by making it a subclass of
 *cholinergic neuron*, *GABAergic neuron*, and so on; VFB's `get_known_neurotransmitters` reads the
-same assertions (a sample of {{NT_N}} classes checked through the connector agreed with the offline
-reading in {{NT_OK}}). Two kinds of class carry them: the literature-curated classes (FBbt ids below
+same assertions (a sample of 65 classes checked through the connector agreed with the offline
+reading in 65 of 65). Two kinds of class carry them: the literature-curated classes (FBbt ids below
 2000 0000: the transmitter comes from immunostaining, driver lines or transcriptomics cited in the
 class definition) and the systematic connectome-derived classes (`FBbt:2xxxxxxx`, one per hemibrain,
 FlyWire or MANC type, whose transmitter is that data set's own prediction). Against the MaleCNS
-prediction, the literature agrees for {{AGREE}} of the mapped types with a curated transmitter and
-differs for {{DIFFER}}; {{UNCLEAR_TYPES}} types whose prediction is "unclear" get one. With the parts
+prediction, the literature agrees for 7,400 of the mapped types with a curated transmitter and
+differs for 213; 184 types whose prediction is "unclear" get one. With the parts
 list on, the literature's word wins where the parts model cares (`PartsList(curated="modulators")`,
-the default; `vfb.transmitter_overrides` has the rules):
+the default, which uses the literature-curated classes only; `vfb.transmitter_overrides` has the
+rules):
 
 | what the curated class says | neurons | the parts list does |
 |---|---|---|
@@ -1241,26 +1242,27 @@ the default; `vfb.transmitter_overrides` has the rules):
 | MeVCMe1 and DNd03 (octopamine) and LPsP (dopamine) are modulatory, predicted fast | 8 | a tone is added and the predicted fast synapses are kept (under `curated="all"` they are removed) |
 | OA-ASM2, FB6H, FB7B, PAL03 and vMS16, predicted "unclear", are octopaminergic or dopaminergic | 10 | a tone and no fast synapses, like any modulatory neuron |
 | DNd02 and one vMS17, predicted "unclear", release a modulator and a fast transmitter | 3 | a tone and fast synapses |
-| 16 more "unclear" types whose only class is another connectome's type, predicted dopaminergic or serotonergic there (SMP143, ATL043, AVLP594, ...) | 30 | a tone (that data set's prediction, not the literature's) |
-| "unclear" types with a fast transmitter: TmY14 (91 neurons), LHAV4d1, CEM, aMe8 and two more from the literature, 151 types from another connectome's class | 590 | the sign of their fast synapses |
+| "unclear" types with a curated fast transmitter: TmY14 (91 neurons), LHAV4d1, CEM, aMe8 and two more | 114 | the sign of their fast synapses |
+| under `curated="all"` only: 16 more "unclear" types whose only class is another connectome's type, predicted dopaminergic or serotonergic there (SMP143, ATL043, AVLP594, ...) | 30 | a tone (that data set's prediction, not the literature's) |
+| under `curated="all"` only: 151 "unclear" types with another connectome's fast-transmitter prediction | 476 | the sign of their fast synapses |
 
 Tyramine has no place in the model and is ignored. PPL203 is one of the game profile's `class:DAN`
 neurons, whose fast synapses the game mutes by hand when the parts list is off; with the parts list on
 it keeps the GABA synapses the literature gives it. What the default policy does *not* do is flip the
 sign of a confident fast prediction: the literature classes disagree with MaleCNS on the fast
-transmitter of {{FAST_DIFFER}} (T3, L3, Mi2, Mi10, Tm39, ...), and where two data sets disagree on a
+transmitter of 25 types (5,892 neurons) (T3, L3, Mi2, Mi10, Tm39, ...), and where two data sets disagree on a
 fast transmitter the model has no way to pick. `curated="all"` lets the literature win there too (the
 signs flip, and the three modulatory types above lose their predicted fast synapses) for anyone who
 wants to see what that does (`fly-brain --curated all`); the popover shows the disagreement either
-way. Classes that are another connectome's type only ever fill an "unclear" prediction, and coarse
-matches (a `_a` type read as its stem's class, or a class read off one VFB individual) are never used
-for the model at all.
+way. Classes that are another connectome's type only fill "unclear" predictions, and only under
+`all` (the survival table below shows why), and coarse matches (a `_a` type read as its stem's
+class, or a class read off one VFB individual) are never used for the model at all.
 
 **Receptor signs.** The one net sign per modulator was the gap the parts list admitted to. VFB
-carries, for {{RX_CLASSES}} cell classes, the single-cell RNA-seq clusters of the Fly Cell Atlas
+carries, for 276 cell classes, the single-cell RNA-seq clusters of the Fly Cell Atlas
 (Li et al. 2022), Davie et al. (2018), the Aging Fly Cell Atlas, Özel et al. (2021) and others,
 and for each cluster the fraction of its cells expressing each gene (values of 20 % and above). A
-harvest of the 17 aminergic receptor genes (`data/vfb_receptors.json.gz`, {{RX_CLUSTERS}} clusters,
+harvest of the 17 aminergic receptor genes (`data/vfb_receptors.json.gz`, 2,117 adult clusters,
 CC-BY 4.0) lets the tone's sign follow the target: for a target whose type (or a parent class within
 two steps, provided it groups at most 150 kit types) has an adult cluster, the tone's weight is
 `clip(Σ sign_r · extent_r, -1, 1)` over that modulator's receptors, +1 for the Gs- and Gq-coupled
@@ -1279,17 +1281,39 @@ DopEcR 65 %: dopamine weight −0.14); LC10a's own adult optic-lobe cluster (Öz
 these receptors. Pupal, larval and embryonic clusters are never used, nor the day-70 aging atlas
 (VFB gives it no stage); where no adult cluster exists within two steps up the class tree (most of
 the central brain's small types, the giant fibre, MN9, the HS cells) the one-sign rule stands.
-Coverage on this connectome: {{RX_COVERAGE}}.
+Coverage on this connectome: 15,232 of the 38,998 modulated targets have an adult cluster, and
+their weight is net inhibitory on 2,004 of them for dopamine, 124 for octopamine and 8,478 for
+serotonin.
 
 **What it does to the validated experiments** (game profile; `fly-brain --profile game --parts
 --curated off|modulators|all`):
 
-| | parts off | parts on, curated off | curated: modulators (default) | curated: all |
-|---|---|---|---|---|
-| changed neurons | 0 | 0 | {{MOD_CHANGED}} | {{ALL_CHANGED}} |
-| passed | 16 / 16 | 15 / 16 | {{MOD_PASSED}} / 16 | {{ALL_PASSED}} / 16 |
+| | parts off | v2.4 parts list | + receptor signs | + curated transmitters (the default) | `curated="all"` |
+|---|---|---|---|---|---|
+| neurons whose transmitter role changes | 0 | 0 | 0 | 1,301 | 7,699 |
+| sugar → MN9 (30-90 Hz) | 50 | 73 | 63 | 50 | **22** |
+| vinegar → MBON11 (1-60 Hz) | 1.0 | **0** | 1.0 | **0** | **0** |
+| courtship → DNp13 (5-90 Hz) | 39 | 5.0 | 6.2 | 8.8 | 8.8 |
+| motion right → DNa02 left (0-20 Hz) | 0 | 20 | **23** | 3.3 | 17 |
+| bitter → PPL101 (30-150 Hz) | 78 | 113 | 109 | 136 | 44 |
+| fruitless silenced → ps1 song motor neurons (0-3 Hz) | 0 | 2.5 | 0 | 0 | **5.0** |
+| **passed** | **16 / 16** | **15 / 16** | **15 / 16** | **15 / 16** | **13 / 16** |
 
-{{SURVIVAL_TEXT}}
+The receptor signs alone bring MBON11 back to 1.0 Hz, inside its range, and move the optomotor
+experiment's contralateral DNa02 from 20 to 23 Hz, just past its ceiling. The curated transmitters of the default policy pull that readout back to 3 Hz and
+leave one miss, the same marginal MBON11 readout the v2.4 parts list missed (0 Hz against a range
+whose lower edge the standard model sits on). Every other readout stays inside its range, most of
+them closer to the standard model's values than with the v2.4 parts list.
+
+`curated="all"` shows why the default takes its fills from the literature only. With the
+connectome-derived classes also filling "unclear" predictions, the sugar reflex falls to 22 Hz, and
+one type accounts for all of it: GNG578, two neurons MaleCNS calls "unclear" and FlyWire's matching
+type CB0087 predicts to be GABAergic, feeds DNge080, a direct excitatory input to MN9. The model's
+convention that "unclear" neurons excite had been lending the reflex part of its drive; which of the
+two predictions is right is not something either data set can settle. The literature sign flips of
+`all` (T3, L3, Mi2, ...) cost the punishment signal half its rate and let a little song leak past
+the silenced fruitless neurons. A busy second of brain time costs about the same as with the v2.4
+parts list (1.1-1.2 s against 0.8 s with the parts off, compiled backend).
 
 ## 9. Honest limitations
 

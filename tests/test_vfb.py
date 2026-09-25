@@ -123,6 +123,7 @@ BRANCHES = [
     ("MBON20", ["glutamate", "octopamine"], "modulators", "unclear filled: fast synapses and a tone", "octopamine", True, -1),
     ("MBON20", ["serotonin"], "modulators", "unclear filled: a modulator", "serotonin", False, 1),
     ("MBON20", ["glutamate"], "modulators", "unclear filled: fast transmitter", None, False, -1),
+    ("MBON20", ["gaba"], "all", "unclear filled: fast transmitter", None, False, -1),
     ("MBON20", ["acetylcholine", "dopamine", "gaba"], "modulators", "unclear filled: a tone, fast synapses left as predicted", "dopamine", True, 1),
     ("CSD", ["octopamine"], "modulators", "modulator changed", "octopamine", False, 1),
     ("CSD", ["gaba", "octopamine"], "modulators", "modulator changed", "octopamine", True, -1),
@@ -177,19 +178,21 @@ def test_curated_transmitter_policies(conn, mini_vfb):
     # a predicted dopamine neuron the literature also calls GABAergic keeps fast (inhibitory) synapses
     pam = conn.select("PAM01")
     assert by["PAM01"]["action"].startswith("co-release") and ov.keep_fast[pam].all() and (ov.sign[pam] == -1).all() and (ov.mod_nt[pam] == None).all()  # noqa: E711
-    # "unclear" filled from another connectome's class
+    # another connectome's class does not fill an "unclear" prediction under the default policy
     mb = conn.select("MBON20")
-    assert by["MBON20"]["action"] == "unclear filled: fast transmitter" and (ov.sign[mb] == -1).all()
+    assert "MBON20" not in by and (ov.sign[mb] == 1).all()
     # the literature calls a predicted cholinergic type octopaminergic: a tone is added, the synapses stay
     lb = conn.select("LB1a")
     assert (ov.mod_nt[lb] == "octopamine").all() and ov.keep_fast[lb].all() and (ov.sign[lb] == 1).all()
     # a confident fast prediction is not flipped under "modulators" ...
     assert "GNG087" not in by and (ov.sign[conn.select("GNG087")] == -1).all()
-    assert ov.counts["policy"] == "modulators" and ov.counts["neurons"] == pam.size + mb.size + lb.size
-    # ... but is under "all", and the octopaminergic type loses its fast synapses
+    assert ov.counts["policy"] == "modulators" and ov.counts["neurons"] == pam.size + lb.size
+    # ... but is under "all", the octopaminergic type loses its fast synapses, and the connectome-derived
+    # class fills the "unclear" one
     al = vfb.transmitter_overrides(conn, "all")
     by = {r["type"]: r for r in al.rows}
     assert by["GNG087"]["action"] == "sign flipped" and (al.sign[conn.select("GNG087")] == 1).all()
+    assert by["MBON20"]["action"] == "unclear filled: fast transmitter" and (al.sign[mb] == -1).all()
     assert not al.keep_fast[lb].any() and (al.mod_nt[lb] == "octopamine").all()
     with pytest.raises(ValueError):
         vfb.transmitter_overrides(conn, "sometimes")
@@ -200,7 +203,7 @@ def test_the_parts_list_applies_the_overrides_and_the_receptor_signs(conn, mini_
     lb, pam, oa = conn.select("LB1a"), conn.select("PAM01"), conn.select("OA-VPM3")
     assert (cp.mod_kind[lb] == 1).all() and cp.keep_fast[lb].all() and cp.keep_fast[pam].all() and not cp.keep_fast[oa].any()
     assert cp.counts["modulatory_neurons"] == 16 + lb.size and cp.counts["co_release_neurons"] == lb.size + pam.size
-    assert cp.counts["curated"]["neurons"] == lb.size + pam.size + conn.count("MBON20") and len(cp.counts["curated"]["rows"]) == 3
+    assert cp.counts["curated"]["neurons"] == lb.size + pam.size and len(cp.counts["curated"]["rows"]) == 2
     assert cp.role(int(lb[0])) == {"sign": 1, "modulator": "octopamine", "keep_fast": True, "graded": False, "theta_mv": 7.0,
                                    "curated": {"action": "tone added (predicted synapses kept)", "curated": ["octopamine"], "predicted": "acetylcholine"}}
     assert cp.role(int(conn.select("MN9")[0]))["modulator"] is None and "curated" not in cp.role(int(conn.select("MN9")[0]))
