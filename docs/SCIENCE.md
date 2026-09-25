@@ -236,6 +236,45 @@ and are used by the game:
 
 ---
 
+### 2.3 Five runs, and no learning carried between them (v2.7)
+
+Two things made single verdicts less trustworthy than they looked.
+
+* **Learning leaked from one run into the next.** `reset()` clears the learning traces but not
+  what was learned, and a survival run puts every experiment through one brain in turn. With the
+  parts list on, the dopamine neurons fire during an odour, so a run could depress the Kenyon-cell
+  synapses of the next. Running one brain on five seeds in a row, MBON11 read 58, 53, 43, 10 and
+  0 Hz; with a fresh fly for each seed it was a steady 55-59 Hz. Since v2.7, `run_experiment` starts
+  every seed from what the fly had learned when the experiment began and leaves the fly as it found
+  it. Learning *during* a run still counts, as it does in a real fly.
+* **One seed is one draw.** Most readouts are small populations measured over half a second: two
+  MBON11 cells over 500 ms can only read 0, 1, 2 ... Hz, so a range edge at 1 Hz is a coin flip.
+  The verdict on a fly (`survival()`, the Genome card's re-test, `fly-brain`, `--genome-sweep`) now
+  uses five seeds by default. An experiment passes when every readout's mean is in range, as
+  before. It is marked **fragile** when it passes on the mean but some seed on its own misses. The
+  Genome card shows a fragile reflex with an amber square and names the readout; `fly-brain`'s
+  summary lists them. Five seeds cost about 3 s per experiment with the compiled integrator.
+
+The ranges are unchanged. The model's absolute rates are not comparable with recordings
+(section 9), so there is no measured value to move most of them to; the fragile mark says where a
+range edge sits inside the model's own spread instead. The tables elsewhere in this document were
+measured on seed 0 and are left as they were measured.
+
+The validated experiments on five seeds (game profile, v2.7):
+
+| configuration | passed | fragile (per-seed values of the readout that misses) |
+|---|---|---|
+| parts list off | 16 / 16 | vinegar: MBON11 1, 0, 3, 3, 1 Hz (range 1-60) |
+| parts list on (default) | 16 / 16 | courtship command: DNp13 8.8, 2.5, 11.2, 10.0, 6.2 Hz (range 5-90); fruitless neurons silenced: ps1 song motor neurons 0, 10, 2.5, 5.0, 0 Hz (range 0-3) |
+| parts list, APL global (`--global-apl`) | 16 / 16 | the two above, and vinegar: MBON11 13, 1, 0, 0, 0 Hz |
+
+With the parts list on, the vinegar readout that section 8.2 fixed holds on every seed. Two readouts
+that single runs had passed are fragile. DNp13 loses the fast octopaminergic and serotonergic drive
+it had in the standard model (section 8), so the courtship command sits close to its floor. More
+worrying is the leak past the silenced fruitless neurons: on two seeds of five, the song motor
+neurons fire 5-10 Hz although the neurons that drive them are silenced. These are the next things to
+look at.
+
 ## 3. Runaway loops and brakes
 
 ### 3.1 The problem
@@ -1422,6 +1461,42 @@ the gain, which on top of local release drives the vinegar readouts past their c
 `fly-brain --parts --global-apl` (or `PartsList(local=())`) gives the v2.5 behaviour of APL back
 with everything else unchanged.
 
+### 8.3 Electrical synapses between APL and DPM: tried, not adopted (v2.7)
+
+Section 8.2 left one side effect: with local APL release, DPM wins its tug-of-war with APL during
+an odour and about 16 % of Kenyon cells respond instead of 8 %. APL and DPM are also joined by
+heterotypic gap junctions (Wu et al. 2011), which the model lacks, and coupling pulls two cells'
+voltages together, so the obvious test was to add them.
+
+The prototype coupled each APL to the DPM on its side. Voltage is shared every step at a strength
+set by the coupling coefficient CC (the fraction of one cell's steady depolarisation that reaches
+the other). As an option, each spike also passes CC x 70 mV to the partner as a spikelet, because
+an integrate-and-fire cell resets at a spike and voltage sharing alone never carries the spike
+itself. No coupling coefficient has been measured for this pair, so four were tried. Vinegar, game
+profile, default parts list, five seeds (APL, DPM and the active fraction are seed 0):
+
+| CC | spikelets | APL (Hz) | DPM (Hz) | Kenyon cells active | Kenyon cells (Hz) | MBON11 (Hz) |
+|---|---|---|---|---|---|---|
+| none | | 83 | 164 | 16.6 % | 3.4-4.0 | 34-51 |
+| 0.05 | no | 96 | 145 | 16.3 % | 3.1-4.2 | 33-55 |
+| 0.05 | yes | 42 | 192 | 16.0 % | 3.9-4.3 | 50-59 |
+| 0.1 | no | 151 | 65 | 12.2 % | 2.9-4.5 | 30-62 |
+| 0.1 | yes | 70 | 149 | 14.7 % | 3.7-3.8 | 46-52 |
+| 0.2 | no | 72 | 164 | 16.3 % | 3.5-4.0 | 46-52 |
+| 0.2 | yes | 79 | 135 | 13.7 % | 3.1-3.5 | 40-46 |
+| 0.3 | no | 59 | 170 | 17.0 % | 3.3-4.7 | 41-66 |
+| 0.3 | yes | 97 | 96 | 12.0 % | 3.1-3.2 | 40-45 |
+
+Coupling moves the balance between APL and DPM, but not in any consistent direction. The code never
+gets back near 8 %, and at 0.1 and 0.3 without spikelets MBON11 crosses its 60 Hz ceiling on some
+seeds. A mechanism with an unmeasured strength that does not do what it was added for would only
+add a knob, so the kit does not include it. The electrical synapses of the giant-fibre system
+(Phelan et al. 2008) and of the antennal lobe (Yaksi & Wilson 2010) are left out for the same
+reason: the giant fibre's chemical synapses already drive TTMn in every validated experiment, and
+the antennal-lobe local neurons are silenced in the game profile. The dense code more likely comes
+from DPM itself. Its fast GABA onto APL (3,521 synapses) follows the curated transmitter, but DPM is
+a spiking point here and has no resting activity, which a real DPM does.
+
 ## 9. Honest limitations
 
 The starter kit's list, extended. These are the things a neuroscientist would point at first.
@@ -1433,7 +1508,7 @@ The starter kit's list, extended. These are the things a neuroscientist would po
    DPM, are spiking points that inhibit each other; whichever wins sets the inhibition of the
    whole mushroom body. With the parts list, APL's release follows the Kenyon cells around each
    target, but its calyx synapses are placed by lobe and its gap junctions with DPM are missing
-   (section 8.2).
+   (section 8.2; adding them does not make the code sparser, section 8.3).
 2. **Runaway loops** are a property of the pure model, not of the fly. The game silences 420
    antennal-lobe local neurons and 340 dopamine neurons and adds fatigue to keep the brain sane;
    these are documented fixes, not physiology. Short-term depression, the physiological brake,
@@ -1623,6 +1698,9 @@ The starter kit's list, extended. These are the things a neuroscientist would po
 * Özel MN, Simon F, Jafari S, Holguera I, Chen Y-C, Benhra N, El-Danaf RN, Kapuralin K, Malin
   JA, Konstantinides N, Desplan C (2021). Neuronal diversity and convergence in a visual system
   developmental atlas. *Nature* 589(7840):88-95. doi:10.1038/s41586-020-2879-3
+* Phelan P, Goulding LA, Tam JLY, Allen MJ, Dawber RJ, Davies JA, Bacon JP (2008). Molecular mechanism
+  of rectification at identified electrical synapses in the *Drosophila* giant fiber system. *Current
+  Biology* 18(24):1955-1960. doi:10.1016/j.cub.2008.10.067
 * Qi Y-X, Xu G, Gu G-X, Mao F, Ye G-Y, Liu W, Huang J (2017). A new *Drosophila* octopamine
   receptor responds to serotonin. *Insect Biochemistry and Molecular Biology* 90:61-70.
   doi:10.1016/j.ibmb.2017.09.010
@@ -1671,6 +1749,8 @@ The starter kit's list, extended. These are the things a neuroscientist would po
 * Wu C-L, Shih M-FM, Lai JS-Y, Yang H-T, Turner GC, Chen L, Chiang A-S (2011). Heterotypic gap
   junctions between two neurons in the *Drosophila* brain are critical for memory. *Current Biology*
   21(10):848-854. doi:10.1016/j.cub.2011.02.041
+* Yaksi E, Wilson RI (2010). Electrical coupling between olfactory glomeruli. *Neuron* 67(6):1034-1047.
+  doi:10.1016/j.neuron.2010.08.041
 * Yang HH, St-Pierre F, Sun X, Ding X, Lin MZ, Clandinin TR (2016). Subcellular imaging of voltage and
   calcium signals reveals neural processing in vivo. *Cell* 166(1):245-257.
   doi:10.1016/j.cell.2016.05.031

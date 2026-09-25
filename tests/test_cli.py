@@ -183,6 +183,8 @@ def test_run_experiments_with_only_and_seeds(capsys, tmp_path):
     assert data["results"][0]["ok"] and data["settings"]["seed"] == 0
     main(["--only", "silence", "--profile", "game"])
     assert "Try the game's settings" not in capsys.readouterr().out
+    main(["--only", "silence", "--json", str(out_json)])                      # five seeds unless told otherwise
+    assert json.loads(out_json.read_text())["results"][0]["seeds"] == [0, 1, 2, 3, 4]
 
 
 def test_module_entry_points_import():

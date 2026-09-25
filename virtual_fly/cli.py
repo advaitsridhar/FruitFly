@@ -2,7 +2,7 @@
 Command line for the brain simulator (``python fly_brain.py ...`` or ``python -m virtual_fly ...``).
 
     python fly_brain.py                                   # run every validated experiment
-    python fly_brain.py --only taste --seeds 3            # a subset, averaged over 3 seeds
+    python fly_brain.py --only taste --seeds 1            # a subset, one seed (quick; the default is 5)
     python fly_brain.py --find DNa                        # search cell types by name
     python fly_brain.py --stim "MDN:60" --watch "MDN,DNp09"
     python fly_brain.py --stim "LC4/R,LPLC2/R:150"        # no --watch: shows the most active types
@@ -52,7 +52,9 @@ def main(argv=None):
     ap.add_argument("--watch", metavar="SPEC[;SPEC]", default="", help='populations to report, separated by ";" or ","')
     ap.add_argument("--ms", type=float, default=500, help="how long to simulate with --stim (default 500 ms)")
     ap.add_argument("--only", metavar="TEXT", help="run only experiments whose name or tag contains TEXT")
-    ap.add_argument("--seeds", type=int, default=1, help="repeat each experiment with this many random seeds")
+    ap.add_argument("--seeds", type=int, default=5,
+                    help="repeat each experiment with this many random seeds (default 5: the verdict is the mean, and a "
+                         "readout that passes on the mean while some seed on its own misses is reported)")
     ap.add_argument("--json", metavar="FILE", help="write experiment results (or --stim rates) as JSON")
     ap.add_argument("--trace", nargs=2, metavar=("FROM", "TO"), help="strongest wiring routes between two populations")
     ap.add_argument("--hops", type=int, default=4, help="maximum path length for --trace (default 4)")
@@ -234,7 +236,8 @@ def main(argv=None):
             t0 = time.time()
             c2, rules = grow_level(conn, level, args.grow_seed, rules_cache=cache)
             cmp = compare(conn, c2) if rules is not None else {}
-            rows = survival(build_brain(c2, args.profile, **overrides), profile=args.profile)
+            rows = survival(build_brain(c2, args.profile, **overrides), profile=args.profile,
+                            seeds=tuple(range(args.seed, args.seed + args.seeds)))
             table[level] = rows
             ok = sum(1 for r in rows if r["ok"]); tested = sum(1 for r in rows if r["ok"] is not None)
             print(f"{level:16} {ok:2d} / {tested} experiments survive   ({c2.n_edges:,} connections"
@@ -328,7 +331,10 @@ def main(argv=None):
     bad = [r for r in results if not r.ok]
     n_read = sum(len(r.readouts) for r in results)
     n_ok = sum(sum(x.ok for x in r.readouts) for r in results)
-    print(f"\n{n_ok}/{n_read} readouts in the expected range ({len(results) - len(bad)}/{len(results)} experiments).")
+    fragile = [r for r in results if r.fragile]
+    print(f"\n{n_ok}/{n_read} readouts in the expected range ({len(results) - len(bad)}/{len(results)} experiments"
+          + (f"; {len(fragile)} pass on the mean but miss on some seed: {', '.join(r.name for r in fragile)}" if fragile else "")
+          + ").")
     if args.json:
         E.save_json(results, args.json, brain)
         print(f"wrote {args.json}")

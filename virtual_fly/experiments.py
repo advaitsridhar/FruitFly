@@ -137,20 +137,27 @@ GENETIC = [
 ]
 
 
-def survival(brain: FlyBrain, experiments=None, profile: str | None = None, on_progress=None) -> list[dict]:
+SEEDS = (0, 1, 2, 3, 4)   # a verdict on a fly: every experiment on five seeds (five runs of the same fly)
+
+
+def survival(brain: FlyBrain, experiments=None, profile: str | None = None, on_progress=None,
+             seeds=SEEDS) -> list[dict]:
     """Run the experiments one by one and report, per experiment, whether every readout was in its
-    range: the survival report of a grown fly (see :mod:`virtual_fly.wiring`). An experiment whose
-    populations do not exist in this connectome is reported as ``ok: None``. ``on_progress(rows)``
-    is called after each experiment with the rows so far."""
+    range (on the mean over ``seeds``): the survival report of a grown fly (see :mod:`virtual_fly.wiring`).
+    ``fragile`` marks an experiment that passes on the mean although some seed on its own does not. An
+    experiment whose populations do not exist in this connectome is reported as ``ok: None``.
+    ``on_progress(rows)`` is called after each experiment with the rows so far."""
     experiments = experiments if experiments is not None else CLASSIC + EXTENDED
     rows: list[dict] = []
     for exp in experiments:
         if profile is not None and exp.profile is not None and exp.profile != profile:
             continue
         try:
-            res = run_experiment(brain, exp)
-            rows.append({"name": exp.name, "ok": res.ok,
-                         "readouts": [{"label": r.label, "hz": round(r.hz, 1), "lo": r.lo, "hi": r.hi, "ok": r.ok} for r in res.readouts]})
+            res = run_experiment(brain, exp, seeds=seeds)
+            rows.append({"name": exp.name, "ok": res.ok, "fragile": res.fragile, "seeds": len(res.seeds),
+                         "readouts": [{"label": r.label, "hz": round(r.hz, 1), "lo": r.lo, "hi": r.hi, "ok": r.ok,
+                                       "per_seed": [round(v, 1) for v in r.per_seed], "seeds_out": r.seeds_out}
+                                      for r in res.readouts]})
         except (ValueError, KeyError) as e:
             rows.append({"name": exp.name, "ok": None, "readouts": [], "error": str(e)})
         if on_progress is not None:
@@ -172,6 +179,7 @@ class ReadoutResult:
     hi: float
     ok: bool
     per_seed: list[float] = field(default_factory=list)
+    seeds_out: int = 0              # how many seeds, on their own, fall outside the range
 
 
 @dataclass
@@ -188,6 +196,11 @@ class ExperimentResult:
     def ok(self) -> bool:
         return all(r.ok for r in self.readouts)
 
+    @property
+    def fragile(self) -> bool:
+        """Passes on the mean, but some seed on its own falls outside a range."""
+        return self.ok and any(r.seeds_out for r in self.readouts)
+
     def to_dict(self) -> dict:
         return {"name": self.name, "ok": self.ok, "after_spikes_per_s": self.after_sps, "after": self.after_note,
                 "wall_s": round(self.wall_s, 2), "seeds": self.seeds,
@@ -203,16 +216,36 @@ def after_note(sps: float) -> str:
             else "RUNAWAY LOOP (see README, 'Limitations')")
 
 
+def kept_learning(brain: FlyBrain):
+    """The brain's learned Kenyon-cell -> MBON strengths as they are now, and a function that puts them
+    back. ``reset()`` clears the learning traces but not what was learned, so without this one run's
+    learning would carry into the next seed and the next experiment."""
+    pl = brain.plasticity
+    if pl is None:
+        return lambda: None
+    saved = pl.scale.copy()
+
+    def back():
+        pl.scale[:] = saved
+        pl.reapply(brain)
+    return back
+
+
 def run_experiment(brain: FlyBrain, exp: Experiment, seeds=(0,), after_ms: float = 1000.0,
                    verbose: bool = False) -> ExperimentResult:
-    """Run one experiment for each seed; readouts are averaged, the after-stimulus test uses the last."""
+    """Run one experiment for each seed; readouts are averaged, the after-stimulus test uses the last.
+
+    Every seed starts from what the fly had learned when the experiment began (learning during a run
+    counts, as in a real fly, but does not carry into the next seed), and the fly is left as it was."""
     per: dict[str, list[float]] = {r.label: [] for r in exp.readouts}
     t0 = time.time()
     after_sps = 0.0
+    restore_learning = kept_learning(brain)
     for spec in exp.silence:                      # the lesion: like expressing tetanus toxin in those cells
         brain.silence(spec)
     try:
         for seed in seeds:
+            restore_learning()
             brain.rng = np.random.default_rng(seed)
             brain.reset()
             brain.clear_stimuli()
@@ -232,13 +265,15 @@ def run_experiment(brain: FlyBrain, exp: Experiment, seeds=(0,), after_ms: float
     finally:
         for spec in exp.silence:
             brain.unsilence(spec)
+        restore_learning()
     wall = time.time() - t0
     results = []
     for r in exp.readouts:
         vals = per[r.label]
         mean = float(np.mean(vals))
         results.append(ReadoutResult(r.label, r.spec, mean, float(np.std(vals)) if len(vals) > 1 else 0.0,
-                                     r.lo, r.hi, in_range(mean, r.lo, r.hi), [float(v) for v in vals]))
+                                     r.lo, r.hi, in_range(mean, r.lo, r.hi), [float(v) for v in vals],
+                                     seeds_out=sum(not in_range(v, r.lo, r.hi) for v in vals)))
     brain.clear_stimuli()
     brain.reset()
     res = ExperimentResult(exp.name, results, float(after_sps), after_note(after_sps) if exp.stimulus else "",
@@ -253,6 +288,8 @@ def format_result(res: ExperimentResult) -> str:
     for k, r in enumerate(res.readouts):
         sd = f" ±{r.sd:4.1f}" if r.sd else ""
         flag = "ok" if r.ok else "<-- not the usual result"
+        if r.ok and r.seeds_out:
+            flag = f"ok on the mean, but {r.seeds_out} of {len(r.per_seed)} seeds outside"
         lines.append(f" {res.name if k == 0 else '':34} {r.label:32} {r.hz:6.1f}{sd:6} Hz  {r.lo:g}-{r.hi:g} Hz  {flag}")
     if res.silenced:
         lines.append(f" {'':34} (output blocked in {', '.join(res.silenced)})")
