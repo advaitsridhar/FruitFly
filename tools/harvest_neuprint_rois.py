@@ -96,8 +96,10 @@ def main(argv=None):
     import neuprint
     from neuprint import Client, NeuronCriteria as NC, fetch_adjacencies
 
-    probe = Client(SERVER, token=token, progress=False)
-    dataset = pick_dataset(probe.fetch_datasets().keys(), args.dataset)
+    import requests                                   # (a neuprint-python dependency)
+    r = requests.get(f"https://{SERVER}/api/dbmeta/datasets", headers={"Authorization": f"Bearer {token}"}, timeout=60)
+    r.raise_for_status()
+    dataset = pick_dataset(r.json().keys(), args.dataset)
     print(f"dataset {dataset} on {SERVER} (neuprint-python {neuprint.__version__})", flush=True)
     client = Client(SERVER, dataset=dataset, token=token, progress=False)
     neurons, conns = [], []
