@@ -500,6 +500,7 @@ export class GeneticsPanel {
 
 // ================================================================= 8c. Genome
 const TONE_COLOURS = { dopamine: "#d9a2ff", octopamine: "#ffb454", serotonin: "#6ad1ff" };
+const LOBE_NAMES = { "prefix:KCg": "γ", "prefix:KCab": "α/β", "prefix:KCa'b'": "α′/β′" };   // the Kenyon-cell lobe systems
 
 export class GenomePanel {
   constructor(L) {
@@ -510,7 +511,7 @@ export class GenomePanel {
     }
     sel.value = "type";
     $("growBtn").onclick = () => this.grow(sel.value);
-    $("realBtn").onclick = () => this.grow("real");
+    $("genomeRealBtn").onclick = () => this.grow("real");
     // the parts list: one tone bar per modulator, built once; widths are updated every frame
     $("partsBtn").onclick = async () => {
       if (this.partsOn === null) return;
@@ -524,6 +525,18 @@ export class GenomePanel {
       fill.style.background = TONE_COLOURS[m.nt] || "var(--accent)"; bar.appendChild(fill);
       const val = el("span", "n", "0 %"); val.title = "mean tone over this modulator's targets, as a fraction of its full effect";
       tones.append(lab, bar, val); this.toneEls[m.nt] = { fill, val };
+    }
+    // a neuron that releases locally (APL): how much of the whole cell's release reaches each compartment right now
+    this.localEls = {};
+    for (const x of ((L.parts && L.parts.tables && L.parts.tables.local) || [])) {
+      for (const g of x.groups) {
+        const lab = el("span", "lbl", `${esc(x.spec)} → ${esc(LOBE_NAMES[g] || g.replace(/^prefix:/, ""))}`);
+        lab.title = `${x.label}: its release onto the targets among the ${g.replace(/^prefix:/, "")} Kenyon cells, as a fraction of the whole cell's. ${x.why}`;
+        const bar = el("div", "bar thin"); const fill = document.createElement("div");
+        fill.style.background = "var(--muted)"; bar.appendChild(fill);
+        const val = el("span", "n", "100 %"); val.title = "release here as a fraction of the whole cell's (100 % when nothing is going on)";
+        tones.append(lab, bar, val); this.localEls[`${x.spec}|${g}`] = { fill, val };
+      }
     }
   }
   async grow(level) {
@@ -577,6 +590,8 @@ export class GenomePanel {
         ? `${(c.modulatory_neurons || 0).toLocaleString()} dopamine, octopamine and serotonin neurons act through slow tones on ${(c.modulated_targets || 0).toLocaleString()} targets; ${(c.graded_neurons || 0).toLocaleString()} optic-lobe cells transmit graded signals`
           + (cur.neurons ? `; the literature re-types ${cur.neurons.toLocaleString()} neurons (${cur.types.toLocaleString()} types)` : "")
           + (withData ? `; receptor expression sets the tone's sign on ${withData.toLocaleString()} targets` : "")
+          + (rs.facts || []).filter((f) => f.neurons).map((f) => `; ${f.spec} uses ${f.receptors.join(", ")} (literature)`).join("")
+          + (c.local || []).map((x) => `; ${x.spec} releases locally, by lobe`).join("")
         : "every neuron is the same machine (Shiu et al. 2024); switch on to give each the parts its genes make");
       setShown($("tones"), !!p.on);
     }
@@ -585,6 +600,13 @@ export class GenomePanel {
         const e = this.toneEls[nt]; if (!e) continue;
         setWidth(e.fill, 100 * t.mean);
         setText(e.val, `${Math.round(100 * t.mean)} %`);
+      }
+      for (const x of p.status.local || []) {
+        for (const [g, rel] of Object.entries(x.release)) {
+          const e = this.localEls[`${x.spec}|${g}`]; if (!e) continue;
+          setWidth(e.fill, 100 * rel);
+          setText(e.val, `${Math.round(100 * rel)} %`);
+        }
       }
     }
   }

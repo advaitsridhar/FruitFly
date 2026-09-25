@@ -1181,6 +1181,7 @@ class Game:
                 "Efference copy: the eyes' motion signal is damped while the fly turns on purpose, as in real flies.",
                 "The learning rule's constants (rate, time windows, floor, forgetting).",
                 "Fixes for runaway loops: mild neuron fatigue and blocking the output of the 420 antennal-lobe local neurons.",
+                "With the parts list on, where APL releases: that its inhibition stays local to the busy part of the mushroom body is the literature (Amin et al. 2020), the rule that turns each lobe's Kenyon-cell activity into APL's release there is the kit's. That dopamine turns APL down through Dop2R is the literature (Zhou et al. 2019).",
             ],
             "not_modelled": [
                 "Real neuron shapes and individual properties, hormones, electrical synapses, most neuromodulation, development.",

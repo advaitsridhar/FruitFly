@@ -62,7 +62,7 @@ def test_modulators_lose_their_fast_synapses_and_leave_a_tone(conn):
                                          "modulated_targets": parts.parts.mod_targets.size,
                                          "modulators": ["dopamine", "octopamine", "serotonin"], "graded_rate_hz": 300.0,
                                          "curated": "modulators", "receptor_signs": True, "co_release_neurons": 0,
-                                         "curated_neurons": 0}
+                                         "curated_neurons": 0, "local": ["APL"], "receptor_facts": ["APL"]}
     # dopamine drives the MBONs directly in the published model; with the parts list it does not
     assert _measure(plain, {"PPL101": 300}).rate("MBON11") > 20
     assert _measure(parts, {"PPL101": 300}).rate("MBON11") == 0 and parts.rate("PPL101") > 150
@@ -160,3 +160,76 @@ def test_profiles_and_experiments_with_the_parts_list(conn):
     assert run_experiment(game, loom).ok
     pure = build_brain(conn, "pure", parts=P.PartsList(graded=()), seed=0)
     assert pure.parts.graded_idx.size == 0 and pure.parts.mod_neurons.size == 16
+
+
+def test_apl_releases_where_its_kenyon_cells_are_active(conn):
+    cp = P.PartsList().compile(conn)
+    assert [c.local.spec for c in cp.local] == ["APL"] and cp.counts["local"][0]["neurons"] == 2
+    loc = cp.local[0]
+    assert np.array_equal(loc.neurons, np.sort(conn.select("APL"))) and loc.sites.shape == (2, 3) and loc.sites[:, 2].sum() == 0
+    post = conn.post_idx[loc.edges]
+    on_g, on_ab = np.isin(post, conn.select("KCg-m")), np.isin(post, conn.select("KCab-m"))
+    assert on_g.any() and on_ab.any() and loc.placed.all()
+    assert (loc.mix[on_g] == [1, 0, 0]).all() and (loc.mix[on_ab] == [0, 1, 0]).all()
+    role = cp.role(int(loc.neurons[0]))
+    assert role["local"]["groups"] == list(P.LOCAL[0].groups) and "local" not in cp.role(int(conn.select("MN9")[0]))
+    # a target with no Kenyon-cell input is not placed in any compartment: the cell's release there stays global
+    orn = P.compile_local(conn, P.Local("prefix:ORN_", ("KCg-m",), "test"))
+    assert orn.edges.size and not orn.placed.any()
+
+    b = FlyBrain(conn, seed=0, parts=True, kenyon_gain=1.0)
+    base = b._w_original[loc.edges].copy()
+    assert np.array_equal(b.w[loc.edges], base)
+    b.set_stimuli({"ORN_DM1,ORN_DM4,ORN_VM7d": 120})          # the vinegar Kenyon cells are gamma cells
+    b.run(150)
+    p = b._local_p[0]
+    assert b._local_active and p.max() <= 1.0 and p[on_ab].mean() < p[on_g].mean()
+    assert np.allclose(b.w[loc.edges], base * p)
+    rel = b.local_status()[0]["release"]
+    assert rel["prefix:KCg"] == 1.0 and rel["prefix:KCab"] < 1.0 and b.parts_status()["local"][0]["spec"] == "APL"
+    b.silence("APL")                                           # silencing still silences
+    assert (b.w[loc.edges] == 0).all()
+    b.run(40)
+    assert (b.w[loc.edges] == 0).all()
+    b.unsilence("APL")
+    assert np.allclose(b.w[loc.edges], base * b._local_p[0])
+    b.reset()
+    assert np.array_equal(b.w[loc.edges], base) and not b._local_active and b._local_p[0].min() == 1
+    # with no Local entries the weights never move
+    plain = FlyBrain(conn, seed=0, parts=P.PartsList(local=()), kenyon_gain=1.0)
+    plain.set_stimuli({"ORN_DM1,ORN_DM4,ORN_VM7d": 120})
+    plain.run(150)
+    assert np.array_equal(plain.w, plain._w_original) and plain.local_status() == []
+
+
+def test_local_release_survives_snapshot_and_restore(conn):
+    b = FlyBrain(conn, seed=0, parts=True, kenyon_gain=1.0)
+    b.set_stimuli({"ORN_DM1,ORN_DM4,ORN_VM7d": 120, "PPL101": 60})
+    b.run(150)
+    snap = b.snapshot()
+    assert snap["local_active"] and snap["local"][0][2].min() < 1
+    b.start_recording(); b.run(100); first = b.stop_recording(); w_first = b.w.copy()
+    b.restore(snap)
+    b.start_recording(); b.run(100); second = b.stop_recording()
+    assert len(first) == len(second) > 0 and all(t1 == t2 and np.array_equal(s1, s2) for (t1, s1), (t2, s2) in zip(first, second))
+    assert np.array_equal(w_first, b.w)
+
+
+def test_receptor_facts_fill_types_the_atlas_does_not_cover(conn, mini_vfb):
+    cp = P.PartsList().compile(conn)                          # APL: no modulatory input in the synthetic brain
+    row = cp.counts["receptor_signs"]["facts"][0]
+    assert row["spec"] == "APL" and row["neurons"] == 2 and row["targets"] == 0 and row["signs"] == {"dopamine": -1.0}
+    assert cp.role(int(conn.select("APL")[0]))["receptor_fact"]["receptors"] == ["Dop2R"]
+    fact = P.ReceptorFact("MBON11,KCg-m", ("Dop2R",), "test", "a test")
+    cp = P.PartsList(receptor_facts=(fact,)).compile(conn)
+    row = cp.counts["receptor_signs"]["facts"][0]
+    assert row["left_to_the_atlas"] == ["KCg-m"] and row["neurons"] == 2    # the atlas has a gamma Kenyon cell cluster
+    pos = cp.target_pos[conn.select("MBON11")]
+    assert (pos >= 0).all() and (cp.mod_sign[0, pos] == -1).all() and (cp.mod_sign[1:, pos] == 1).all()
+    assert "receptor_fact" not in cp.role(int(conn.select("KCg-m")[0]))
+    off = P.PartsList(receptor_facts=(fact,), receptor_signs=False).compile(conn)
+    assert off.counts["receptor_signs"]["facts"] == [] and (off.mod_sign == 1).all()
+    with pytest.raises(ValueError, match="unknown receptor"):
+        P.PartsList(receptor_facts=(P.ReceptorFact("MBON11", ("Dop9R",), "bad"),)).compile(conn)
+    d = P.PartsList().describe()
+    assert d["receptor_facts"][0]["receptors"] == ["Dop2R"] and d["local"][0]["spec"] == "APL" and d["local"][0]["why"]
