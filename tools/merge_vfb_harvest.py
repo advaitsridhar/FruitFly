@@ -38,10 +38,33 @@ FBBT_RE = re.compile(r"^FBbt[_:]\d{8}$")
 # the ASCII names the harvest used for the receptor genes -> the symbols parts.RECEPTORS uses
 GENE_NAMES = {"Octalpha2R": "Octα2R", "Octbeta1R": "Octβ1R", "Octbeta2R": "Octβ2R", "Octbeta3R": "Octβ3R"}
 TYRAMINE = {"Oct-TyrR", "TyrR", "TyrRII"}
-# data-set families in the order the kit prefers them (adult, male first); keys are matched against the
-# cluster names / data-set names case-insensitively
-FAMILY_ORDER = ["FCA_MALE", "FCA_MIXED", "FCA_FEMALE", "FCA", "DAVIE", "AFCA", "OZEL_ADM", "BAKER", "MOKASHI", "ALLEN", "SAAVEDRA",
-                "KURMANGALIYEV", "HORMANN", "OZEL", "AVALOS"]
+# which adult data set the kit prefers for a class, when several have a cluster of it: the Fly Cell Atlas
+# (young adults) first, then the brain atlases, the aging atlas and the nerve-cord atlases; male before
+# mixed before female (MaleCNS is male); head or brain before whole fly, nerve cord and other tissues
+STUDY_RANK = {"FCA2022": 0, "Davie2018": 1, "Ozel2021": 2, "Baker2021": 3, "Mokashi2021": 3, "AFCA2023": 4,
+              "Allen2020": 5, "Saavedra2023": 5}
+SEX_RANK = {"male": 0, "mixed": 1, "unknown": 1, "female": 2}
+TISSUE_RANK = {"head": 0, "brain": 0, "optic lobe": 0, "whole fly (all FCA samples)": 1, "whole fly (all AFCA samples)": 1,
+               "VNC": 2, "thorax (VNC)": 2, "antenna": 2, "proboscis": 2, "leg": 2, "wing": 2, "haltere": 2,
+               "pars intercerebralis (insulin-producing cells)": 2, "body": 3}
+
+
+def family_rank(key: str, fam: dict) -> tuple:
+    """Study first; then nervous-system tissue (head, brain, optic lobe, whole fly) before the rest; then
+    male before mixed before female; then head before whole fly, younger before older."""
+    age = re.search(r"_D(\d+)_", key)
+    fine = TISSUE_RANK.get(fam.get("tissue"), 4)
+    return (STUDY_RANK.get(fam.get("study"), 9), 0 if fine <= 1 else fine, SEX_RANK.get(fam.get("sex"), 1), fine,
+            int(age.group(1)) if age else 0, key)
+
+
+def family_label(key: str, fam: dict) -> str:
+    """ "FCA 2022, male head" from the family's study, sex and tissue."""
+    study = re.sub(r"(\D)(\d{4})$", r"\1 \2", str(fam.get("study") or key))
+    age = re.search(r"_D(\d+)_", key)
+    bits = [b for b in ((f"day {age.group(1)}" if age else ""), fam.get("sex") if fam.get("sex") not in (None, "unknown") else "",
+                        fam.get("tissue") or "") if b]
+    return f"{study}, {' '.join(bits)}" if bits else study
 
 
 def norm(cid: str) -> str:
@@ -74,8 +97,9 @@ def merge_overlay(harvest: Path) -> dict:
             continue
         if st == "resolved" and len(ids) == 1:
             types[t] = {"fbbt": ids, "route": r.get("route") or "name_in_male-cns", "label": r.get("label", ""), "source": "overlay"}
-        elif st == "other_name" and len(ids) == 1:
-            types[t] = {"fbbt": ids, "route": r.get("route") or "other_name", "label": r.get("label", ""), "source": "overlay"}
+        elif st == "other_name" and len(ids) == 1:          # only another data set's name: weaker, annotation only
+            types[t] = {"fbbt": ids, "route": r.get("route") or "other_name", "label": r.get("label", ""), "source": "overlay",
+                        "coarse": True}
         elif st == "ambiguous" or len(ids) > 1:
             ambiguous[t] = {"fbbt": ids, "note": r.get("note", "")}
     for r in load_rows(str(harvest / "routec_*.json")):
@@ -119,8 +143,12 @@ def merge_overlay(harvest: Path) -> dict:
 
 
 def family_of(name: str, dataset: str | None, families: dict) -> str | None:
-    """The data-set family of a cluster: the family whose probe (its ``match`` string, name or key) occurs in
-    the cluster's name or data set as a whole token (so "FCA" never matches inside "AFCA"), longest first."""
+    """The data-set family of a cluster: the family whose ``match`` string the cluster name starts with (VFB
+    names clusters "<data set>_seq_clustering_<cell type>"), else the family whose probe (match, name or
+    key) occurs in the name or data set as a whole token (so "FCA" never matches inside "AFCA"), longest first."""
+    prefixed = [k for k, f in families.items() if f.get("match") and (name or "").startswith(str(f["match"]))]
+    if prefixed:
+        return max(prefixed, key=lambda k: len(str(families[k]["match"])))
     text = " ".join(x for x in (name, dataset) if x).upper()
     best = None
     for key, fam in families.items():
@@ -138,7 +166,7 @@ def merge_receptors(harvest: Path) -> dict:
     ds = {}
     if (harvest / "datasets.json").exists():
         ds = json.loads((harvest / "datasets.json").read_text())
-    families = {k.upper(): v for k, v in (ds.get("families") or {}).items()}
+    families = dict(ds.get("families") or {})
     genes, clusters, classes = {}, {}, collections.defaultdict(lambda: collections.defaultdict(list))
     coupling = {}
     harvested = set()
@@ -187,10 +215,11 @@ def merge_receptors(harvest: Path) -> dict:
     missing = [rec.gene for rec in RECEPTORS if rec.gene not in harvested]
     if missing:
         print(f"  not harvested (their modulators keep the one-sign rule where none of theirs is): {', '.join(missing)}", file=sys.stderr)
-    fam_meta = {k: {"label": v.get("name", k), "stage": v.get("stage"), "sex": v.get("sex"), "licence": v.get("licence"),
-                    "publication": v.get("publication")} for k, v in families.items()}
-    order = [k for k in FAMILY_ORDER if k in families] + [k for k in families if k not in FAMILY_ORDER]
-    adult = [k for k in order if families[k].get("stage") == "adult"]
+    used = {c["family"] for c in clusters.values()}
+    fam_meta = {k: {"label": family_label(k, v), "study": v.get("study"), "stage": v.get("stage"), "sex": v.get("sex"),
+                    "tissue": v.get("tissue"), "licence": v.get("licence"), "dataset": v.get("licence_source")}
+                for k, v in families.items() if k in used}
+    adult = sorted((k for k in used if families.get(k, {}).get("stage") == "adult"), key=lambda k: family_rank(k, families[k]))
     return {"source": {"what": "single-cell RNA-seq clusters on Virtual Fly Brain: fraction of a cluster's cells expressing "
                                "each aminergic receptor gene (VFB's expressionCluster tables, values of 0.2 and above only)",
                        "licence": "CC-BY 4.0 (the data sets named in families)", "harvested": str(date.today()),

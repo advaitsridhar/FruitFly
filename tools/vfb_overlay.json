@@ -496,7 +496,8 @@
    ],
    "route": "other_name:name_in_manc",
    "label": "adult motor neuron",
-   "source": "overlay"
+   "source": "overlay",
+   "coarse": true
   },
   "AVLP611": {
    "fbbt": [
@@ -848,7 +849,8 @@
    ],
    "route": "other_name:name_in_banc",
    "label": "adult NPF L1-l neuron",
-   "source": "overlay"
+   "source": "overlay",
+   "coarse": true
   },
   "GNG649": {
    "fbbt": [
@@ -1096,7 +1098,8 @@
    ],
    "route": "other_name:name_in_manc",
    "label": "wing axillary muscle III3 motor neuron",
-   "source": "overlay"
+   "source": "overlay",
+   "coarse": true
   },
   "LgLG4": {
    "fbbt": [
@@ -1136,7 +1139,8 @@
    ],
    "route": "other_name:name_in_banc",
    "label": "sensory neuron of haltere capitellum trichoid sensillum",
-   "source": "overlay"
+   "source": "overlay",
+   "coarse": true
   },
   "GNG157": {
    "fbbt": [
@@ -1858,6 +1862,105 @@
    "source": "MaleCNS:512011 -> VFB_jrmc1pm9",
    "coarse": true
   },
+  "pC1_18a": {
+   "fbbt": [
+    "FBbt:00047348"
+   ],
+   "route": "vfb_individual",
+   "label": "adult doublesex pC1 (male) neuron",
+   "source": "MaleCNS:532011 -> VFB_jrmc1pno",
+   "coarse": true
+  },
+  "pC1_3b": {
+   "fbbt": [
+    "FBbt:00110621"
+   ],
+   "route": "vfb_individual",
+   "label": "adult fruitless P1 (male) neuron",
+   "source": "MaleCNS:514925 -> VFB_jrmc1pom",
+   "coarse": true
+  },
+  "pC1_6b": {
+   "fbbt": [
+    "FBbt:00047348"
+   ],
+   "route": "vfb_individual",
+   "label": "adult doublesex pC1 (male) neuron",
+   "source": "MaleCNS:24623 -> VFB_jrmc1ppd",
+   "coarse": true
+  },
+  "pC1_5a": {
+   "fbbt": [
+    "FBbt:00110621"
+   ],
+   "route": "vfb_individual",
+   "label": "adult fruitless P1 (male) neuron",
+   "source": "MaleCNS:32950 -> VFB_jrmc1pp1",
+   "coarse": true
+  },
+  "pC1_2a/2b": {
+   "fbbt": [
+    "FBbt:00110621"
+   ],
+   "route": "vfb_individual",
+   "label": "adult fruitless P1 (male) neuron",
+   "source": "MaleCNS:17387 -> VFB_jrmc1poe",
+   "coarse": true
+  },
+  "LB3b": {
+   "fbbt": [
+    "FBbt:00058249"
+   ],
+   "route": "vfb_individual",
+   "label": "adult gustatory receptor neuron",
+   "source": "MaleCNS:71254 -> VFB_jrmc25g6",
+   "coarse": true
+  },
+  "JO-A1": {
+   "fbbt": [
+    "FBbt:00049545"
+   ],
+   "route": "vfb_individual",
+   "label": "zone A Johnston organ neuron type 1",
+   "source": "MaleCNS:35351 -> VFB_jrmc2hks",
+   "coarse": true
+  },
+  "TmY9a": {
+   "fbbt": [
+    "FBbt:00003827"
+   ],
+   "route": "vfb_individual",
+   "label": "transmedullary Y neuron TmY9",
+   "source": "MaleCNS:15767 -> VFB_jrmc06hl",
+   "coarse": true
+  },
+  "TmY9b": {
+   "fbbt": [
+    "FBbt:00003827"
+   ],
+   "route": "vfb_individual",
+   "label": "transmedullary Y neuron TmY9",
+   "source": "MaleCNS:17030 -> VFB_jrmc06pa",
+   "coarse": true
+  },
+  "Tm38": {
+   "fbbt": [
+    "FBbt:00003796"
+   ],
+   "route": "vfb_individual",
+   "label": "transmedullary neuron Tm8",
+   "source": "MaleCNS:15963 -> VFB_jrmc0h6u",
+   "coarse": true
+  },
+  "LgLG3": {
+   "fbbt": [
+    "FBbt:20011233"
+   ],
+   "route": "vfb_individual",
+   "label": "adult SNch05 neuron",
+   "source": "MaleCNS:806127 -> VFB_jrmc1yb7",
+   "coarse": true
+  },
   "Pm2a": {
    "fbbt": [
     "FBbt:00003835"
@@ -2217,6 +2320,13 @@
     "FBbt:20006767"
    ],
    "note": "search: 2 terms, both with exact synonym-row match \"WEDPN8C\". get_term_info: both FBbt_20006237 (adult CB2710 neuron) and FBbt_20006767 (adult CB3295 neuron) carry synonym WEDPN8C typed name_in_male-cns -> two confirmed classes."
+  },
+  "SApp": {
+   "fbbt": [
+    "FBbt:00048301",
+    "FBbt:00048296"
+   ],
+   "note": "several cell-type classes on the individual"
   },
   "LB1b": {
    "fbbt": [

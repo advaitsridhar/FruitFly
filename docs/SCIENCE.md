@@ -1257,7 +1257,7 @@ matches (a `_a` type read as its stem's class, or a class read off one VFB indiv
 for the model at all.
 
 **Receptor signs.** The one net sign per modulator was the gap the parts list admitted to. VFB
-carries, for {{RX_CLASSES}} neuron classes, the single-cell RNA-seq clusters of the Fly Cell Atlas
+carries, for {{RX_CLASSES}} cell classes, the single-cell RNA-seq clusters of the Fly Cell Atlas
 (Li et al. 2022), Davie et al. (2018), the Aging Fly Cell Atlas, Özel et al. (2021) and others,
 and for each cluster the fraction of its cells expressing each gene (values of 20 % and above). A
 harvest of the 17 aminergic receptor genes (`data/vfb_receptors.json.gz`, {{RX_CLUSTERS}} clusters,
@@ -1266,12 +1266,20 @@ two steps, provided it groups at most 150 kit types) has an adult cluster, the t
 `clip(Σ sign_r · extent_r, -1, 1)` over that modulator's receptors, +1 for the Gs- and Gq-coupled
 ones (Dop1R1, Dop1R2, DopEcR; Oamb, Octβ1R-3R; 5-HT2A, 5-HT2B, 5-HT7) and −1 for the Gi-coupled
 ones (Dop2R; Octα2R; 5-HT1A, 5-HT1B; the couplings and their references are in `parts.RECEPTORS`),
-so `gain = 1 + Σ_k a_k · s_k · level_k / (level_k + 5)`, floored at 0.1. A γ Kenyon cell of the male
-atlas (Dop1R1 80 %, Dop1R2 77 %, DopEcR 69 %, Dop2R 75 %) keeps a positive dopamine weight; its
-5-HT1A (30 %) and 5-HT1B (25 %) make the serotonin tone lower its gain; a PAM neuron (Dop2R 95 %,
-Dop1R1 49 %) is inhibited by dopamine, the autoreceptor effect. Pupal and larval clusters are never
-used; where no adult cluster exists (most of the central brain's small types) the old one-sign rule
-stands. Coverage on this connectome: {{RX_COVERAGE}}.
+so `gain = 1 + Σ_k a_k · s_k · level_k / (level_k + 5)`, floored at 0.1. A receptor a cluster does
+not list (under 20 % of its cells) counts as zero, and several clusters of one data set are averaged.
+When a class has clusters in several data sets the kit takes one: the Fly Cell Atlas first, then
+Davie et al., Özel et al. (adult optic lobe), Baker and Mokashi et al., the Aging Fly Cell Atlas and
+the nerve-cord atlases; within one, head or brain before other tissues, male before mixed before
+female. Examples: the γ Kenyon cells inherit the adult γ Kenyon cell cluster of Davie et al. 2018
+(Dop2R 95 %, Dop1R2 73 %, Dop1R1 70 %, DopEcR 67 %: net dopamine weight clipped at +1; 5-HT1A 48 %,
+so serotonin *lowers* their gain, −0.84); the MBONs inherit the adult MBON cluster (Dop2R 79 %,
+DopEcR 65 %: dopamine weight −0.14); LC10a's own adult optic-lobe cluster (Özel et al.) has Dop2R
+95 %, so dopamine and serotonin both lower its gain; the photoreceptors express only DopEcR among
+these receptors. Pupal, larval and embryonic clusters are never used, nor the day-70 aging atlas
+(VFB gives it no stage); where no adult cluster exists within two steps up the class tree (most of
+the central brain's small types, the giant fibre, MN9, the HS cells) the one-sign rule stands.
+Coverage on this connectome: {{RX_COVERAGE}}.
 
 **What it does to the validated experiments** (game profile; `fly-brain --profile game --parts
 --curated off|modulators|all`):

@@ -203,14 +203,19 @@ def test_the_harvest_merge(tmp_path, capsys):
     _write(h, "corrections_checked.json", {"types": {"SMP053": {"fbbt": "FBbt_00000081", "was": "FBbt_00000080", "evidence": "checked"}}})
     _write(h, "routec_0.json", [{"type": "pC1_1a", "status": "found", "body_id": 1, "vfb_id": "VFB_x",
                                  "cell_type_classes": [{"fbbt": "FBbt_00110621", "label": "adult fruitless P1 (male) neuron"}]}])
-    _write(h, "datasets.json", {"families": {"FCA_MALE": {"match": "FCA_MALE", "stage": "adult", "sex": "male", "name": "FCA male"},
-                                             "AFCA": {"match": "AFCA", "stage": "adult", "sex": "mixed"},
-                                             "FCA": {"match": "FCA", "stage": "adult", "sex": "mixed"},
-                                             "KURM": {"match": "Kurmangaliyev", "stage": "pupal", "sex": "mixed"}}})
-    rows = [{"fblc": "FBlc1", "cluster": "scRNAseq_2022_FCA_MALE_gamma KC", "anatomy_fbbt": "FBbt_00100247", "level": "002091.75", "extent": 0.8},
+    _write(h, "datasets.json", {"families": {
+        "scRNAseq_2022_FCA_MALE_HEAD": {"match": "scRNAseq_2022_FCA_MALE_HEAD_seq_clustering_", "study": "FCA2022", "stage": "adult",
+                                        "sex": "male", "tissue": "head"},
+        "AFCA": {"match": "AFCA", "study": "AFCA2023", "stage": "adult", "sex": "mixed"},                  # a token, not a prefix
+        "FCA": {"match": "FCA", "study": "FCA2022", "stage": "adult", "sex": "mixed", "tissue": "whole fly (all FCA samples)"},
+        "KURM": {"match": "Kurmangaliyev", "stage": "pupal", "sex": "mixed"}}})
+    rows = [{"fblc": "FBlc1", "cluster": "scRNAseq_2022_FCA_MALE_HEAD_seq_clustering_gamma_KC", "anatomy_fbbt": "FBbt_00100247",
+             "level": "002091.75", "extent": 0.8},
+            {"fblc": "FBlc4", "cluster": "scRNAseq_2022_FCA_MIXED_FULL_seq_clustering_gamma_KC", "anatomy_fbbt": "FBbt_00100247", "level": 5.0,
+             "extent": 0.6},
             {"fblc": "FBlc2", "cluster": "scRNAseq_2023_AFCA_gamma KC", "anatomy_fbbt": "FBbt_00100247", "level": 10.0, "extent": 0.5},
             {"fblc": "FBlc3", "cluster": "scRNAseq_2020_Kurmangaliyev_T4a", "anatomy_fbbt": "FBbt_00003732", "level": 1.0, "extent": 0.3}]
-    _write(h, "rx_Dop1R1.json", {"gene": "Dop1R1", "fbgn": "FBgn0011582", "count": 3, "count_status": "exact", "coupling": "Gs", "rows": rows})
+    _write(h, "rx_Dop1R1.json", {"gene": "Dop1R1", "fbgn": "FBgn0011582", "count": 4, "count_status": "exact", "coupling": "Gs", "rows": rows})
     _write(h, "rx_TyrR.json", {"gene": "TyrR", "count": 1, "count_status": "exact", "rows": rows[:1]})
     _write(h, "rx_Dop2R.json", {"gene": "Dop2R", "count": 688, "count_status": "exact", "rows": rows[:1]})        # incomplete
     _write(h, "rx_Oamb.json", '{"gene": "Oamb", "rows": [')                                                        # truncated
@@ -226,8 +231,9 @@ def test_the_harvest_merge(tmp_path, capsys):
     err = capsys.readouterr().err
     assert "rx_Dop2R.json: incomplete" in err and "rx_Oamb.json" in err
     assert set(rx["genes"]) == {"Dop1R1", "TyrR"} and rx["genes"]["Dop1R1"]["sign"] == 1 and rx["genes"]["TyrR"]["modulator"] is None
-    assert rx["clusters"]["FBlc1"]["family"] == "FCA_MALE" and rx["clusters"]["FBlc2"]["family"] == "AFCA"          # not "FCA"
+    assert rx["clusters"]["FBlc1"]["family"] == "scRNAseq_2022_FCA_MALE_HEAD" and rx["clusters"]["FBlc2"]["family"] == "AFCA"  # not "FCA"
+    assert rx["clusters"]["FBlc4"]["family"] == "FCA" and rx["source"]["families"]["scRNAseq_2022_FCA_MALE_HEAD"]["label"] == "FCA 2022, male head"
     assert rx["clusters"]["FBlc3"]["stage"] == "pupal" and rx["classes"]["FBbt:00100247"]["Dop1R1"][0] == ["FBlc1", 0.8, 2091.75]
-    assert rx["families"] == ["FCA_MALE", "FCA", "AFCA"]                     # the preference order, adult only
+    assert rx["families"] == ["scRNAseq_2022_FCA_MALE_HEAD", "FCA", "AFCA"]   # the preference order, adult only (not KURM)
     M.main(["--harvest", str(h), "--out", str(tmp_path / "out"), "--overlay", str(tmp_path / "new" / "dir" / "overlay.json")])
     assert (tmp_path / "new" / "dir" / "overlay.json").exists() and (tmp_path / "out" / "vfb_receptors.json.gz").exists()
