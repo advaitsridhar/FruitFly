@@ -130,7 +130,11 @@ def make_handler(game):
                             return self._error("no such class among the kit's cell types", 404)
                         return self._json({"ok": True, "class": info})
                     text = get("q", "").strip()
-                    return self._json({"ok": True, "q": text, "classes": ont.search(text, conn, limit=int(get("limit", 30))) if text else []})
+                    try:
+                        limit = max(1, min(200, int(get("limit", 30))))
+                    except ValueError:
+                        return self._error("limit must be a whole number")
+                    return self._json({"ok": True, "q": text, "classes": ont.search(text, conn, limit=limit) if text else []})
                 if path == "/api/partners":
                     spec = get("spec", "")
                     if not spec or conn.count(spec) == 0:
@@ -179,7 +183,7 @@ def make_handler(game):
                 if path == "/api/genes":
                     return self._json({"ok": True, **game.genetics})
                 if path == "/api/parts":
-                    return self._json({"ok": True, "on": game.parts_on, "tables": partslib.PartsList().describe(),
+                    return self._json({"ok": True, "on": game.parts_on, "tables": game.parts_list().describe(),
                                        "counts": game.parts_counts(), "status": game.brain.parts_status()})
                 if path == "/api/lines":
                     spec = get("spec", "").strip()

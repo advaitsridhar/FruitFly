@@ -250,8 +250,13 @@ class Connectome:
             return spec.astype(np.int64, copy=False)
         if not isinstance(spec, str):
             return np.asarray(list(spec), dtype=np.int64)
-        if spec in self._cache:
-            return self._cache[spec]
+        key = spec
+        if "fbbt:" in spec or "rx:" in spec:            # these depend on vfb's data, which tests (and tools) can swap
+            from . import vfb
+            key = (spec, vfb.generation())
+        hit = self._cache.get(key)
+        if hit is not None:
+            return hit
         if self._by_type is None:
             order = np.argsort(self.type_idx, kind="stable")
             bounds = np.searchsorted(self.type_idx[order], np.arange(len(self.tables["types"]) + 1))
@@ -259,7 +264,7 @@ class Connectome:
         exact = self._exact_type(spec.strip())        # 70 type names contain ',' or '&': try whole first
         if exact is not None:
             result = np.flatnonzero(exact).astype(np.int64)
-            self._cache[spec] = result
+            self._cache[key] = result
             return result
         keep, drop = [], []
         for term in (s.strip() for s in spec.split(",")):
@@ -270,8 +275,8 @@ class Connectome:
             mask = self._exact_type(term)
             if mask is None:
                 mask = np.ones(self.n, dtype=bool)
-                for part in term.split("&"):
-                    mask &= self._match(part.strip())
+                for part in self._and_parts(term):
+                    mask &= self._match(part)
             (drop if negate else keep).append(mask)
         if not keep:
             result = np.zeros(0, dtype=np.int64)
@@ -280,8 +285,29 @@ class Connectome:
             for d in drop:
                 mask &= ~d
             result = np.flatnonzero(mask).astype(np.int64)
-        self._cache[spec] = result
+        self._cache[key] = result
         return result
+
+    def _and_parts(self, term: str) -> list[str]:
+        """Split a term on ``&``, except inside an ontology label (ten lineage classes are called e.g.
+        "adult SLPa&l1 lineage neuron"): an ``fbbt:`` piece takes the longest run of following pieces
+        that still names a class."""
+        pieces = term.split("&")
+        out, i = [], 0
+        while i < len(pieces):
+            piece = pieces[i].strip()
+            if piece.startswith("fbbt:") and i + 1 < len(pieces):
+                for j in range(len(pieces), i + 1, -1):
+                    joined = "&".join(pieces[i:j]).strip()
+                    try:
+                        self._match(joined)
+                    except ValueError:
+                        continue
+                    piece, i = joined, j - 1
+                    break
+            out.append(piece)
+            i += 1
+        return out
 
     def _exact_type(self, term: str) -> np.ndarray | None:
         """Mask for a term that is literally a cell-type name (optionally with a ``/L`` ``/R`` ``/M`` side),

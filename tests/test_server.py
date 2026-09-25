@@ -256,11 +256,15 @@ def test_ontology_endpoint_and_the_neuron_lookup_carries_vfb(served, conn):
     assert code == 404 and not r["ok"]
     code, r = get_json(base, "/api/ontology")
     assert code == 200 and r["classes"] == []
+    code, r = get_json(base, "/api/ontology?q=lobula&limit=1")
+    assert code == 200 and len(r["classes"]) == 1
+    code, r = get_json(base, "/api/ontology?q=lobula&limit=lots")
+    assert code == 400 and not r["ok"] and "limit" in r["error"]
     i = int(conn.select("KCg-m")[0])
     code, r = get_json(base, f"/api/neuron?index={i}")
     n = r["neuron"]
     assert n["vfb"]["label"] == "gamma main Kenyon cell" and n["vfb"]["peptides"] == ["sNPF"] and n["vfb"]["url"].endswith("FBbt_00111061")
-    assert [x["gene"] for x in n["receptors"]["receptors"]] == ["Dop1R1", "Dop2R", "5-HT1A"] and n["parts"] is None
+    assert [x["gene"] for x in n["receptors"]["receptors"]] == ["Dop1R1", "Dop2R", "5-HT1A", "5-HT7"] and n["parts"] is None
     code, r = get_json(base, f"/api/neuron?index={int(conn.select('MN9')[0])}")
     assert r["neuron"]["vfb"] is None and r["neuron"]["receptors"] is None
     code, lay = get_json(base, "/api/layout")

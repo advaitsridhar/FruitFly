@@ -13,7 +13,9 @@ from a machine) into the two files the kit's builders read:
 The harvest directory holds, one JSON file per worker: ``overlay_<i>.json`` (search_terms +
 get_term_info per unresolved type), ``verify_<i>.json`` (get_term_info on the OBO matches),
 ``routec_<i>.json`` (bodyId -> VFB individual -> classes), ``rx_<gene>.json`` (run_query
-expressionCluster per receptor gene) and ``datasets.json`` (the clusters' data sets and stages).
+expressionCluster per receptor gene), ``datasets.json`` (the clusters' data sets and stages) and
+``corrections_checked.json`` (alternative classes for contradicted matches, each checked by hand to
+carry the type's ``name_in_male-cns`` synonym). A partial or malformed file is skipped with a warning.
 
     python tools/merge_vfb_harvest.py --harvest <dir> [--out data/] [--overlay tools/vfb_overlay.json]
 """
@@ -35,6 +37,7 @@ sys.path.insert(0, str(HERE.parent))
 FBBT_RE = re.compile(r"^FBbt[_:]\d{8}$")
 # the ASCII names the harvest used for the receptor genes -> the symbols parts.RECEPTORS uses
 GENE_NAMES = {"Octalpha2R": "Octα2R", "Octbeta1R": "Octβ1R", "Octbeta2R": "Octβ2R", "Octbeta3R": "Octβ3R"}
+TYRAMINE = {"Oct-TyrR", "TyrR", "TyrRII"}
 # data-set families in the order the kit prefers them (adult, male first); keys are matched against the
 # cluster names / data-set names case-insensitively
 FAMILY_ORDER = ["FCA_MALE", "FCA_MIXED", "FCA_FEMALE", "FCA", "DAVIE", "AFCA", "OZEL_ADM", "BAKER", "MOKASHI", "ALLEN", "SAAVEDRA",
@@ -48,7 +51,7 @@ def norm(cid: str) -> str:
 def load_rows(pattern: str) -> list:
     rows = []
     for f in sorted(glob.glob(pattern)):
-        if re.search(r"(partial|progress|scope)", Path(f).name):
+        if not re.search(r"_\d+\.json$", Path(f).name):         # overlay_12.json, not overlay_12_progress.json
             continue
         try:
             d = json.loads(Path(f).read_text())
@@ -90,17 +93,25 @@ def merge_overlay(harvest: Path) -> dict:
                         "source": f"MaleCNS:{r.get('body_id')} -> {r.get('vfb_id')}", "coarse": True}
         else:
             ambiguous[t] = {"fbbt": [norm(c["fbbt"]) for c in cells], "note": "several cell-type classes on the individual"}
+    checked = {}
+    if (harvest / "corrections_checked.json").exists():
+        checked = json.loads((harvest / "corrections_checked.json").read_text()).get("types", {})
     for r in load_rows(str(harvest / "verify_*.json")):
         t, verdict = r.get("type"), r.get("verdict")
-        if not t or verdict != "not_this_class":
+        was = r.get("fbbt") or []
+        was = [norm(w) for w in ([was] if isinstance(was, str) else was)]
+        if not t:
             continue
-        alts = [a for a in (r.get("alternatives") or []) if FBBT_RE.match(str(a.get("fbbt", "")))]
-        if len(alts) == 1:
-            types[t] = {"fbbt": [norm(alts[0]["fbbt"])], "route": "name_in_male-cns", "label": alts[0].get("label", ""),
-                        "source": "verify: the OBO match carried other MaleCNS names; this class matched the name"}
-        else:
-            rejected[t] = {"fbbt": [], "route": "rejected", "was": [norm(i) for i in r.get("fbbt", [])],
-                           "note": r.get("note", "the class carries MaleCNS names, none of them this one")}
+        if t in checked and norm(checked[t]["was"]) in was:          # an alternative class checked to carry the name
+            c = checked[t]
+            types[t] = {"fbbt": [norm(c["fbbt"])], "route": "name_in_male-cns", "label": c.get("label", ""), "override": True,
+                        "was": was, "source": "verification: " + c.get("evidence", "")}
+        elif verdict == "not_this_class":
+            rejected[t] = {"fbbt": [], "route": "rejected", "was": was,
+                           "note": r.get("note") or "the class carries MaleCNS names, none of them this one"}
+    for t, c in checked.items():
+        if t not in types:
+            print(f"  corrections_checked: {t} has no verification row naming {c['was']}; not applied", file=sys.stderr)
     types.update(rejected)
     return {"source": "Virtual Fly Brain (virtualflybrain.org): name_in_male-cns synonyms (Berg et al. 2025) and MaleCNS "
                       "individuals' classes, read through the VFB MCP connector; FBbt is CC-BY 4.0 (FlyBase)",
@@ -108,12 +119,16 @@ def merge_overlay(harvest: Path) -> dict:
 
 
 def family_of(name: str, dataset: str | None, families: dict) -> str | None:
+    """The data-set family of a cluster: the family whose probe (its ``match`` string, name or key) occurs in
+    the cluster's name or data set as a whole token (so "FCA" never matches inside "AFCA"), longest first."""
     text = " ".join(x for x in (name, dataset) if x).upper()
     best = None
     for key, fam in families.items():
-        for probe in [key] + [str(fam.get(k, "")) for k in ("name", "match", "prefix")]:
-            probe = probe.upper().replace("SCRNASEQ_", "").strip("_ ")
-            if len(probe) >= 3 and probe in text.replace("SCRNASEQ_", "") and (best is None or len(probe) > len(best[1])):
+        for probe in [str(fam.get("match", "")), str(fam.get("name", "")), key]:
+            probe = probe.upper().strip()
+            if len(probe) < 3:
+                continue
+            if re.search(r"(?<![A-Z0-9])" + re.escape(probe) + r"(?![A-Z0-9])", text) and (best is None or len(probe) > len(best[1])):
                 best = (key, probe)
     return best[0] if best else None
 
@@ -126,12 +141,21 @@ def merge_receptors(harvest: Path) -> dict:
     families = {k.upper(): v for k, v in (ds.get("families") or {}).items()}
     genes, clusters, classes = {}, {}, collections.defaultdict(lambda: collections.defaultdict(list))
     coupling = {}
+    harvested = set()
     for f in sorted(glob.glob(str(harvest / "rx_*.json"))):
-        d = json.loads(Path(f).read_text())
+        try:
+            d = json.loads(Path(f).read_text())
+        except (json.JSONDecodeError, OSError) as e:
+            print(f"  skipping {f}: {e}", file=sys.stderr)
+            continue
         if not isinstance(d, dict) or not d.get("rows"):
-            print(f"  {f}: no rows", file=sys.stderr)
+            print(f"  skipping {f}: no rows", file=sys.stderr)
+            continue
+        if d.get("count_status") != "exact" or (d.get("count") not in (None, -1) and len(d["rows"]) != d["count"]):
+            print(f"  skipping {f}: incomplete ({len(d['rows'])} rows of {d.get('count')}, {d.get('count_status')})", file=sys.stderr)
             continue
         gene = GENE_NAMES.get(d.get("gene", ""), d.get("gene", ""))
+        harvested.add(gene)
         coupling[gene] = d.get("coupling")
         for r in d["rows"]:
             fblc, cid = r.get("fblc"), r.get("anatomy_fbbt")
@@ -148,12 +172,21 @@ def merge_receptors(harvest: Path) -> dict:
                 clusters[fblc] = {"name": r.get("cluster"), "family": fam or "unknown", "stage": meta.get("stage", "unknown"),
                                   "sex": meta.get("sex", "unknown"), "anatomy": cid}
             classes[cid][gene].append([fblc, round(extent, 4), round(level, 2)])
-    for rec in RECEPTORS:
-        genes[rec.gene] = {"fbgn": rec.fbgn, "modulator": rec.modulator, "sign": rec.sign, "coupling": rec.coupling,
-                           "vfb_coupling": coupling.get(rec.gene)}
-    for gene in coupling:
-        genes.setdefault(gene, {"fbgn": None, "modulator": None, "sign": 0, "coupling": "tyramine receptor (not modelled)",
-                                "vfb_coupling": coupling.get(gene)})
+    known = {rec.gene: rec for rec in RECEPTORS}
+    for gene in sorted(harvested):
+        rec = known.get(gene)
+        if rec is not None:
+            genes[gene] = {"fbgn": rec.fbgn, "modulator": rec.modulator, "sign": rec.sign, "coupling": rec.coupling,
+                           "vfb_coupling": coupling.get(gene), "harvested": True}
+        else:
+            what = "tyramine receptor (not modelled)" if gene in TYRAMINE else "not in parts.RECEPTORS (not modelled)"
+            if gene not in TYRAMINE:
+                print(f"  {gene}: not in parts.RECEPTORS; kept without a sign", file=sys.stderr)
+            genes[gene] = {"fbgn": None, "modulator": None, "sign": 0, "coupling": what, "vfb_coupling": coupling.get(gene),
+                           "harvested": True}
+    missing = [rec.gene for rec in RECEPTORS if rec.gene not in harvested]
+    if missing:
+        print(f"  not harvested (their modulators keep the one-sign rule where none of theirs is): {', '.join(missing)}", file=sys.stderr)
     fam_meta = {k: {"label": v.get("name", k), "stage": v.get("stage"), "sex": v.get("sex"), "licence": v.get("licence"),
                     "publication": v.get("publication")} for k, v in families.items()}
     order = [k for k in FAMILY_ORDER if k in families] + [k for k in families if k not in FAMILY_ORDER]
@@ -173,6 +206,7 @@ def main(argv=None):
     ap.add_argument("--overlay", type=Path, default=HERE / "vfb_overlay.json")
     a = ap.parse_args(argv)
     ov = merge_overlay(a.harvest)
+    a.overlay.parent.mkdir(parents=True, exist_ok=True)
     a.overlay.write_text(json.dumps(ov, indent=1, ensure_ascii=False) + "\n")
     routes = collections.Counter(e["route"] for e in ov["types"].values())
     print(f"overlay: {len(ov['types'])} types ({dict(routes)}), {len(ov['ambiguous'])} ambiguous -> {a.overlay}")

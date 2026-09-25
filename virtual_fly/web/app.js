@@ -381,12 +381,12 @@ function partsRole(p) {
 }
 function vfbRows(n) {
   const v = n.vfb;
-  if (!v) return `<span class="k">ontology</span><span class="v muted">no FBbt class matched this type</span>`;
+  if (!v) return L.vfb && L.vfb.available ? `<span class="k">ontology</span><span class="v muted">no FBbt class matched this type</span>` : "";
   const crumbs = (v.breadcrumb || []).slice(0, 3).map((b) => `<a class="crumb" data-fbbt="${esc(b.fbbt)}" title="select every ${esc(b.label)} (fbbt:${esc(b.fbbt)})">${esc(b.label)}</a>`).join(" › ");
   let out = `<span class="k">ontology</span><span class="v"><a href="${esc(v.url)}" target="_blank" rel="noopener" title="${esc(v.fbbt[0])} on Virtual Fly Brain">${esc(v.label)}</a>${v.coarse ? ` <small class="muted">(class of ${v.shared_by || "several"} types)</small>` : v.shared_by ? ` <small class="muted">(shared by ${v.shared_by} types)</small>` : ""}${crumbs ? `<br><small>${crumbs}</small>` : ""}</span>`;
   if (v.curated_nt && v.curated_nt.length) {
     const agrees = v.curated_nt.includes(n.nt);
-    out += `<span class="k">${v.evidence === "literature" ? "literature" : "elsewhere"}</span><span class="v">${esc(v.curated_nt.join(" + "))} <small class="${agrees ? "ok" : "warn"}">${agrees ? "agrees" : "differs from the prediction"}</small> <small class="muted">(${v.evidence === "literature" ? "curated in the ontology" : "another connectome's prediction, via the ontology"})</small></span>`;
+    out += `<span class="k">${v.evidence === "literature" ? "literature" : "elsewhere"}</span><span class="v">${esc(v.curated_nt.join(" + "))} <small class="${agrees ? "agree" : "warn"}">${agrees ? "agrees" : "differs from the prediction"}</small> <small class="muted">(${v.evidence === "literature" ? "curated in the ontology" : "another connectome's prediction, via the ontology"})</small></span>`;
   }
   const extra = [];
   if (v.lineage && v.lineage.length) extra.push(esc(v.lineage[0]));
@@ -397,7 +397,11 @@ function vfbRows(n) {
 }
 function receptorRow(rx) {
   if (!rx || !rx.receptors.length) return "";
-  const cells = rx.receptors.map((r) => `<a href="${r.flybase || "#"}" target="_blank" rel="noopener" title="${r.modulator ? r.modulator + " receptor, " + (r.sign > 0 ? "raises" : "lowers") + " the gain · " : ""}FlyBase">${esc(r.gene)}</a> ${Math.round(100 * r.extent)} %`).join(", ");
+  const cells = rx.receptors.map((r) => {
+    const tip = esc(r.modulator ? `${r.modulator} receptor, ${r.sign > 0 ? "raises" : "lowers"} the gain` : "not a modelled receptor");
+    const name = r.flybase ? `<a href="${esc(r.flybase)}" target="_blank" rel="noopener" title="${tip} · FlyBase">${esc(r.gene)}</a>` : `<span title="${tip}">${esc(r.gene)}</span>`;
+    return `${name} ${Math.round(100 * r.extent)} %`;
+  }).join(", ");
   return `<span class="k">receptors</span><span class="v">${cells} <small class="muted">(${esc(rx.family_label)}${rx.depth ? ", from " + esc(rx.label) : ""}; % of cells)</small></span>`;
 }
 

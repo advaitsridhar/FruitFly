@@ -402,11 +402,14 @@ def build_mini_vfb():
                        ("FBbt:00004101", "peptidergic neuron"), ("FBbt:00047097", "primary neuron")):
         cls(cid, label, ["FBbt:00005106"])
     cls("FBbt:00048000", "sNPF neuron", ["FBbt:00004101"])
+    cls("FBbt:00048001", "Pdf neuron", ["FBbt:00004101"])
+    cls("FBbt:00003763", "l-LNv neuron", ["FBbt:00048001"])             # an anatomy class below a peptide class
+    cls("FBbt:00050005", "adult SLPa&l1 lineage neuron", ["FBbt:00047095"])
     cls("FBbt:00003870", "lobula columnar neuron", ["FBbt:00047095"])
     cls("FBbt:00003874", "lobula columnar neuron LC4", ["FBbt:00003870", "FBbt:00007173", "FBbt:00100291"], "LC4",
         "Lobula columnar neuron whose cell body is in the lateral cell body rind (test copy).")
     cls("FBbt:00111747", "lobula columnar neuron LC10a", ["FBbt:00003870", "FBbt:00007173"], "LC10a")
-    cls("FBbt:00100001", "lobula columnar neuron LC11", ["FBbt:00003870"], "LC11")
+    cls("FBbt:00100001", "lobula columnar neuron LC11", ["FBbt:00003870", "FBbt:00050005"], "LC11")
     cls("FBbt:00047511", "adult descending neuron", ["FBbt:00047095"])
     cls("FBbt:00004020", "giant fiber neuron", ["FBbt:00047511", "FBbt:00047097"], "DNp01")
     cls("FBbt:00047573", "descending neuron of the anterior dorsal brain DNa02", ["FBbt:00047511", "FBbt:00007173"], "DNa02")
@@ -472,7 +475,8 @@ def build_mini_vfb():
         "clusters": {"FBlc1": {"family": "FCA_MALE", "stage": "adult"}, "FBlc2": {"family": "KURM", "stage": "pupal"},
                      "FBlc3": {"family": "DAVIE", "stage": "adult"}, "FBlc4": {"family": "FCA_MALE", "stage": "adult"}},
         "classes": {"FBbt:00111061": {"Dop1R1": [["FBlc1", 0.8, 2091.7], ["FBlc4", 0.8, 2091.7]], "Dop2R": [["FBlc1", 0.75, 2180.9], ["FBlc4", 0.75, 2180.9]],
-                                      "5-HT1A": [["FBlc1", 0.3, 1209.5], ["FBlc4", 0.3, 1209.5]]},
+                                      "5-HT1A": [["FBlc1", 0.3, 1209.5], ["FBlc4", 0.3, 1209.5]],
+                                      "5-HT7": [["FBlc4", 0.4, 50.0]]},      # listed by one of the two clusters only
                     "FBbt:00003919": {"Oamb": [["FBlc3", 0.3, 100.0]], "Octα2R": [["FBlc3", 0.6, 100.0]]},
                     "FBbt:00003870": {"Dop2R": [["FBlc3", 0.5, 1.0]]},
                     "FBbt:00047573": {"Dop1R1": [["FBlc2", 0.9, 1.0]]}}})

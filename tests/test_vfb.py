@@ -25,6 +25,8 @@ def test_the_ontology_closure_and_the_fbbt_selector(conn, mini_vfb):
     assert _set(conn, "fbbt:adult descending neuron&nt:acetylcholine") == _set(conn, "DNp01,DNa02,DNg74_a,DNg74_b") & _set(conn, "nt:acetylcholine")
     assert _set(conn, "fbbt:adult descending neuron") == _set(conn, "DNp01,DNa02,DNg74_a,DNg74_b")     # the coarse stem types count
     assert _set(conn, "fbbt:peptidergic neuron") == _set(conn, "KCg-m,KCab-m")
+    assert _set(conn, "fbbt:adult SLPa&l1 lineage neuron") == _set(conn, "LC11") == _set(conn, "fbbt:FBbt_00050005")   # '&' in a label
+    assert _set(conn, "fbbt:adult SLPa&l1 lineage neuron&nt:acetylcholine") == _set(conn, "LC11")
     assert conn.count("fbbt:neuron") == sum(conn.count(t) for t in ont.types)
     with pytest.raises(ValueError):
         conn.select("fbbt:no such class")
@@ -41,6 +43,8 @@ def test_describe_type_search_and_class_info(conn, mini_vfb):
     assert d["definition"].startswith("Lobula columnar neuron") and d["shared_by"] == 0
     kc = vfb.describe_type("KCg-m", conn)
     assert kc["peptides"] == ["sNPF"] and kc["breadcrumb"][0]["label"] == "adult Kenyon cell"     # not the transmitter parent
+    assert ont.tags("FBbt:00003763")["peptides"] == ["Pdf"]         # 'l-LNv neuron' is anatomy below 'Pdf neuron', not a peptide
+    assert vfb.describe_type("LC11", conn)["lineage"] == ["adult SLPa&l1 lineage neuron"]
     assert vfb.describe_type("KCab-m", conn)["coarse"] and vfb.describe_type("DNg74_a", conn)["shared_by"] == 2
     assert vfb.describe_type("DNp01", conn)["birth"] == "primary" and vfb.describe_type("MN9", conn) is None
     hits = ont.search("lobula", conn)
@@ -59,21 +63,110 @@ def test_describe_type_search_and_class_info(conn, mini_vfb):
 def test_the_receptor_table_and_the_rx_selector(conn, mini_vfb):
     ont, rx = mini_vfb
     kc = rx.for_type("KCg-m", ont, conn)
-    assert kc["family"] == "FCA_MALE" and kc["depth"] == 0 and kc["extent"] == {"Dop1R1": 0.8, "Dop2R": 0.75, "5-HT1A": 0.3} and kc["n_clusters"] == 2
+    # 5-HT7 is listed by one of the two clusters: the other has it below 20 %, which counts as 0 in the mean
+    assert kc["family"] == "FCA_MALE" and kc["depth"] == 0 and kc["n_clusters"] == 2
+    assert kc["extent"] == {"Dop1R1": 0.8, "Dop2R": 0.75, "5-HT1A": 0.3, "5-HT7": 0.2}
     lc = rx.for_type("LC4", ont, conn)
     assert lc["class"] == "FBbt:00003870" and lc["depth"] == 1 and lc["family"] == "DAVIE"          # inherited from the parent class
     assert rx.for_type("DNa02", ont, conn) is None                                                # only a pupal cluster: ignored
     assert rx.for_type("MBON11", ont, conn) is None and rx.for_type("MN9", ont, conn) is None
-    assert rx.sign(kc["extent"], "dopamine") == pytest.approx(0.05) and rx.sign(kc["extent"], "serotonin") == pytest.approx(-0.3)
+    assert rx.sign(kc["extent"], "dopamine") == pytest.approx(0.05) and rx.sign(kc["extent"], "serotonin") == pytest.approx(-0.1)
     assert rx.sign({"Oamb": 0.3, "Octα2R": 0.6}, "octopamine") == pytest.approx(-0.3) and rx.sign({}, "dopamine") == 0.0
     assert _set(conn, "rx:Dop2R") == _set(conn, "KCg-m,LC4,LC10a,LC11") and _set(conn, "rx:dop2r>0.6") == _set(conn, "KCg-m")
-    assert _set(conn, "rx:Dop2R>=0.75") == _set(conn, "KCg-m") and conn.count("rx:5-HT7") == 0
+    assert _set(conn, "rx:Dop2R>=0.75") == _set(conn, "KCg-m") and _set(conn, "rx:5-HT7") == _set(conn, "KCg-m")
+    assert conn.select("rx:5-HT7>0.3").size == 0
     for bad in ("rx:Dop9R", "rx:Dop2R<0.5"):
         with pytest.raises(ValueError):
             conn.select(bad)
     r = vfb.receptors_of_type("KCg-m", conn)
-    assert [x["gene"] for x in r["receptors"]] == ["Dop1R1", "Dop2R", "5-HT1A"] and r["family_label"] == "Fly Cell Atlas (male)"
+    assert [x["gene"] for x in r["receptors"]] == ["Dop1R1", "Dop2R", "5-HT1A", "5-HT7"] and r["family_label"] == "Fly Cell Atlas (male)"
+    # a partial harvest: a modulator none of whose receptors was harvested keeps the one-sign rule (None), not 0
+    partial = vfb.Receptors({"genes": {g: v for g, v in rx.genes.items() if v["modulator"] != "serotonin"},
+                             "clusters": rx.clusters, "classes": rx.classes, "families": rx.families})
+    assert partial.sign(kc["extent"], "serotonin") is None and partial.sign(kc["extent"], "dopamine") == pytest.approx(0.05)
+    not_harvested = vfb.Receptors({"genes": {g: {**v, "harvested": v["modulator"] != "octopamine"} for g, v in rx.genes.items()},
+                                   "clusters": rx.clusters, "classes": rx.classes, "families": rx.families})
+    assert not_harvested.sign({"Oamb": 0.9}, "octopamine") is None
     assert r["receptors"][1]["sign"] == -1 and r["receptors"][0]["flybase"].endswith("FBgn0011582")
+
+
+def test_selections_follow_the_installed_data(conn, mini_vfb):
+    ont, rx = mini_vfb
+    assert conn.count("fbbt:lobula columnar neuron") == conn.count("LC4,LC10a,LC11")
+    vfb.use(vfb.Ontology(), vfb.Receptors())
+    try:
+        with pytest.raises(ValueError):                     # not the cached answer from the other ontology
+            conn.select("fbbt:lobula columnar neuron")
+        with pytest.raises(ValueError, match="not installed"):
+            conn.select("rx:Dop2R")
+    finally:
+        vfb.use(ont, rx)
+    assert conn.count("fbbt:lobula columnar neuron") == conn.count("LC4,LC10a,LC11")
+
+
+def _variant(mini, type_name, nts, evidence="literature", coarse=False):
+    """The mini ontology with one type's curated transmitters replaced."""
+    ont, _ = mini
+    types = {t: dict(e) for t, e in ont.types.items()}
+    e = dict(types.get(type_name, {"fbbt": ["FBbt:00090099"], "route": "obo_symbol", "n": 1}))
+    e.update(nt=nts, evidence=evidence)
+    if coarse:
+        e["coarse"] = True
+    types[type_name] = e
+    return vfb.Ontology({"types": types}, {"classes": ont.classes, "roots": ont.roots, "source": ont.source})
+
+
+# type, curated transmitters, policy -> action, modulator given, fast synapses kept, fast sign
+BRANCHES = [
+    ("LC4", ["acetylcholine", "dopamine"], "modulators", "co-release: fast synapses kept, tone added", "dopamine", True, 1),
+    ("PPL101", ["dopamine", "gaba"], "modulators", "co-release: tone and fast synapses", None, True, -1),
+    ("MBON20", ["glutamate", "octopamine"], "modulators", "unclear filled: fast synapses and a tone", "octopamine", True, -1),
+    ("MBON20", ["serotonin"], "modulators", "unclear filled: a modulator", "serotonin", False, 1),
+    ("MBON20", ["glutamate"], "modulators", "unclear filled: fast transmitter", None, False, -1),
+    ("MBON20", ["acetylcholine", "dopamine", "gaba"], "modulators", "unclear filled: a tone, fast synapses left as predicted", "dopamine", True, 1),
+    ("CSD", ["octopamine"], "modulators", "modulator changed", "octopamine", False, 1),
+    ("CSD", ["gaba", "octopamine"], "modulators", "modulator changed", "octopamine", True, -1),
+    ("CSD", ["acetylcholine"], "modulators", "not a modulator: fast synapses kept", "", False, 1),
+    ("GNG087", ["acetylcholine", "octopamine"], "modulators", "tone added, predicted synapses kept", "octopamine", True, -1),
+    ("GNG087", ["acetylcholine", "octopamine"], "all", "sign flipped and a tone added", "octopamine", True, 1),
+    ("GNG087", ["glutamate", "octopamine"], "all", "tone added, predicted synapses kept", "octopamine", True, -1),   # both inhibitory: no flip
+    ("GNG087", ["octopamine"], "modulators", "tone added (predicted synapses kept)", "octopamine", True, -1),
+    ("GNG087", ["octopamine"], "all", "tone added, fast synapses removed", "octopamine", False, -1),
+    ("GNG087", ["acetylcholine"], "all", "sign flipped", None, False, 1),
+]
+
+
+@pytest.mark.parametrize("type_name,nts,policy,action,mod,keep,sign", BRANCHES)
+def test_every_override_branch(conn, mini_vfb, type_name, nts, policy, action, mod, keep, sign):
+    vfb.use(_variant(mini_vfb, type_name, nts), mini_vfb[1])
+    try:
+        ov = vfb.transmitter_overrides(conn, policy)
+    finally:
+        vfb.use(*mini_vfb)
+    idx = conn.select(type_name)
+    assert {r["type"]: r["action"] for r in ov.rows}.get(type_name) == action
+    assert all(ov.action[i] == action and ov.curated[i] == nts for i in idx.tolist())
+    assert (ov.mod_nt[idx] == mod).all() and (ov.keep_fast[idx] == keep).all() and (ov.sign[idx] == sign).all()
+
+
+def test_overrides_skip_what_should_only_annotate(conn, mini_vfb):
+    for variant, t in ((_variant(mini_vfb, "GNG087", ["acetylcholine"], evidence="connectome"), "GNG087"),   # another data set
+                       (_variant(mini_vfb, "GNG087", ["acetylcholine"], coarse=True), "GNG087"),            # a stem / individual
+                       (_variant(mini_vfb, "LC4", ["acetylcholine"]), "LC4")):                              # agrees: nothing to do
+        vfb.use(variant, mini_vfb[1])
+        try:
+            ov = vfb.transmitter_overrides(conn, "all")
+        finally:
+            vfb.use(*mini_vfb)
+        assert t not in {r["type"] for r in ov.rows}
+    # a curated modulator the parts list does not model is ignored (not reported as applied)
+    vfb.use(_variant(mini_vfb, "LB1a", ["serotonin"]), mini_vfb[1])
+    try:
+        ov = vfb.transmitter_overrides(conn, "modulators", modulators=("dopamine", "octopamine"))
+        cp = PartsList(modulators=PartsList().modulators[:2]).compile(conn)
+    finally:
+        vfb.use(*mini_vfb)
+    assert "LB1a" not in {r["type"] for r in ov.rows} and not any(conn.types[i] == "LB1a" for i in cp.roles)
 
 
 def test_curated_transmitter_policies(conn, mini_vfb):
@@ -174,3 +267,30 @@ def test_without_data_files_everything_degrades_to_nothing_known(conn, mini_vfb)
     finally:
         vfb.use(*mini_vfb)
         conn._cache.clear()
+
+
+def test_the_gain_follows_the_signed_tone_and_never_drops_below_the_floor(conn, mini_vfb):
+    from virtual_fly.brain import GAIN_FLOOR
+    b = FlyBrain(conn, seed=0, parts=True)
+    k = b._mod_level.shape[0]
+    b._mod_level[:] = 1e6                                   # every tone saturated on every target
+    b._mod_sign = np.full_like(b._mod_sign, -1.0)           # and every receptor inhibitory: 1 - 0.3 - 0.5 - 0.3 < 0
+    b._mod_block()
+    assert k == 3 and np.allclose(b._mod_gain, GAIN_FLOOR) and b._mod_active
+    b._mod_sign = np.full_like(b._mod_sign, 1.0)
+    b._mod_level[:] = 1e6
+    b._mod_block()
+    assert np.allclose(b._mod_gain, 1 + 0.3 + 0.5 + 0.3, atol=1e-4)
+
+
+def test_the_game_rebuilds_with_its_own_parts_list(conn, mini_vfb):
+    from virtual_fly.game import Game
+    from virtual_fly.settings import build_brain
+    pl = PartsList(curated="all", receptor_signs=False)
+    g = Game(build_brain(conn, "game", seed=0), autopilot=False, seed=1, parts_list=pl)
+    assert not g.parts_on and g.parts_list() is pl and g.parts_arg(True) is pl and g.parts_arg(False) is False
+    assert g.parts_counts()["curated"]["policy"] == "all" and b"\"curated\":\"all\"" in g._make_layout()
+    plain = Game(build_brain(conn, "game", seed=0), autopilot=False, seed=1)
+    assert plain.parts_arg(True) is True and plain.parts_list().curated == "modulators"
+    on = Game(build_brain(conn, "game", seed=0, parts=pl), autopilot=False, seed=1)
+    assert on.parts_on and on.parts_list() is pl and on.parts_arg(True) is pl

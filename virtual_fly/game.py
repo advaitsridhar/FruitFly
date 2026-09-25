@@ -245,7 +245,7 @@ class MotorDecoder:
 
 class Game:
     def __init__(self, brain: FlyBrain, autopilot: bool = True, seed: int = 0, columnar: bool = True,
-                 profile_name: str = "game", brain_factory=None):
+                 profile_name: str = "game", brain_factory=None, parts_list=None):
         self.brain, self.conn = brain, brain.conn
         self.profile_name = profile_name
         # the genome: the real wiring, and flies grown from its rules (see wiring.py)
@@ -255,7 +255,8 @@ class Game:
         self._survival_token = None
         self.genome: dict = {"level": "real", "seed": 0, "growing": None, "survival": None, "wiring": None, "rules": None, "error": None}
         self.parts_on = brain.parts is not None          # the genes as each neuron's parts list (parts.py)
-        self._parts_list = brain.parts.parts if brain.parts is not None else None   # the PartsList to rebuild with
+        # the PartsList to (re)build with: the running brain's, else the one the caller chose (curated policy ...)
+        self._parts_list = brain.parts.parts if brain.parts is not None else parts_list
         self._parts_counts: dict | None = None
         self.rng = random.Random(seed)
         self.seed = seed
@@ -366,12 +367,16 @@ class Game:
         policy and receptor setting), or the default one."""
         return (self._parts_list or True) if on else False
 
+    def parts_list(self) -> "partslib.PartsList":
+        """The parts list this game switches on (the default one unless it was started with another)."""
+        return self._parts_list or partslib.PartsList()
+
     def parts_counts(self) -> dict:
         """What the parts list finds in this connectome (compiled once; the same whether it is switched on)."""
         if self.brain.parts is not None:
             return self.brain.parts.counts
         if self._parts_counts is None:
-            self._parts_counts = partslib.PartsList().compile(self.real_conn).counts
+            self._parts_counts = self.parts_list().compile(self.real_conn).counts
         return self._parts_counts
 
     def _start_grow(self, level: str, seed: int):
@@ -1139,7 +1144,7 @@ class Game:
             "genetics": self.genetics,
             "genome": {"levels": [{"level": lv, "label": lb} for lv, lb in wiring.LEVELS],
                        "rules": {"type_groups": None}},
-            "parts": {"tables": partslib.PartsList().describe(), "counts": self.parts_counts()},
+            "parts": {"tables": self.parts_list().describe(), "counts": self.parts_counts()},
             "vfb": vfb.ontology().summary(c),
             "settings": self.brain.settings(),
             "decoder": self.decoder.dn_targets,

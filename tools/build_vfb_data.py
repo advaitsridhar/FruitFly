@@ -251,9 +251,13 @@ def build(obo: Path, kit_types: dict[str, int], overlay: dict | None = None) -> 
     for name, n in kit_types.items():
         r = match_type(name, idx, t, anc)
         ov = overlay.get(name)
-        if ov is not None and ov.get("route") == "rejected":          # VFB's MaleCNS names say the OBO match is wrong
-            r = {"fbbt": [], "route": "rejected"}
-        if ov is not None and ov.get("fbbt") and (not r["fbbt"] or r["route"] in ("obo_stem", "obo_split", "rejected")):
+        was = {w.replace("_", ":") for w in (ov or {}).get("was", [])}
+        if ov is not None and ov.get("route") == "rejected" and (not was or set(r["fbbt"]) <= was):
+            r = {"fbbt": [], "route": "rejected"}                     # VFB's MaleCNS names say the OBO match is wrong
+        # the harvest fills what the OBO cannot match, replaces a coarse match, and overrides a direct match
+        # only when it was recorded as a correction of exactly that match
+        corrects = bool(ov and ov.get("override") and (not was or set(r["fbbt"]) <= was))
+        if ov is not None and ov.get("fbbt") and (not r["fbbt"] or r["route"] in ("obo_stem", "obo_split", "rejected") or corrects):
             ids = [i.replace("_", ":") for i in ov["fbbt"]]
             ids = [i for i in ids if i in t and not t[i]["obsolete"]]
             if ids:
@@ -339,7 +343,7 @@ def main(argv=None):
     n_types, n_neurons = len(fbbt_map), sum(e["n"] for e in fbbt_map.values())
     total_n = sum(kit.values())
     routes = collections.Counter(e["route"] for e in fbbt_map.values())
-    print(f"mapped {n_types} of {len(kit)} types, {n_neurons} of {total_n} typed neurons ({100 * n_neurons / total_n:.1f} %)")
+    print(f"mapped {n_types} of {len(kit)} types, {n_neurons} of {total_n} typed neurons ({100 * n_neurons / max(total_n, 1):.1f} %)")
     print("routes:", dict(routes))
     print(f"unresolved: {len(unresolved)} types, {sum(u['n'] for u in unresolved.values())} neurons; "
           f"ambiguous {sum(1 for u in unresolved.values() if u['route'] == 'ambiguous')}")

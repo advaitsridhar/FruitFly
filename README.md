@@ -290,8 +290,10 @@ over the prediction where the parts model cares (Mi15 gains a dopamine tone, the
 GABA + serotonin, "unclear" predictions with a curated transmitter get it), and the tone's sign on
 each target follows the receptors its type expresses (Gi-coupled ones lower the gain). The Genetics
 card lists where the literature and the prediction disagree. `python fly_brain.py --curated all`
-also flips the fast transmitters the literature disputes; section 8.1 of `docs/SCIENCE.md` has the
-numbers and the survival table.
+lets the literature win over confident fast predictions too (their signs flip, and types it calls
+purely modulatory lose their fast synapses), and `python fly_game.py --curated all` makes the
+Genome card's switch use that policy; section 8.1 of `docs/SCIENCE.md` has the numbers and the
+survival table.
 
 ## 6. Honest limitations
 

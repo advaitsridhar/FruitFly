@@ -350,6 +350,6 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; backgro
 .popover details { margin: 4px 0; font-size: 11.5px; }
 .popover details summary { cursor: pointer; color: var(--muted); }
 .popover .def { color: var(--muted); margin-top: 3px; line-height: 1.35; }
-.muted { color: var(--muted); }
-.warn { color: var(--orange); }
-.ok { color: var(--green); }
+.popover .muted { color: var(--muted); }
+.popover .warn { color: var(--orange); }
+.popover .agree { color: var(--green); }

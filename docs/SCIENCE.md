@@ -1194,10 +1194,17 @@ which live only on VFB's server: a one-time harvest through the VFB connector (`
 one row per matching synonym, then `get_term_info` to check that the class carries the exact
 MaleCNS name) adds {{OVERLAY_TYPES}} more types ({{OVERLAY_NEURONS}} neurons: the 3,377
 photoreceptors `R1-R6`, the 745 interommatidial bristle neurons `BM_InOm`, `KCab-m`, the LC10c
-subtypes, ...), and the same check on {{VERIFY_N}} of the offline matches (every EXACT-synonym
-match, every type whose curated transmitter disagrees with the prediction, and a random sample)
-confirmed {{VERIFY_OK}} and rejected {{VERIFY_BAD}}, which the shipped map leaves unresolved.
-The result is `data/fbbt_map.json.gz` ({{MAP_TYPES}} types, {{MAP_PCT}} % of the typed neurons;
+subtypes, `MN9`, `pIP10`, `GNG232`, ...; for the 40 `pC1_*` subtypes and a dozen sensory groups
+that no class names, the class is read off one of the type's own neurons on VFB, found by its
+bodyId, and marked coarse). The same check on {{VERIFY_N}} of the offline matches (every
+EXACT-synonym match, every type whose curated transmitter disagrees with the prediction, and random
+samples of the symbol and stem matches) confirmed {{VERIFY_OK}} and contradicted {{VERIFY_BAD}}: a
+`_b` type whose stem class lists its MaleCNS members without it (`PS008_b`, `DNg36_b`, `CB1287_b`,
+...) is left unresolved, and where VFB shows the MaleCNS name on a different class than the OBO
+match (hemibrain and MaleCNS reused a name for different cells: `SMP053`, `SLP305`, four `LHAV`
+types) the map uses that class, each checked by hand (`tools/vfb_overlay.json` records it). One
+in seven of the sampled stem matches is contradicted this way, which is why stem matches never
+drive the model (below). The result is `data/fbbt_map.json.gz` ({{MAP_TYPES}} types, {{MAP_PCT}} % of the typed neurons;
 `tools/vfb_overlay.json` holds the harvest so the build is reproducible) and
 `data/fbbt_tree.json.gz`, the {{TREE_CLASSES}} classes above them with labels, parents, symbols
 and short definitions. The unresolved remainder is mostly names MaleCNS coined and no ontology
@@ -1225,23 +1232,29 @@ differs for {{DIFFER}}; {{UNCLEAR_TYPES}} types whose prediction is "unclear" ge
 list on, the literature's word wins where the parts model cares (`PartsList(curated="modulators")`,
 the default; `vfb.transmitter_overrides` has the rules):
 
-| what the literature says | neurons | the parts list does |
+| what the curated class says | neurons | the parts list does |
 |---|---|---|
-| Mi15 is cholinergic *and* dopaminergic (Davis et al. 2020) | 1,151 | keeps the fast synapses, adds a dopamine tone on its targets |
-| the DPM neuron is GABAergic and serotonergic, not dopaminergic | 2 | fast GABA synapses, a serotonin tone |
-| OA-ASM2 ("unclear") and OA-ASM3 (predicted serotonin) are octopaminergic | 4 | an octopamine tone |
-| DNd02 ("unclear") releases glutamate, octopamine and tyramine; DNd03 (predicted glutamate) octopamine | 4 | fast glutamate synapses kept, an octopamine tone |
-| FB6H and FB7B ("unclear") are PPL1 dopamine neurons; LPsP (predicted acetylcholine) is dopaminergic; MeVCMe1 (predicted acetylcholine) is octopaminergic | 10 | a tone (the predicted fast synapses kept) |
-| PPL203 (predicted serotonin) is dopaminergic and GABAergic; LHPV6q1 and aMe8 (predicted serotonin) are cholinergic | 9 | the modulator changed; or no tone at all, fast synapses kept |
-| TmY14 and 146 more "unclear" types have a curated fast transmitter (91 TmY14 from the literature, the rest from another connectome's class) | {{FILL_N}} | the sign of their fast synapses |
+| Mi15 is cholinergic *and* dopaminergic (Davis et al. 2020) | 1,151 | keeps its fast synapses and adds a dopamine tone on its targets |
+| the DPM neuron (predicted dopamine) is GABAergic and serotonergic; PPL203 (predicted serotonin) is dopaminergic and GABAergic; OA-ASM3 (predicted serotonin) is octopaminergic; one vMS17 (predicted octopamine) is dopaminergic, GABAergic and serotonergic | 7 | the tone becomes the literature's modulator (the first of several, for vMS17), and a co-released GABA gives fast inhibitory synapses |
+| DNg34 (glutamate) and DNg66 (acetylcholine), predicted octopaminergic, co-release a fast transmitter | 3 | the octopamine tone stays and the co-released transmitter's fast synapses are added |
+| LHPV6q1, PRW068 and one aMe8 (predicted serotonin) are cholinergic | 5 | no tone; fast excitatory synapses |
+| MeVCMe1 and DNd03 (octopamine) and LPsP (dopamine) are modulatory, predicted fast | 8 | a tone is added and the predicted fast synapses are kept (under `curated="all"` they are removed) |
+| OA-ASM2, FB6H, FB7B, PAL03 and vMS16, predicted "unclear", are octopaminergic or dopaminergic | 10 | a tone and no fast synapses, like any modulatory neuron |
+| DNd02 and one vMS17, predicted "unclear", release a modulator and a fast transmitter | 3 | a tone and fast synapses |
+| 16 more "unclear" types whose only class is another connectome's type, predicted dopaminergic or serotonergic there (SMP143, ATL043, AVLP594, ...) | 30 | a tone (that data set's prediction, not the literature's) |
+| "unclear" types with a fast transmitter: TmY14 (91 neurons), LHAV4d1, CEM, aMe8 and two more from the literature, 151 types from another connectome's class | 590 | the sign of their fast synapses |
 
-Tyramine has no place in the model and is ignored. What the default policy does *not* do is flip
-the sign of a confident fast prediction: the literature classes disagree with MaleCNS on the fast
-transmitter of {{FAST_DIFFER}} types (T3, L3, Mi2, Mi10, Tm39, ... : 5,929 neurons), and where
-two data sets disagree on a fast transmitter the model has no way to pick; `curated="all"` applies
-those flips for anyone who wants to see what they do (`fly-brain --curated all`), and the popover
-shows the disagreement either way. The connectome-derived classes only ever fill an "unclear"
-prediction.
+Tyramine has no place in the model and is ignored. PPL203 is one of the game profile's `class:DAN`
+neurons, whose fast synapses the game mutes by hand when the parts list is off; with the parts list on
+it keeps the GABA synapses the literature gives it. What the default policy does *not* do is flip the
+sign of a confident fast prediction: the literature classes disagree with MaleCNS on the fast
+transmitter of {{FAST_DIFFER}} (T3, L3, Mi2, Mi10, Tm39, ...), and where two data sets disagree on a
+fast transmitter the model has no way to pick. `curated="all"` lets the literature win there too (the
+signs flip, and the three modulatory types above lose their predicted fast synapses) for anyone who
+wants to see what that does (`fly-brain --curated all`); the popover shows the disagreement either
+way. Classes that are another connectome's type only ever fill an "unclear" prediction, and coarse
+matches (a `_a` type read as its stem's class, or a class read off one VFB individual) are never used
+for the model at all.
 
 **Receptor signs.** The one net sign per modulator was the gap the parts list admitted to. VFB
 carries, for {{RX_CLASSES}} neuron classes, the single-cell RNA-seq clusters of the Fly Cell Atlas

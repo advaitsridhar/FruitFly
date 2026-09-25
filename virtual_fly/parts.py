@@ -205,7 +205,7 @@ class PartsList:
     def compile(self, conn: Connectome) -> CompiledParts:
         from . import vfb
         n = conn.n
-        ov = vfb.transmitter_overrides(conn, self.curated)
+        ov = vfb.transmitter_overrides(conn, self.curated, modulators=tuple(m.nt for m in self.modulators))
         kind_of = {m.nt: k for k, m in enumerate(self.modulators)}
         mod_kind = np.full(n, -1, dtype=np.int8)
         for k, m in enumerate(self.modulators):
@@ -257,7 +257,9 @@ class PartsList:
                   "co_release_neurons": int(keep_fast.sum()),
                   "graded": graded_rows, "graded_neurons": int(graded_idx.size), "graded_rate_hz": self.graded_rate_hz,
                   "params": param_rows,
-                  "curated": {**ov.counts, "rows": ov.rows[:40], "sign_flips": int((ov.sign != conn.sign).sum())},
+                  "curated": {**ov.counts, "rows": ov.rows[:40],
+                              "signs_changed": int((ov.sign != conn.sign).sum()),          # incl. "unclear" (counted +) filled with an inhibitory one
+                              "confident_signs_flipped": int(((ov.sign != conn.sign) & ~np.isin(conn.nt, ["", "unclear"])).sum())},
                   "receptor_signs": {"on": self.receptor_signs, "coverage": coverage,
                                      "receptors": [{"gene": r.gene, "modulator": r.modulator, "coupling": r.coupling, "sign": r.sign}
                                                    for r in self.receptors]}}

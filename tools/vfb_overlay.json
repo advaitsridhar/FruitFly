@@ -1,0 +1,2229 @@
+{
+ "source": "Virtual Fly Brain (virtualflybrain.org): name_in_male-cns synonyms (Berg et al. 2025) and MaleCNS individuals' classes, read through the VFB MCP connector; FBbt is CC-BY 4.0 (FlyBase)",
+ "harvested": "2026-09-25",
+ "types": {
+  "R1-R6": {
+   "fbbt": [
+    "FBbt:00006007"
+   ],
+   "route": "name_in_male-cns",
+   "label": "outer photoreceptor cell",
+   "source": "overlay"
+  },
+  "BM_InOm": {
+   "fbbt": [
+    "FBbt:00047346"
+   ],
+   "route": "name_in_male-cns",
+   "label": "mechanosensory neuron of interommatidial bristle",
+   "source": "overlay"
+  },
+  "KCab-m": {
+   "fbbt": [
+    "FBbt:00100248"
+   ],
+   "route": "name_in_male-cns",
+   "label": "alpha/beta Kenyon cell",
+   "source": "overlay"
+  },
+  "Tlp12": {
+   "fbbt": [
+    "FBbt:00003891"
+   ],
+   "route": "name_in_male-cns",
+   "label": "translobula plate neuron Tlp1",
+   "source": "overlay"
+  },
+  "LC10c-1": {
+   "fbbt": [
+    "FBbt:00111746"
+   ],
+   "route": "name_in_male-cns",
+   "label": "lobula columnar neuron LC10c",
+   "source": "overlay"
+  },
+  "LC10c-2": {
+   "fbbt": [
+    "FBbt:00111746"
+   ],
+   "route": "name_in_male-cns",
+   "label": "lobula columnar neuron LC10c",
+   "source": "overlay"
+  },
+  "Tlp13": {
+   "fbbt": [
+    "FBbt:00003894"
+   ],
+   "route": "name_in_male-cns",
+   "label": "translobula plate neuron Tlp4",
+   "source": "overlay"
+  },
+  "Tlp11": {
+   "fbbt": [
+    "FBbt:00003895"
+   ],
+   "route": "name_in_male-cns",
+   "label": "translobula plate neuron Tlp5",
+   "source": "overlay"
+  },
+  "Li28": {
+   "fbbt": [
+    "FBbt:00003884"
+   ],
+   "route": "name_in_male-cns",
+   "label": "lobula intrinsic neuron Li2",
+   "source": "overlay"
+  },
+  "Sternal anterior rotator MN": {
+   "fbbt": [
+    "FBbt:00053101"
+   ],
+   "route": "name_in_male-cns",
+   "label": "prothoracic sternal anterior rotator muscle motor neuron",
+   "source": "overlay"
+  },
+  "AMMC025": {
+   "fbbt": [
+    "FBbt:20005568"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB1978 neuron",
+   "source": "overlay"
+  },
+  "PS324": {
+   "fbbt": [
+    "FBbt:20005002"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB1342 neuron",
+   "source": "overlay"
+  },
+  "MeVP9": {
+   "fbbt": [
+    "FBbt:20007682"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult medulla tangential neuron e01b",
+   "source": "overlay"
+  },
+  "GNG428": {
+   "fbbt": [
+    "FBbt:20005122"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB1479 neuron",
+   "source": "overlay"
+  },
+  "aSP10B": {
+   "fbbt": [
+    "FBbt:20005817"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB2248 neuron",
+   "source": "overlay"
+  },
+  "LPT116": {
+   "fbbt": [
+    "FBbt:20007290"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult lobula plate visual centrifugal neuron 03",
+   "source": "overlay"
+  },
+  "GNG454": {
+   "fbbt": [
+    "FBbt:20004649"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB0961 neuron",
+   "source": "overlay"
+  },
+  "LgAG2": {
+   "fbbt": [
+    "FBbt:20011228"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult SAch01 neuron",
+   "source": "overlay"
+  },
+  "GNG410": {
+   "fbbt": [
+    "FBbt:20005531"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB1937 neuron",
+   "source": "overlay"
+  },
+  "AMMC020": {
+   "fbbt": [
+    "FBbt:20004676"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB0989 neuron",
+   "source": "overlay"
+  },
+  "AMMC035": {
+   "fbbt": [
+    "FBbt:20005073"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB1427 neuron",
+   "source": "overlay"
+  },
+  "AMMC019": {
+   "fbbt": [
+    "FBbt:20004666"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB0979 neuron",
+   "source": "overlay"
+  },
+  "AMMC026": {
+   "fbbt": [
+    "FBbt:20004667"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB0980 neuron",
+   "source": "overlay"
+  },
+  "GNG319": {
+   "fbbt": [
+    "FBbt:20005638"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB2054 neuron",
+   "source": "overlay"
+  },
+  "LgAG8": {
+   "fbbt": [
+    "FBbt:20011228"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult SAch01 neuron",
+   "source": "overlay"
+  },
+  "AMMC018": {
+   "fbbt": [
+    "FBbt:20004666"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB0979 neuron",
+   "source": "overlay"
+  },
+  "SMP738": {
+   "fbbt": [
+    "FBbt:20005025"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB1372 neuron",
+   "source": "overlay"
+  },
+  "aSP10C_a": {
+   "fbbt": [
+    "FBbt:20005034"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB1382 neuron",
+   "source": "overlay"
+  },
+  "AMMC002": {
+   "fbbt": [
+    "FBbt:20005726"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB2149 neuron",
+   "source": "overlay"
+  },
+  "PRW044": {
+   "fbbt": [
+    "FBbt:20004731"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB1049 neuron",
+   "source": "overlay"
+  },
+  "GNG438": {
+   "fbbt": [
+    "FBbt:20005047"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB1397 neuron",
+   "source": "overlay"
+  },
+  "FB9C": {
+   "fbbt": [
+    "FBbt:00052848"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult fan-shaped body layer 9 neuron of DPMpl2 lineage",
+   "source": "overlay"
+  },
+  "IN08B036": {
+   "fbbt": [
+    "FBbt:00053079"
+   ],
+   "route": "name_in_male-cns",
+   "label": "contralaterally projecting haltere interneuron",
+   "source": "overlay"
+  },
+  "WED201": {
+   "fbbt": [
+    "FBbt:20005085"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB1439 neuron",
+   "source": "overlay"
+  },
+  "GNG320": {
+   "fbbt": [
+    "FBbt:20005131"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB1488 neuron",
+   "source": "overlay"
+  },
+  "AMMC015": {
+   "fbbt": [
+    "FBbt:20004777"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB1098 neuron",
+   "source": "overlay"
+  },
+  "GNG386": {
+   "fbbt": [
+    "FBbt:20006219"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB2690 neuron",
+   "source": "overlay"
+  },
+  "aIPg1": {
+   "fbbt": [
+    "FBbt:20005708"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB2131 neuron",
+   "source": "overlay"
+  },
+  "PRW039": {
+   "fbbt": [
+    "FBbt:20004960"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB1295 neuron",
+   "source": "overlay"
+  },
+  "SMP741": {
+   "fbbt": [
+    "FBbt:20004573"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB0878 neuron",
+   "source": "overlay"
+  },
+  "SMP740": {
+   "fbbt": [
+    "FBbt:20004920"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB1253 neuron",
+   "source": "overlay"
+  },
+  "vPR6": {
+   "fbbt": [
+    "FBbt:00110860"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult fruitless vPR6 (male) neuron",
+   "source": "overlay"
+  },
+  "GNG610": {
+   "fbbt": [
+    "FBbt:20005911"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB2353 neuron",
+   "source": "overlay"
+  },
+  "GNG635": {
+   "fbbt": [
+    "FBbt:20004664"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB0977 neuron",
+   "source": "overlay"
+  },
+  "SMP739": {
+   "fbbt": [
+    "FBbt:20005004"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB1345 neuron",
+   "source": "overlay"
+  },
+  "AMMC003": {
+   "fbbt": [
+    "FBbt:20005429"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB1826 neuron",
+   "source": "overlay"
+  },
+  "LgAG4": {
+   "fbbt": [
+    "FBbt:20011228"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult SAch01 neuron",
+   "source": "overlay"
+  },
+  "IN08B008": {
+   "fbbt": [
+    "FBbt:00053081"
+   ],
+   "route": "name_in_male-cns",
+   "label": "neck contralaterally projecting haltere interneuron",
+   "source": "overlay"
+  },
+  "LgAG3": {
+   "fbbt": [
+    "FBbt:20011228"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult SAch01 neuron",
+   "source": "overlay"
+  },
+  "GNG379": {
+   "fbbt": [
+    "FBbt:20006467"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB2962 neuron",
+   "source": "overlay"
+  },
+  "IN08B070_b": {
+   "fbbt": [
+    "FBbt:00053079"
+   ],
+   "route": "name_in_male-cns",
+   "label": "contralaterally projecting haltere interneuron",
+   "source": "overlay"
+  },
+  "GNG440": {
+   "fbbt": [
+    "FBbt:20004975"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB1311 neuron",
+   "source": "overlay"
+  },
+  "LoVP83": {
+   "fbbt": [
+    "FBbt:20000043"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult anterior optic tubercle neuron 044",
+   "source": "overlay"
+  },
+  "BM_Hau": {
+   "fbbt": [
+    "FBbt:00052800"
+   ],
+   "route": "name_in_male-cns",
+   "label": "mechanosensory neuron of haustellum bristle",
+   "source": "overlay"
+  },
+  "ITP": {
+   "fbbt": [
+    "FBbt:00048313"
+   ],
+   "route": "name_in_male-cns",
+   "label": "ITP neuron",
+   "source": "overlay"
+  },
+  "aIPg7": {
+   "fbbt": [
+    "FBbt:20003436"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult superior medial protocerebrum neuron 574",
+   "source": "overlay"
+  },
+  "WEDPN17_a1": {
+   "fbbt": [
+    "FBbt:20005968"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB2414 neuron",
+   "source": "overlay"
+  },
+  "SMP734": {
+   "fbbt": [
+    "FBbt:20006175"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB2643 neuron",
+   "source": "overlay"
+  },
+  "LoVP84": {
+   "fbbt": [
+    "FBbt:20002366"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult superior intermediate protocerebrum neuron 062",
+   "source": "overlay"
+  },
+  "CB4205": {
+   "fbbt": [
+    "FBbt:20003346"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult superior medial protocerebrum neuron 484",
+   "source": "overlay"
+  },
+  "AMMC004": {
+   "fbbt": [
+    "FBbt:20004665"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB0978 neuron",
+   "source": "overlay"
+  },
+  "MNad07": {
+   "fbbt": [
+    "FBbt:00048235"
+   ],
+   "route": "other_name:name_in_manc",
+   "label": "adult motor neuron",
+   "source": "overlay"
+  },
+  "AVLP611": {
+   "fbbt": [
+    "FBbt:20005119"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB1476 neuron",
+   "source": "overlay"
+  },
+  "DH44": {
+   "fbbt": [
+    "FBbt:00047132"
+   ],
+   "route": "name_in_male-cns",
+   "label": "Dh44 neuron of pars intercerebralis",
+   "source": "overlay"
+  },
+  "AMMC036": {
+   "fbbt": [
+    "FBbt:20004645"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB0957 neuron",
+   "source": "overlay"
+  },
+  "CEM": {
+   "fbbt": [
+    "FBbt:00053575"
+   ],
+   "route": "name_in_male-cns",
+   "label": "crop-innervating enteric motor neuron",
+   "source": "overlay"
+  },
+  "AMMC022": {
+   "fbbt": [
+    "FBbt:20004074"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB0267 neuron",
+   "source": "overlay"
+  },
+  "SMP737": {
+   "fbbt": [
+    "FBbt:20005149"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB1506 neuron",
+   "source": "overlay"
+  },
+  "PRW024": {
+   "fbbt": [
+    "FBbt:20006472"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB2968 neuron",
+   "source": "overlay"
+  },
+  "PRW035": {
+   "fbbt": [
+    "FBbt:20005331"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB1718 neuron",
+   "source": "overlay"
+  },
+  "DVMn 3a, b": {
+   "fbbt": [
+    "FBbt:00052774"
+   ],
+   "route": "name_in_male-cns",
+   "label": "dorsal ventral indirect flight muscle motor neuron 3",
+   "source": "overlay"
+  },
+  "CL365": {
+   "fbbt": [
+    "FBbt:20005090"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB1444 neuron",
+   "source": "overlay"
+  },
+  "LPi12": {
+   "fbbt": [
+    "FBbt:00052850"
+   ],
+   "route": "name_in_male-cns",
+   "label": "lobula plate intrinsic neuron LPi1-2",
+   "source": "overlay"
+  },
+  "GNG482": {
+   "fbbt": [
+    "FBbt:20004432"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB0704 neuron",
+   "source": "overlay"
+  },
+  "Hugin-RG": {
+   "fbbt": [
+    "FBbt:00052009"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult Hugin neuron of the corpus allatum",
+   "source": "overlay"
+  },
+  "GNG656": {
+   "fbbt": [
+    "FBbt:20006272"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB2748 neuron",
+   "source": "overlay"
+  },
+  "aDT4": {
+   "fbbt": [
+    "FBbt:00110539"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult fruitless aDT4 neuron",
+   "source": "overlay"
+  },
+  "MN7": {
+   "fbbt": [
+    "FBbt:20004478"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB0762 neuron",
+   "source": "overlay"
+  },
+  "DVMn 2a, b": {
+   "fbbt": [
+    "FBbt:00052773"
+   ],
+   "route": "name_in_male-cns",
+   "label": "dorsal ventral indirect flight muscle motor neuron 2",
+   "source": "overlay"
+  },
+  "GNG572": {
+   "fbbt": [
+    "FBbt:20003963"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB0124 neuron",
+   "source": "overlay"
+  },
+  "EN00B008": {
+   "fbbt": [
+    "FBbt:00052753"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult mesothoracic VUM neuron 2",
+   "source": "overlay"
+  },
+  "GNG647": {
+   "fbbt": [
+    "FBbt:20004611"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB0918 neuron",
+   "source": "overlay"
+  },
+  "SMP735": {
+   "fbbt": [
+    "FBbt:20006160"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB2626 neuron",
+   "source": "overlay"
+  },
+  "GNG425": {
+   "fbbt": [
+    "FBbt:20005160"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB1517 neuron",
+   "source": "overlay"
+  },
+  "GNG372": {
+   "fbbt": [
+    "FBbt:20006639"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB3153 neuron",
+   "source": "overlay"
+  },
+  "PRW021": {
+   "fbbt": [
+    "FBbt:20006740"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB3267 neuron",
+   "source": "overlay"
+  },
+  "GNG650": {
+   "fbbt": [
+    "FBbt:20004538"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB0835 neuron",
+   "source": "overlay"
+  },
+  "pIP10": {
+   "fbbt": [
+    "FBbt:00110854"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult fruitless pIP10 (male) neuron",
+   "source": "overlay"
+  },
+  "CvN5": {
+   "fbbt": [
+    "FBbt:20004540"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB0838 neuron",
+   "source": "overlay"
+  },
+  "AVLP610": {
+   "fbbt": [
+    "FBbt:20004361"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB0623 neuron",
+   "source": "overlay"
+  },
+  "GNG137": {
+   "fbbt": [
+    "FBbt:00051901"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult justice subesophageal neuron",
+   "source": "overlay"
+  },
+  "PRW068": {
+   "fbbt": [
+    "FBbt:00051951"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult trumpet subesophageal neuron",
+   "source": "overlay"
+  },
+  "GNG701m": {
+   "fbbt": [
+    "FBbt:00047355"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult doublesex SN (male) neuron",
+   "source": "overlay"
+  },
+  "MN2V": {
+   "fbbt": [
+    "FBbt:20004494"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB0783 neuron",
+   "source": "overlay"
+  },
+  "PRW001": {
+   "fbbt": [
+    "FBbt:20007125"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB3695 neuron",
+   "source": "overlay"
+  },
+  "hg4 MN": {
+   "fbbt": [
+    "FBbt:00052728"
+   ],
+   "route": "name_in_male-cns",
+   "label": "wing axillary muscle hg4 motor neuron",
+   "source": "overlay"
+  },
+  "GNG550": {
+   "fbbt": [
+    "FBbt:20004026"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB0212 neuron",
+   "source": "overlay"
+  },
+  "MN9": {
+   "fbbt": [
+    "FBbt:00111298"
+   ],
+   "route": "name_in_male-cns",
+   "label": "proboscis muscle 9 motor neuron",
+   "source": "overlay"
+  },
+  "GNG648": {
+   "fbbt": [
+    "FBbt:20004606"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB0913 neuron",
+   "source": "overlay"
+  },
+  "MNx04": {
+   "fbbt": [
+    "FBbt:20004440"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB0715 neuron",
+   "source": "overlay"
+  },
+  "GNG232": {
+   "fbbt": [
+    "FBbt:00051850"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult gustatory second-order neuron type 1",
+   "source": "overlay"
+  },
+  "GNG591": {
+   "fbbt": [
+    "FBbt:20003878"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB0019 neuron",
+   "source": "overlay"
+  },
+  "vMS17": {
+   "fbbt": [
+    "FBbt:00053052"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult fruitless vMS17 neuron",
+   "source": "overlay"
+  },
+  "GNG665": {
+   "fbbt": [
+    "FBbt:20003935"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB0088 neuron",
+   "source": "overlay"
+  },
+  "GNG653": {
+   "fbbt": [
+    "FBbt:20004434"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB0706 neuron",
+   "source": "overlay"
+  },
+  "NPFL1-I": {
+   "fbbt": [
+    "FBbt:00048114"
+   ],
+   "route": "other_name:name_in_banc",
+   "label": "adult NPF L1-l neuron",
+   "source": "overlay"
+  },
+  "GNG649": {
+   "fbbt": [
+    "FBbt:20004581"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB0886 neuron",
+   "source": "overlay"
+  },
+  "CvN4": {
+   "fbbt": [
+    "FBbt:20004592"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB0899 neuron",
+   "source": "overlay"
+  },
+  "GNG629": {
+   "fbbt": [
+    "FBbt:20004330"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB0586 neuron",
+   "source": "overlay"
+  },
+  "GNG133": {
+   "fbbt": [
+    "FBbt:20004569"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB0873 neuron",
+   "source": "overlay"
+  },
+  "SMP745": {
+   "fbbt": [
+    "FBbt:20003917"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB0066 neuron",
+   "source": "overlay"
+  },
+  "GNG141": {
+   "fbbt": [
+    "FBbt:20003871"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB0011 neuron",
+   "source": "overlay"
+  },
+  "GNG631": {
+   "fbbt": [
+    "FBbt:20003995"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB0168 neuron",
+   "source": "overlay"
+  },
+  "SMP732": {
+   "fbbt": [
+    "FBbt:20007042"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB3601 neuron",
+   "source": "overlay"
+  },
+  "MNx05": {
+   "fbbt": [
+    "FBbt:20004484"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB0769 neuron",
+   "source": "overlay"
+  },
+  "iii1 MN": {
+   "fbbt": [
+    "FBbt:00004069"
+   ],
+   "route": "name_in_male-cns",
+   "label": "wing axillary muscle III1 motor neuron",
+   "source": "overlay"
+  },
+  "GNG578": {
+   "fbbt": [
+    "FBbt:20003934"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB0087 neuron",
+   "source": "overlay"
+  },
+  "GNG630": {
+   "fbbt": [
+    "FBbt:20004112"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB0317 neuron",
+   "source": "overlay"
+  },
+  "PS349": {
+   "fbbt": [
+    "FBbt:20004513"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB0804 neuron",
+   "source": "overlay"
+  },
+  "CvN6": {
+   "fbbt": [
+    "FBbt:20004609"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB0916 neuron",
+   "source": "overlay"
+  },
+  "MN13": {
+   "fbbt": [
+    "FBbt:20004539"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB0836 neuron",
+   "source": "overlay"
+  },
+  "MN3M": {
+   "fbbt": [
+    "FBbt:20004431"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB0703 neuron",
+   "source": "overlay"
+  },
+  "PAL03": {
+   "fbbt": [
+    "FBbt:00100215"
+   ],
+   "route": "name_in_male-cns",
+   "label": "dopaminergic PAL neuron",
+   "source": "overlay"
+  },
+  "GNG208": {
+   "fbbt": [
+    "FBbt:20004080"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB0277 neuron",
+   "source": "overlay"
+  },
+  "GNG668": {
+   "fbbt": [
+    "FBbt:20004467"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB0750 neuron",
+   "source": "overlay"
+  },
+  "GNG276": {
+   "fbbt": [
+    "FBbt:20004433"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB0705 neuron",
+   "source": "overlay"
+  },
+  "MN5": {
+   "fbbt": [
+    "FBbt:20004452"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB0728 neuron",
+   "source": "overlay"
+  },
+  "GNG652": {
+   "fbbt": [
+    "FBbt:20004448"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB0723 neuron",
+   "source": "overlay"
+  },
+  "GNG190": {
+   "fbbt": [
+    "FBbt:20004252"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB0494 neuron",
+   "source": "overlay"
+  },
+  "GNG314": {
+   "fbbt": [
+    "FBbt:20003865"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB0004 neuron",
+   "source": "overlay"
+  },
+  "GNG060": {
+   "fbbt": [
+    "FBbt:20004332"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB0588 neuron",
+   "source": "overlay"
+  },
+  "GNG651": {
+   "fbbt": [
+    "FBbt:20004517"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB0810 neuron",
+   "source": "overlay"
+  },
+  "DNp62": {
+   "fbbt": [
+    "FBbt:00051434"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult Drosulfakinin MP1b neuron",
+   "source": "overlay"
+  },
+  "PLP259": {
+   "fbbt": [
+    "FBbt:20003906"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB0053 neuron",
+   "source": "overlay"
+  },
+  "CvN7": {
+   "fbbt": [
+    "FBbt:20004534"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB0831 neuron",
+   "source": "overlay"
+  },
+  "GNG540": {
+   "fbbt": [
+    "FBbt:20004070"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB0262 neuron",
+   "source": "overlay"
+  },
+  "iii3 MN": {
+   "fbbt": [
+    "FBbt:00004067"
+   ],
+   "route": "other_name:name_in_manc",
+   "label": "wing axillary muscle III3 motor neuron",
+   "source": "overlay"
+  },
+  "LgLG4": {
+   "fbbt": [
+    "FBbt:20011239"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult SNch11 neuron",
+   "source": "overlay"
+  },
+  "LC14b": {
+   "fbbt": [
+    "FBbt:00111749"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult contralateral medulla LC14 neuron",
+   "source": "overlay"
+  },
+  "BM_Taste": {
+   "fbbt": [
+    "FBbt:00048514"
+   ],
+   "route": "name_in_male-cns",
+   "label": "labellar taste bristle mechanosensory neuron",
+   "source": "overlay"
+  },
+  "LPT112": {
+   "fbbt": [
+    "FBbt:20007288"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult lobula plate visual centrifugal neuron 01",
+   "source": "overlay"
+  },
+  "SNta03": {
+   "fbbt": [
+    "FBbt:00048297"
+   ],
+   "route": "other_name:name_in_banc",
+   "label": "sensory neuron of haltere capitellum trichoid sensillum",
+   "source": "overlay"
+  },
+  "GNG157": {
+   "fbbt": [
+    "FBbt:00051887"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult gnome subesophageal neuron",
+   "source": "overlay"
+  },
+  "CAPA": {
+   "fbbt": [
+    "FBbt:00052777"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult subesophageal Capability neuron",
+   "source": "overlay"
+  },
+  "MN4b": {
+   "fbbt": [
+    "FBbt:20004567"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB0871 neuron",
+   "source": "overlay"
+  },
+  "GNG016": {
+   "fbbt": [
+    "FBbt:20003990"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB0159 neuron",
+   "source": "overlay"
+  },
+  "GNG627": {
+   "fbbt": [
+    "FBbt:20004447"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB0722 neuron",
+   "source": "overlay"
+  },
+  "SMPp&v1B_M02": {
+   "fbbt": [
+    "FBbt:20003449"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult superior medial protocerebrum neuron 587",
+   "source": "overlay"
+  },
+  "MN2Db": {
+   "fbbt": [
+    "FBbt:20004558"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB0861 neuron",
+   "source": "overlay"
+  },
+  "GNG056": {
+   "fbbt": [
+    "FBbt:20004585"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB0892 neuron",
+   "source": "overlay"
+  },
+  "MNx02": {
+   "fbbt": [
+    "FBbt:20004597"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB0904 neuron",
+   "source": "overlay"
+  },
+  "vMS16": {
+   "fbbt": [
+    "FBbt:00053051"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult fruitless vMS16 neuron",
+   "source": "overlay"
+  },
+  "PLP260": {
+   "fbbt": [
+    "FBbt:20004217"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB0452 neuron",
+   "source": "overlay"
+  },
+  "GNG268": {
+   "fbbt": [
+    "FBbt:20004248"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB0489 neuron",
+   "source": "overlay"
+  },
+  "MN2Da": {
+   "fbbt": [
+    "FBbt:20004500"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB0789 neuron",
+   "source": "overlay"
+  },
+  "PS348": {
+   "fbbt": [
+    "FBbt:20004594"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB0901 neuron",
+   "source": "overlay"
+  },
+  "GNG244": {
+   "fbbt": [
+    "FBbt:20004516"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB0809 neuron",
+   "source": "overlay"
+  },
+  "GNG628": {
+   "fbbt": [
+    "FBbt:20004447"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB0722 neuron",
+   "source": "overlay"
+  },
+  "GNG283": {
+   "fbbt": [
+    "FBbt:20004433"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB0705 neuron",
+   "source": "overlay"
+  },
+  "GNG101": {
+   "fbbt": [
+    "FBbt:20003912"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB0060 neuron",
+   "source": "overlay"
+  },
+  "aSP22": {
+   "fbbt": [
+    "FBbt:00051201"
+   ],
+   "route": "name_in_male-cns",
+   "label": "descending neuron of the anterior dorsal brain DNa12 (male)",
+   "source": "overlay"
+  },
+  "DNg104": {
+   "fbbt": [
+    "FBbt:00110150"
+   ],
+   "route": "name_in_male-cns",
+   "label": "octopaminergic VPM2 neuron",
+   "source": "overlay"
+  },
+  "GNG067": {
+   "fbbt": [
+    "FBbt:20003876"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB0017 neuron",
+   "source": "overlay"
+  },
+  "EN00B001": {
+   "fbbt": [
+    "FBbt:00052755"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult mesothoracic VUM neuron 4",
+   "source": "overlay"
+  },
+  "DNg66": {
+   "fbbt": [
+    "FBbt:00110330"
+   ],
+   "route": "name_in_male-cns",
+   "label": "octopaminergic VUMd4 neuron",
+   "source": "overlay"
+  },
+  "mesVUM-MJ": {
+   "fbbt": [
+    "FBbt:00052752"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult mesothoracic VUM neuron 1",
+   "source": "overlay"
+  },
+  "SNpp19": {
+   "fbbt": [
+    "FBbt:00053164"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult prosternal sense organ neuron",
+   "source": "overlay"
+  },
+  "LPi14": {
+   "fbbt": [
+    "FBbt:00053464"
+   ],
+   "route": "name_in_male-cns",
+   "label": "lobula plate intrinsic neuron LPi1-4",
+   "source": "overlay"
+  },
+  "MeVP12": {
+   "fbbt": [
+    "FBbt:20007613"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult medulla tangential neuron e04",
+   "source": "overlay"
+  },
+  "LgAG1": {
+   "fbbt": [
+    "FBbt:20011229"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult SAch02 neuron",
+   "source": "overlay"
+  },
+  "MeVP7": {
+   "fbbt": [
+    "FBbt:20007682"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult medulla tangential neuron e01b",
+   "source": "overlay"
+  },
+  "LPT114": {
+   "fbbt": [
+    "FBbt:20007290"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult lobula plate visual centrifugal neuron 03",
+   "source": "overlay"
+  },
+  "BM_Vib": {
+   "fbbt": [
+    "FBbt:00052793"
+   ],
+   "route": "name_in_male-cns",
+   "label": "mechanosensory neuron of vibrissal bristle",
+   "source": "overlay"
+  },
+  "PEN_b(PEN2)": {
+   "fbbt": [
+    "FBbt:00049804"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult protocerebral bridge 1 glomerulus-ellipsoid body tile-nodulus 1 neuron 2",
+   "source": "overlay"
+  },
+  "LPT113": {
+   "fbbt": [
+    "FBbt:20007288"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult lobula plate visual centrifugal neuron 01",
+   "source": "overlay"
+  },
+  "GNG431": {
+   "fbbt": [
+    "FBbt:20005112"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB1469 neuron",
+   "source": "overlay"
+  },
+  "PEN_a(PEN1)": {
+   "fbbt": [
+    "FBbt:00049803"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult protocerebral bridge 1 glomerulus-ellipsoid body tile-nodulus 1 neuron 1",
+   "source": "overlay"
+  },
+  "dMS2": {
+   "fbbt": [
+    "FBbt:00111095"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult fruitless dMS2 neuron",
+   "source": "overlay"
+  },
+  "SNtaxx": {
+   "fbbt": [
+    "FBbt:00051420"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult mechanosensory neuron",
+   "source": "overlay"
+  },
+  "DNpe008": {
+   "fbbt": [
+    "FBbt:20008225"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult DNht001 neuron",
+   "source": "overlay"
+  },
+  "IPC": {
+   "fbbt": [
+    "FBbt:00110107"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult insulin secreting cell of pars intercerebralis",
+   "source": "overlay"
+  },
+  "LgLG6": {
+   "fbbt": [
+    "FBbt:20011242"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult SNch15 neuron",
+   "source": "overlay"
+  },
+  "BM_MaPa": {
+   "fbbt": [
+    "FBbt:00052799"
+   ],
+   "route": "name_in_male-cns",
+   "label": "mechanosensory neuron of maxillary palp bristle",
+   "source": "overlay"
+  },
+  "vMS11": {
+   "fbbt": [
+    "FBbt:00053045"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult fruitless vMS11 neuron",
+   "source": "overlay"
+  },
+  "Pleural remotor/abductor MN": {
+   "fbbt": [
+    "FBbt:00053151"
+   ],
+   "route": "name_in_male-cns",
+   "label": "metathoracic pleural remotor muscle motor neuron",
+   "source": "overlay"
+  },
+  "LgLG5": {
+   "fbbt": [
+    "FBbt:20011243"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult SNch16 neuron",
+   "source": "overlay"
+  },
+  "MeVP8": {
+   "fbbt": [
+    "FBbt:20007682"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult medulla tangential neuron e01b",
+   "source": "overlay"
+  },
+  "pC1_16b": {
+   "fbbt": [
+    "FBbt:00110621"
+   ],
+   "route": "vfb_individual",
+   "label": "adult fruitless P1 (male) neuron",
+   "source": "MaleCNS:25746 -> VFB_jrmc1pnb",
+   "coarse": true
+  },
+  "pC1_19": {
+   "fbbt": [
+    "FBbt:00047348"
+   ],
+   "route": "vfb_individual",
+   "label": "adult doublesex pC1 (male) neuron",
+   "source": "MaleCNS:68624 -> VFB_jrmc1pnz",
+   "coarse": true
+  },
+  "pC1_1a": {
+   "fbbt": [
+    "FBbt:00110621"
+   ],
+   "route": "vfb_individual",
+   "label": "adult fruitless P1 (male) neuron",
+   "source": "MaleCNS:15208 -> VFB_jrmc1po4",
+   "coarse": true
+  },
+  "pC1_4a": {
+   "fbbt": [
+    "FBbt:00047348"
+   ],
+   "route": "vfb_individual",
+   "label": "adult doublesex pC1 (male) neuron",
+   "source": "MaleCNS:12442 -> VFB_jrmc1pox",
+   "coarse": true
+  },
+  "pC1_6a": {
+   "fbbt": [
+    "FBbt:00110621"
+   ],
+   "route": "vfb_individual",
+   "label": "adult fruitless P1 (male) neuron",
+   "source": "MaleCNS:17098 -> VFB_jrmc1pp8",
+   "coarse": true
+  },
+  "pC1_14a": {
+   "fbbt": [
+    "FBbt:00110621"
+   ],
+   "route": "vfb_individual",
+   "label": "adult fruitless P1 (male) neuron",
+   "source": "MaleCNS:23695 -> VFB_jrmc1pmp",
+   "coarse": true
+  },
+  "pC1_16a": {
+   "fbbt": [
+    "FBbt:00110621"
+   ],
+   "route": "vfb_individual",
+   "label": "adult fruitless P1 (male) neuron",
+   "source": "MaleCNS:20751 -> VFB_jrmc1pn5",
+   "coarse": true
+  },
+  "pC1_17b": {
+   "fbbt": [
+    "FBbt:00110621"
+   ],
+   "route": "vfb_individual",
+   "label": "adult fruitless P1 (male) neuron",
+   "source": "MaleCNS:23661 -> VFB_jrmc1pni",
+   "coarse": true
+  },
+  "pC1_3c": {
+   "fbbt": [
+    "FBbt:00110621"
+   ],
+   "route": "vfb_individual",
+   "label": "adult fruitless P1 (male) neuron",
+   "source": "MaleCNS:18017 -> VFB_jrmc1poq",
+   "coarse": true
+  },
+  "pC1_5b": {
+   "fbbt": [
+    "FBbt:00110621"
+   ],
+   "route": "vfb_individual",
+   "label": "adult fruitless P1 (male) neuron",
+   "source": "MaleCNS:29143 -> VFB_jrmc1pp4",
+   "coarse": true
+  },
+  "pC1_2a": {
+   "fbbt": [
+    "FBbt:00110621"
+   ],
+   "route": "vfb_individual",
+   "label": "adult fruitless P1 (male) neuron",
+   "source": "MaleCNS:15329 -> VFB_jrmc1poc",
+   "coarse": true
+  },
+  "pC1_10b": {
+   "fbbt": [
+    "FBbt:00047348"
+   ],
+   "route": "vfb_individual",
+   "label": "adult doublesex pC1 (male) neuron",
+   "source": "MaleCNS:26153 -> VFB_jrmc1plu",
+   "coarse": true
+  },
+  "pC1_12b": {
+   "fbbt": [
+    "FBbt:00047348"
+   ],
+   "route": "vfb_individual",
+   "label": "adult doublesex pC1 (male) neuron",
+   "source": "MaleCNS:17089 -> VFB_jrmc1pma",
+   "coarse": true
+  },
+  "pC1_7b": {
+   "fbbt": [
+    "FBbt:00110621"
+   ],
+   "route": "vfb_individual",
+   "label": "adult fruitless P1 (male) neuron",
+   "source": "MaleCNS:26746 -> VFB_jrmc1ppk",
+   "coarse": true
+  },
+  "pC1_13b": {
+   "fbbt": [
+    "FBbt:00047348"
+   ],
+   "route": "vfb_individual",
+   "label": "adult doublesex pC1 (male) neuron",
+   "source": "MaleCNS:21538 -> VFB_jrmc1pmi",
+   "coarse": true
+  },
+  "pC1_10c": {
+   "fbbt": [
+    "FBbt:00047348"
+   ],
+   "route": "vfb_individual",
+   "label": "adult doublesex pC1 (male) neuron",
+   "source": "MaleCNS:17434 -> VFB_jrmc1ply",
+   "coarse": true
+  },
+  "pC1_9a": {
+   "fbbt": [
+    "FBbt:00047348"
+   ],
+   "route": "vfb_individual",
+   "label": "adult doublesex pC1 (male) neuron",
+   "source": "MaleCNS:15876 -> VFB_jrmc1ppu",
+   "coarse": true
+  },
+  "pC1_18b": {
+   "fbbt": [
+    "FBbt:00047348"
+   ],
+   "route": "vfb_individual",
+   "label": "adult doublesex pC1 (male) neuron",
+   "source": "MaleCNS:32788 -> VFB_jrmc1pnr",
+   "coarse": true
+  },
+  "pC1_7a": {
+   "fbbt": [
+    "FBbt:00110621"
+   ],
+   "route": "vfb_individual",
+   "label": "adult fruitless P1 (male) neuron",
+   "source": "MaleCNS:25542 -> VFB_jrmc1pph",
+   "coarse": true
+  },
+  "pC1_10d": {
+   "fbbt": [
+    "FBbt:00047348"
+   ],
+   "route": "vfb_individual",
+   "label": "adult doublesex pC1 (male) neuron",
+   "source": "MaleCNS:19968 -> VFB_jrmc1pm1",
+   "coarse": true
+  },
+  "pC1_15c": {
+   "fbbt": [
+    "FBbt:00110621"
+   ],
+   "route": "vfb_individual",
+   "label": "adult fruitless P1 (male) neuron",
+   "source": "MaleCNS:18934 -> VFB_jrmc1pmz",
+   "coarse": true
+  },
+  "pC1_17a": {
+   "fbbt": [
+    "FBbt:00110621"
+   ],
+   "route": "vfb_individual",
+   "label": "adult fruitless P1 (male) neuron",
+   "source": "MaleCNS:22818 -> VFB_jrmc1png",
+   "coarse": true
+  },
+  "pC1_13a": {
+   "fbbt": [
+    "FBbt:00110621"
+   ],
+   "route": "vfb_individual",
+   "label": "adult fruitless P1 (male) neuron",
+   "source": "MaleCNS:19672 -> VFB_jrmc1pme",
+   "coarse": true
+  },
+  "pC1_8c": {
+   "fbbt": [
+    "FBbt:00047348"
+   ],
+   "route": "vfb_individual",
+   "label": "adult doublesex pC1 (male) neuron",
+   "source": "MaleCNS:41518 -> VFB_jrmc1ppq",
+   "coarse": true
+  },
+  "pC1_10a": {
+   "fbbt": [
+    "FBbt:00047348"
+   ],
+   "route": "vfb_individual",
+   "label": "adult doublesex pC1 (male) neuron",
+   "source": "MaleCNS:18276 -> VFB_jrmc1plq",
+   "coarse": true
+  },
+  "pC1_2b": {
+   "fbbt": [
+    "FBbt:00110621"
+   ],
+   "route": "vfb_individual",
+   "label": "adult fruitless P1 (male) neuron",
+   "source": "MaleCNS:18913 -> VFB_jrmc1pof",
+   "coarse": true
+  },
+  "pC1_13c": {
+   "fbbt": [
+    "FBbt:00047348"
+   ],
+   "route": "vfb_individual",
+   "label": "adult doublesex pC1 (male) neuron",
+   "source": "MaleCNS:23787 -> VFB_jrmc1pml",
+   "coarse": true
+  },
+  "pC1_8a": {
+   "fbbt": [
+    "FBbt:00047348"
+   ],
+   "route": "vfb_individual",
+   "label": "adult doublesex pC1 (male) neuron",
+   "source": "MaleCNS:24727 -> VFB_jrmc1ppm",
+   "coarse": true
+  },
+  "pC1_11a": {
+   "fbbt": [
+    "FBbt:00047348"
+   ],
+   "route": "vfb_individual",
+   "label": "adult doublesex pC1 (male) neuron",
+   "source": "MaleCNS:18990 -> VFB_jrmc1pm4",
+   "coarse": true
+  },
+  "pC1_1b": {
+   "fbbt": [
+    "FBbt:00110621"
+   ],
+   "route": "vfb_individual",
+   "label": "adult fruitless P1 (male) neuron",
+   "source": "MaleCNS:16262 -> VFB_jrmc1po8",
+   "coarse": true
+  },
+  "pC1_2c": {
+   "fbbt": [
+    "FBbt:00110621"
+   ],
+   "route": "vfb_individual",
+   "label": "adult fruitless P1 (male) neuron",
+   "source": "MaleCNS:20392 -> VFB_jrmc1poi",
+   "coarse": true
+  },
+  "pC1_4b": {
+   "fbbt": [
+    "FBbt:00047348"
+   ],
+   "route": "vfb_individual",
+   "label": "adult doublesex pC1 (male) neuron",
+   "source": "MaleCNS:16719 -> VFB_jrmc1poy",
+   "coarse": true
+  },
+  "pC1_9b": {
+   "fbbt": [
+    "FBbt:00047348"
+   ],
+   "route": "vfb_individual",
+   "label": "adult doublesex pC1 (male) neuron",
+   "source": "MaleCNS:16364 -> VFB_jrmc1ppw",
+   "coarse": true
+  },
+  "pC1_11b": {
+   "fbbt": [
+    "FBbt:00047348"
+   ],
+   "route": "vfb_individual",
+   "label": "adult doublesex pC1 (male) neuron",
+   "source": "MaleCNS:514077 -> VFB_jrmc1pm7",
+   "coarse": true
+  },
+  "pC1_14b": {
+   "fbbt": [
+    "FBbt:00110621"
+   ],
+   "route": "vfb_individual",
+   "label": "adult fruitless P1 (male) neuron",
+   "source": "MaleCNS:25740 -> VFB_jrmc1pmu",
+   "coarse": true
+  },
+  "pC1_15b": {
+   "fbbt": [
+    "FBbt:00110621"
+   ],
+   "route": "vfb_individual",
+   "label": "adult fruitless P1 (male) neuron",
+   "source": "MaleCNS:25690 -> VFB_jrmc1pmy",
+   "coarse": true
+  },
+  "pC1_8b": {
+   "fbbt": [
+    "FBbt:00047348"
+   ],
+   "route": "vfb_individual",
+   "label": "adult doublesex pC1 (male) neuron",
+   "source": "MaleCNS:30391 -> VFB_jrmc1ppp",
+   "coarse": true
+  },
+  "pC1_15a": {
+   "fbbt": [
+    "FBbt:00110621"
+   ],
+   "route": "vfb_individual",
+   "label": "adult fruitless P1 (male) neuron",
+   "source": "MaleCNS:32437 -> VFB_jrmc1pmw",
+   "coarse": true
+  },
+  "pC1_3a": {
+   "fbbt": [
+    "FBbt:00110621"
+   ],
+   "route": "vfb_individual",
+   "label": "adult fruitless P1 (male) neuron",
+   "source": "MaleCNS:18974 -> VFB_jrmc1poj",
+   "coarse": true
+  },
+  "pC1_12a": {
+   "fbbt": [
+    "FBbt:00110621"
+   ],
+   "route": "vfb_individual",
+   "label": "adult fruitless P1 (male) neuron",
+   "source": "MaleCNS:512011 -> VFB_jrmc1pm9",
+   "coarse": true
+  },
+  "Pm2a": {
+   "fbbt": [
+    "FBbt:00003835"
+   ],
+   "route": "vfb_individual",
+   "label": "proximal medullary amacrine neuron Pm2",
+   "source": "MaleCNS:13139 -> VFB_jrmc1l2f",
+   "coarse": true
+  },
+  "Pm5": {
+   "fbbt": [
+    "FBbt:00003833"
+   ],
+   "route": "vfb_individual",
+   "label": "proximal medullary amacrine neuron Pm1",
+   "source": "MaleCNS:16041 -> VFB_jrmc1lja",
+   "coarse": true
+  },
+  "Tm40": {
+   "fbbt": [
+    "FBbt:00003788"
+   ],
+   "route": "vfb_individual",
+   "label": "transmedullary neuron",
+   "source": "MaleCNS:17127 -> VFB_jrmc0b8k",
+   "coarse": true
+  },
+  "MeTu3c": {
+   "fbbt": [
+    "FBbt:00053509"
+   ],
+   "route": "vfb_individual",
+   "label": "adult medulla-tubercle neuron 3",
+   "source": "MaleCNS:26713 -> VFB_jrmc1uer",
+   "coarse": true
+  },
+  "LC10e": {
+   "fbbt": [
+    "FBbt:00100482"
+   ],
+   "route": "vfb_individual",
+   "label": "lobula columnar neuron LC10",
+   "source": "MaleCNS:23239 -> VFB_jrmc2666",
+   "coarse": true
+  },
+  "WG1": {
+   "fbbt": [
+    "FBbt:00048270"
+   ],
+   "route": "vfb_individual",
+   "label": "gustatory receptor neuron of the wing",
+   "source": "MaleCNS:811957 -> VFB_jrmc00wk",
+   "coarse": true
+  },
+  "vDeltaA_b": {
+   "fbbt": [
+    "FBbt:00049821"
+   ],
+   "route": "vfb_individual",
+   "label": "adult fan-shaped body vertical delta neuron",
+   "source": "MaleCNS:92797 -> VFB_jrmc035m",
+   "coarse": true
+  },
+  "LB1a": {
+   "fbbt": [
+    "FBbt:00051978"
+   ],
+   "route": "vfb_individual",
+   "label": "labellar taste bristle chemosensory neuron",
+   "source": "MaleCNS:115666 -> VFB_jrmc2d3p",
+   "coarse": true
+  },
+  "LB1c": {
+   "fbbt": [
+    "FBbt:00110887"
+   ],
+   "route": "vfb_individual",
+   "label": "gustatory receptor neuron of the labellum",
+   "source": "MaleCNS:81741 -> VFB_jrmc2d46",
+   "coarse": true
+  },
+  "LB1d": {
+   "fbbt": [
+    "FBbt:00051978"
+   ],
+   "route": "vfb_individual",
+   "label": "labellar taste bristle chemosensory neuron",
+   "source": "MaleCNS:54104 -> VFB_jrmc2d4n",
+   "coarse": true
+  },
+  "LgLG1a": {
+   "fbbt": [
+    "FBbt:20011233"
+   ],
+   "route": "vfb_individual",
+   "label": "adult SNch05 neuron",
+   "source": "MaleCNS:803913 -> VFB_jrmc1xz0",
+   "coarse": true
+  },
+  "LgLG2": {
+   "fbbt": [
+    "FBbt:20011234"
+   ],
+   "route": "vfb_individual",
+   "label": "adult SNch06 neuron",
+   "source": "MaleCNS:815152 -> VFB_jrmc1y65",
+   "coarse": true
+  },
+  "LHAV3b2_b": {
+   "fbbt": [
+    "FBbt:20006397"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB2887 neuron",
+   "override": true,
+   "was": [
+    "FBbt:00051692"
+   ],
+   "source": "verification: synonym LHAV3b2_b typed name_in_male-cns"
+  },
+  "LHAV3b6_b": {
+   "fbbt": [
+    "FBbt:20005155"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB1512 neuron",
+   "override": true,
+   "was": [
+    "FBbt:00051696"
+   ],
+   "source": "verification: synonym LHAV3b6_b typed name_in_male-cns"
+  },
+  "LHAV4e2_b2": {
+   "fbbt": [
+    "FBbt:20006274"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB2750 neuron",
+   "override": true,
+   "was": [
+    "FBbt:00051530"
+   ],
+   "source": "verification: synonym LHAV4e2_b2 typed name_in_male-cns"
+  },
+  "LHAV4e7_b": {
+   "fbbt": [
+    "FBbt:20007149"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB3726 neuron",
+   "override": true,
+   "was": [
+    "FBbt:00049680"
+   ],
+   "source": "verification: synonym LHAV4e7_b typed name_in_male-cns"
+  },
+  "SLP305": {
+   "fbbt": [
+    "FBbt:00049319"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult lateral horn AD1a2 neuron",
+   "override": true,
+   "was": [
+    "FBbt:20002699"
+   ],
+   "source": "verification: synonym SLP305 typed name_in_male-cns; the old class carries SLP305 only as hemibrain/FlyWire names"
+  },
+  "SMP053": {
+   "fbbt": [
+    "FBbt:20003972"
+   ],
+   "route": "name_in_male-cns",
+   "label": "adult CB0136 neuron",
+   "override": true,
+   "was": [
+    "FBbt:20002915"
+   ],
+   "source": "verification: synonym SMP053 typed name_in_male-cns; the old class's MaleCNS name is SMP154"
+  },
+  "PS008_b": {
+   "fbbt": [],
+   "route": "rejected",
+   "was": [
+    "FBbt:20001763"
+   ],
+   "note": "PS008_b vs FBbt_20001763 (adult posterior slope neuron 008): not_this_class -- class carries name_in_male-cns synonyms ['PS008_a1', 'PS008_a2', 'PS008_a3', 'PS008_a4'], none == T"
+  },
+  "DNg36_b": {
+   "fbbt": [],
+   "route": "rejected",
+   "was": [
+    "FBbt:00047628"
+   ],
+   "note": "DNg36_b vs FBbt_00047628 (descending neuron of the gnathal ganglion DNg36): not_this_class -- class carries name_in_male-cns synonyms ['DNg36_a'], none == T"
+  },
+  "AN07B071_c": {
+   "fbbt": [],
+   "route": "rejected",
+   "was": [
+    "FBbt:20007850"
+   ],
+   "note": "AN07B071_c vs FBbt_20007850 (adult AN07B071 neuron): not_this_class -- class carries name_in_male-cns synonyms ['AN07B071_a', 'AN07B071_b', 'AN07B071_d'], none == T"
+  },
+  "CB1287_b": {
+   "fbbt": [],
+   "route": "rejected",
+   "was": [
+    "FBbt:20004952"
+   ],
+   "note": "class carries name_in_male-cns synonyms ['CB1287'], none equal to T; search_terms(CB1287_b) returned 2 rows, 1 distinct class(es): ['FBbt_20004952']"
+  },
+  "CB1287_c": {
+   "fbbt": [],
+   "route": "rejected",
+   "was": [
+    "FBbt:20004952"
+   ],
+   "note": "class carries name_in_male-cns synonyms ['CB1287'], none equal to T; search_terms(CB1287_c) returned 2 rows, 1 distinct class(es): ['FBbt_20004952']"
+  }
+ },
+ "ambiguous": {
+  "LgLG1a": {
+   "fbbt": [
+    "FBbt:20011233",
+    "FBbt:20011234"
+   ],
+   "note": "search_terms returned 2 candidates (SNch05, SNch06), both confirmed: each carries LgLG1a as a name_in_male-cns synonym (Berg et al., 2025). Term info taken from the earlier 5-class get_term_info batch (FBbt_20011233-20011237). Both classes also carry LgLG1b and LgLG2 as name_in_male-cns synonyms, so the MaleCNS LgLG1a/1b/2 names map many-to-many onto SNch05/SNch06."
+  },
+  "LgLG1b": {
+   "fbbt": [
+    "FBbt:20011233",
+    "FBbt:20011234"
+   ],
+   "note": "search_terms returned 2 candidates (SNch05, SNch06), both confirmed: each carries LgLG1b as a name_in_male-cns synonym (Berg et al., 2025). Term info taken from the earlier 5-class get_term_info batch. Both classes also carry LgLG1a and LgLG2 as name_in_male-cns synonyms."
+  },
+  "LgLG2": {
+   "fbbt": [
+    "FBbt:20011233",
+    "FBbt:20011234",
+    "FBbt:00058244"
+   ],
+   "note": "search_terms returned 3 candidates, all confirmed via name_in_male-cns synonym LgLG2 (Berg et al., 2025): SNch05 and SNch06 (term info from the earlier 5-class batch) and the generic class FBbt_00058244 adult sensory neuron (fetched separately; it also carries LgLG7 and LgLG8 as name_in_male-cns and SNxxxx as name_in_banc, i.e. it is the catch-all for unassigned MaleCNS sensory types). If a specific class is wanted, SNch05/SNch06 are the specific ones."
+  },
+  "GNG406": {
+   "fbbt": [
+    "FBbt:20005279",
+    "FBbt:20006094"
+   ],
+   "note": "search hit 2 classes; both carry synonym GNG406 typed name_in_male-cns (adult CB1659 neuron and adult CB2553 neuron)"
+  },
+  "PS353": {
+   "fbbt": [
+    "FBbt:20005735",
+    "FBbt:20006384"
+   ],
+   "note": "Two classes each carry PS353 as name_in_male-cns synonym: CB2160 (also PS354 name_in_male-cns; name_in_banc/flywire CB2160) and CB2872 (name_in_banc/flywire CB2872)."
+  },
+  "aSP10A_b": {
+   "fbbt": [
+    "FBbt:20004769",
+    "FBbt:20006782"
+   ],
+   "note": "Two classes each carry aSP10A_b as name_in_male-cns synonym: CB1090 (name_in_banc/flywire CB1090) and CB3313 (name_in_flywire_fafb CB3313). A third search hit FBbt_20005390 (adult CB1783 neuron) matched only via aSP10A_a and was not a candidate."
+  },
+  "LHAV1f1": {
+   "fbbt": [
+    "FBbt:20005134",
+    "FBbt:20005362"
+   ],
+   "note": "Two classes carry name_in_male-cns synonym 'LHAV1f1': FBbt_20005134 (adult CB1491 neuron) and FBbt_20005362 (adult CB1753 neuron)."
+  },
+  "PLVP059": {
+   "fbbt": [
+    "FBbt:20005586",
+    "FBbt:20005790"
+   ],
+   "note": "Two classes carry name_in_male-cns synonym 'PLVP059': FBbt_20005586 (adult CB1999 neuron) and FBbt_20005790 (adult CB2218 neuron)."
+  },
+  "Z_lvPNm1": {
+   "fbbt": [
+    "FBbt:20007478",
+    "FBbt:20007595"
+   ],
+   "note": "2 terms matched; rows 'Z_lvPNm1 (adult CB2388 neuron)' and 'Z_lvPNm1 (adult CB3623 neuron)' More than one class carries T as a name_in_male-cns synonym."
+  },
+  "GNG269": {
+   "fbbt": [
+    "FBbt:20004721",
+    "FBbt:20005319"
+   ],
+   "note": "Two classes each carry synonym 'GNG269' typed name_in_male-cns: FBbt_20004721 (CB1039; also name_in_banc/name_in_flywire_fafb CB1039) and FBbt_20005319 (CB1703; name_in_flywire_fafb CB1703). MaleCNS type GNG269 maps to two FlyWire types."
+  },
+  "WEDPN7A": {
+   "fbbt": [
+    "FBbt:20006432",
+    "FBbt:20006433"
+   ],
+   "note": "2 terms matched the exact name; multiple classes carry 'WEDPN7A' as name_in_male-cns: FBbt_20006432, FBbt_20006433"
+  },
+  "LHAD1i2_b": {
+   "fbbt": [
+    "FBbt:20004629",
+    "FBbt:20006763"
+   ],
+   "note": "Two FlyWire-derived classes (CB0938, ~4 cells; CB3291, ~2 cells; both SLPal2 hemilineage, same soma/synapse description) each carry synonym 'LHAD1i2_b' typed name_in_male-cns (Berg et al., 2025): the MaleCNS type is split across two FBbt classes. Both confirmed, so ambiguous."
+  },
+  "GNG388": {
+   "fbbt": [
+    "FBbt:20005639",
+    "FBbt:20006176",
+    "FBbt:20006897"
+   ],
+   "note": "3 classes carry 'GNG388' as a name_in_male-cns synonym: FBbt_20005639 (adult CB2055 neuron), FBbt_20006176 (adult CB2644 neuron), FBbt_20006897 (adult CB3438 neuron)"
+  },
+  "PRW015": {
+   "fbbt": [
+    "FBbt:20007010",
+    "FBbt:20007069"
+   ],
+   "note": "2 classes each carry 'PRW015' as a name_in_male-cns synonym: FBbt_20007010 (adult CB3565 neuron), FBbt_20007069 (adult CB3632 neuron). FBbt_20007069 (CB3632) also carries GNG356 as a second name_in_male-cns synonym."
+  },
+  "Acc. tr flexor MN": {
+   "fbbt": [
+    "FBbt:00053115",
+    "FBbt:00053116"
+   ],
+   "note": "search_terms returned 12 synonym rows over 3 terms; exact-label rows 'Acc. tr flexor MN (...)' for all three pro/meso/metathoracic classes (first 10 of 12 rows inspected; all 3 distinct terms visible). term_info: FBbt_00053114 OTHER_NAME via ['name_in_manc']; FBbt_00053114 name_in_male-cns synonyms: []; FBbt_00053115 name_in_male-cns synonyms: ['Acc. tr flexor MN']; FBbt_00053116 name_in_male-cns synonyms: ['Acc. tr flexor MN']"
+  },
+  "LgLG7": {
+   "fbbt": [
+    "FBbt:20011236",
+    "FBbt:20011240",
+    "FBbt:20011241",
+    "FBbt:20011242",
+    "FBbt:00058244"
+   ],
+   "note": "search: 5 distinct terms, each with an LgLG7 synonym row; get_term_info confirms all five carry LgLG7 typed name_in_male-cns (SNch08/SNch13/SNch14/SNch15 also carry other LgLG* male-cns names; FBbt_00058244 is the generic adult sensory neuron class with SNxxxx/LgLG2/LgLG7/LgLG8 male-cns synonyms)"
+  },
+  "PS335": {
+   "fbbt": [
+    "FBbt:20005081",
+    "FBbt:20006297"
+   ],
+   "note": "Both CB1435 and CB2774 carry 'PS335' as name_in_male-cns. 2 classes confirmed by the synonym rule"
+  },
+  "LgLG8": {
+   "fbbt": [
+    "FBbt:20011240",
+    "FBbt:00058244"
+   ],
+   "note": "FBbt_00058244 is the generic 'adult sensory neuron' class (SNxxxx) that lists LgLG8 among several name_in_male-cns synonyms; FBbt_20011240 (SNch13) also carries LgLG8 and LgLG7. 2 classes confirmed by the synonym rule"
+  },
+  "WEDPN8C": {
+   "fbbt": [
+    "FBbt:20006237",
+    "FBbt:20006767"
+   ],
+   "note": "search: 2 terms, both with exact synonym-row match \"WEDPN8C\". get_term_info: both FBbt_20006237 (adult CB2710 neuron) and FBbt_20006767 (adult CB3295 neuron) carry synonym WEDPN8C typed name_in_male-cns -> two confirmed classes."
+  },
+  "LB1b": {
+   "fbbt": [
+    "FBbt:00058249",
+    "FBbt:00049613"
+   ],
+   "note": "several cell-type classes on the individual"
+  }
+ }
+}

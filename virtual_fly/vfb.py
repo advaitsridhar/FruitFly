@@ -6,9 +6,10 @@ The connectome names every neuron with a MaleCNS cell-type string such as ``"LC4
 different vocabulary: the classes of the FlyBase anatomy ontology (``FBbt:00003874`` = *lobula columnar
 neuron LC4*), each with a curated definition, a place in an ``is_a`` tree, the transmitter the
 literature has established, and pointers to every other data set that saw the same cell type. This
-module joins the two vocabularies, offline, from three files in ``data/`` (built by
-``tools/build_vfb_data.py`` from the ontology's own OBO release and a one-time harvest of VFB's
-``name_in_male-cns`` synonyms and scRNA-seq expression tables):
+module joins the two vocabularies, offline, from three files in ``data/``: the first two built by
+``tools/build_vfb_data.py`` from the ontology's own OBO release plus a one-time harvest of VFB's
+``name_in_male-cns`` synonyms (``tools/vfb_overlay.json``), the third by ``tools/merge_vfb_harvest.py``
+from a harvest of VFB's scRNA-seq expression tables:
 
 * ``fbbt_map.json.gz``: kit type -> FBbt class(es), how the match was made, and the transmitters the
   ontology asserts for that class;
@@ -201,7 +202,7 @@ class Ontology:
         if pep_root and pep_root in chain:
             for a in chain:
                 lab = self.label(a)
-                if pep_root in set(self.ancestors(a)) and re.search(r"^[\w\-]+ neuron$", lab) and not lab.startswith(("adult ", "larval ")):
+                if pep_root in self.parents(a) and re.search(r"^[\w\-]+ neuron$", lab) and not lab.startswith(("adult ", "larval ")):
                     peptides.append(lab[:-len(" neuron")])
         lineage = sorted({self.label(a) for a in chain if LINEAGE.search(self.label(a))})
         birth = "primary" if roots.get("primary") in chain else "secondary" if roots.get("secondary") in chain else None
@@ -228,9 +229,10 @@ class Ontology:
     # --- counts over a connectome
     def counts(self, conn) -> dict[str, tuple[int, int]]:
         """Per class: (kit types under it, neurons under it), computed once per connectome."""
-        key = id(conn)
-        if key in self._counts:
-            return self._counts[key]
+        key = id(conn.tables)                 # rewired (grown) copies share the table: same counts
+        hit = self._counts.get(key)
+        if hit is not None:
+            return hit[1]
         tc = conn.type_counts()
         direct = {cid: [(t, tc.get(t, 0)) for t in ts] for cid, ts in self.types_of_class.items()}
         out = {}
@@ -240,7 +242,9 @@ class Ontology:
                 for t, n in direct.get(c, []):
                     names[t] = n
             out[cid] = (len(names), int(sum(names.values())))
-        self._counts = {key: out}       # one connectome at a time is enough (the game swaps brains, not connectomes)
+        if len(self._counts) >= 4:
+            self._counts.pop(next(iter(self._counts)), None)
+        self._counts[key] = (conn.tables, out)          # the table is kept alive, so its id cannot be reused
         return out
 
     def search(self, text: str, conn, limit: int = 30) -> list[dict]:
@@ -348,8 +352,11 @@ class Receptors:
     """``classes[FBbt][gene] = [[cluster id, extent, level], ...]`` plus the clusters' data set and stage.
 
     ``extent`` is the fraction of the cluster's cells expressing the gene; VFB's tables only carry
-    values of 0.2 and above, so a missing gene means "under 20 % of the cells, or not measured", never
-    zero. Only adult clusters are used, in the order of ``families`` (the male Fly Cell Atlas first)."""
+    values of 0.2 and above, so a gene missing from a cluster means "under 20 % of its cells", which
+    the averages and the sign count as 0 (an underestimate, never an invention). ``genes`` lists only
+    the genes that were harvested; a modulator none of whose receptors was harvested has no sign
+    (``sign`` returns None and the old one-sign rule stands). Only adult clusters are used, in the
+    order of ``families`` (the male Fly Cell Atlas first)."""
 
     def __init__(self, data: dict | None = None):
         data = data or {}
@@ -372,21 +379,21 @@ class Receptors:
         rows = self.classes.get(cid)
         best = None
         if rows:
-            by_family: dict[str, dict[str, list[float]]] = collections.defaultdict(lambda: collections.defaultdict(list))
-            example: dict[str, str] = {}
+            sums: dict[str, dict[str, float]] = collections.defaultdict(lambda: collections.defaultdict(float))
+            members: dict[str, set] = collections.defaultdict(set)      # the family's clusters of this class
             for gene, entries in rows.items():
                 for fblc, extent, *_ in entries:
                     cl = self.clusters.get(fblc, {})
                     if cl.get("stage") != "adult":
                         continue
                     fam = cl.get("family", "?")
-                    by_family[fam][gene].append(float(extent))
-                    example.setdefault(fam, fblc)
-            for fam in self.families + sorted(set(by_family) - set(self.families)):
-                if fam in by_family:
-                    ext = {g: round(sum(v) / len(v), 4) for g, v in by_family[fam].items()}
-                    best = {"extent": ext, "cluster": example[fam], "family": fam,
-                            "n_clusters": len({fblc for g in rows for fblc, *_ in rows[g] if self.clusters.get(fblc, {}).get("family") == fam})}
+                    sums[fam][gene] += float(extent)
+                    members[fam].add(fblc)
+            for fam in self.families + sorted(set(members) - set(self.families)):
+                if fam in members:
+                    k = len(members[fam])               # a gene a cluster does not list counts as 0 there
+                    ext = {g: round(v / k, 4) for g, v in sums[fam].items()}
+                    best = {"extent": ext, "cluster": sorted(members[fam])[0], "family": fam, "n_clusters": k}
                     break
         self._by_class[cid] = best
         return best
@@ -416,8 +423,10 @@ class Receptors:
         return None
 
     def sign(self, extent: dict[str, float], modulator: str) -> float | None:
-        """``clip(sum(coupling sign x extent))`` over the modulator's receptors; None if the table has none."""
-        genes = [g for g, info in self.genes.items() if info.get("modulator") == modulator and info.get("sign")]
+        """``clip(sum(coupling sign x extent))`` over the modulator's harvested receptors (a receptor the
+        cluster does not list counts 0); None if none of the modulator's receptors was harvested."""
+        genes = [g for g, info in self.genes.items()
+                 if info.get("modulator") == modulator and info.get("sign") and info.get("harvested", True)]
         if not genes:
             return None
         s = sum(info_sign * extent.get(g, 0.0) for g, info_sign in ((g, self.genes[g]["sign"]) for g in genes))
@@ -430,6 +439,12 @@ class Receptors:
 
 _ONT: Ontology | None = None
 _RX: Receptors | None = None
+_GENERATION = 0
+
+
+def generation() -> int:
+    """Bumped by :func:`use`; :meth:`Connectome.select` keys its cache of ``fbbt:``/``rx:`` selections on it."""
+    return _GENERATION
 
 
 def ontology() -> Ontology:
@@ -448,8 +463,9 @@ def receptors() -> Receptors:
 
 def use(ont: Ontology | None = None, rx: Receptors | None = None):
     """Install (or, with None, drop back to the files) the data the module answers from."""
-    global _ONT, _RX
+    global _ONT, _RX, _GENERATION
     _ONT, _RX = ont, rx
+    _GENERATION += 1
 
 
 # ---------------------------------------------------------------------------------------------
@@ -486,6 +502,8 @@ def rx_mask(conn, value: str) -> np.ndarray:
         raise ValueError(f"a receptor filter looks like rx:Dop2R or rx:Dop2R>0.5, not '{value}'")
     gene, op, thr = m.group(1), m.group(2), m.group(3)
     rx, ont = receptors(), ontology()
+    if rx.empty:
+        raise ValueError("rx: needs the receptor expression table (data/vfb_receptors.json.gz), which is not installed")
     known = {g.lower(): g for g in rx.genes}
     if gene.lower() not in known:
         raise ValueError(f"no receptor '{gene}' in the expression table (known: {', '.join(sorted(rx.genes))})")
@@ -521,15 +539,20 @@ class Overrides:
     counts: dict = field(default_factory=dict)
 
 
-def transmitter_overrides(conn, policy: str = "modulators") -> Overrides:
+def transmitter_overrides(conn, policy: str = "modulators", modulators=MODULATOR_NTS) -> Overrides:
     """Apply the ontology's curated transmitters to the connectome's predictions.
 
     ``off``: nothing. ``modulators``: fill "unclear" predictions from any class; for literature-curated
     classes change *what kind of modulator* a neuron is (a co-releasing neuron keeps its fast synapses
     and gains a tone; a neuron the literature calls octopaminergic and the prediction cholinergic gains
-    an octopamine tone; one the prediction calls serotonergic and the literature cholinergic loses its
-    tone), never the sign of a confident fast prediction. ``all``: also flip the sign where a literature
-    class asserts fast transmitters of the other sign only."""
+    an octopamine tone and keeps its predicted synapses; one the prediction calls serotonergic and the
+    literature cholinergic loses its tone), never the sign of a confident fast prediction. ``all``: the
+    literature also wins over a confident fast prediction: its sign is flipped where the class asserts
+    fast transmitters of the other sign only, and a neuron the literature calls purely modulatory loses
+    its predicted fast synapses. Only literature-curated classes change a confident prediction; the
+    connectome-derived classes (FBbt:2xxxxxxx) and the coarse matches (a ``_a`` type mapped to its
+    stem's class, a neuron's class read from one VFB individual) only ever annotate. ``modulators`` are
+    the modulator names the caller models; a curated modulator outside them is ignored."""
     if policy not in POLICIES:
         raise ValueError(f"curated policy must be one of {POLICIES}, not '{policy}'")
     n = conn.n
@@ -554,9 +577,11 @@ def transmitter_overrides(conn, policy: str = "modulators") -> Overrides:
         idx = order[bounds[k_type]:bounds[k_type + 1]]
         if idx.size == 0:
             continue
+        if e.get("coarse"):
+            continue                                         # the class of a family of types: annotation only
         literature = e.get("evidence") == "literature"
         fast = [x for x in S if x in FAST_SIGN]
-        mods = [x for x in S if x in MODULATOR_NTS]
+        mods = [x for x in S if x in MODULATOR_NTS and x in modulators]
         fast_signs = {FAST_SIGN[x] for x in fast}
         fast_sign = fast_signs.pop() if len(fast_signs) == 1 else None
         per_action: dict[str, list[int]] = collections.defaultdict(list)
@@ -580,7 +605,10 @@ def transmitter_overrides(conn, policy: str = "modulators") -> Overrides:
                 elif mods and not fast:
                     mod_nt[i] = mods[0]
                     per_action["unclear filled: a modulator"].append(i)
-                elif fast_sign is not None and not mods:
+                elif mods:                                   # a modulator plus fast transmitters of both signs
+                    mod_nt[i], keep_fast[i] = mods[0], True
+                    per_action["unclear filled: a tone, fast synapses left as predicted"].append(i)
+                elif fast_sign is not None:
                     sign[i] = fast_sign
                     per_action["unclear filled: fast transmitter"].append(i)
                 continue
@@ -598,11 +626,11 @@ def transmitter_overrides(conn, policy: str = "modulators") -> Overrides:
             if mods:
                 mod_nt[i] = mods[0]
                 if fast:
-                    if fast_sign is not None and policy == "all":
-                        keep_fast[i], sign[i] = True, fast_sign
+                    keep_fast[i] = True
+                    if fast_sign is not None and fast_sign != sign[i] and policy == "all":
+                        sign[i] = fast_sign
                         per_action["sign flipped and a tone added"].append(i)
                     else:
-                        keep_fast[i] = True
                         per_action["tone added, predicted synapses kept"].append(i)
                 else:
                     keep_fast[i] = policy != "all"

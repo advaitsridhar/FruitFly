@@ -47,9 +47,11 @@ def main(argv=None):
     ap.add_argument("--grow-seed", type=int, default=1, help="which individual to grow (any whole number)")
     ap.add_argument("--parts", action="store_true",
                     help="start with the parts list on: modulators as slow tones, graded optic-lobe cells (the Genome card toggles it)")
-    ap.add_argument("--curated", choices=("off", "modulators", "all"), default="modulators",
-                    help="parts list: how far Virtual Fly Brain's curated transmitters override the MaleCNS prediction "
-                         "(off; modulators = fill 'unclear' and correct which neurons are modulators; all = also flip fast signs)")
+    ap.add_argument("--curated", choices=("off", "modulators", "all"), default=None,
+                    help="the parts list's policy for Virtual Fly Brain's curated transmitters, used whenever the parts list "
+                         "is on (now with --parts, or when switched on from the Genome card): off; modulators (default) = fill "
+                         "'unclear' predictions and correct which neurons are modulators; all = the literature also wins over "
+                         "confident fast predictions")
     ap.add_argument("--seed", type=int, default=0)
     args = ap.parse_args(argv)
 
@@ -62,9 +64,10 @@ def main(argv=None):
     if args.noise:
         hz, mv = (float(x) for x in args.noise.split(":"))
         overrides.update(noise_hz=hz, noise_mv=mv)
-    if args.parts or args.curated != "modulators":
-        from .parts import PartsList
-        overrides["parts"] = PartsList(curated=args.curated)
+    from .parts import PartsList
+    parts_list = PartsList(curated=args.curated or "modulators")
+    if args.parts:
+        overrides["parts"] = parts_list
     print("Loading the fly's nervous system...", file=sys.stderr)
     conn = load_connectome()
     brain = build_brain(conn, profile, **overrides)
@@ -78,7 +81,8 @@ def main(argv=None):
         c = brain.parts.counts
         print(f"Parts list: on ({c['modulatory_neurons']:,} modulatory neurons, {c['graded_neurons']:,} graded cells).", file=sys.stderr)
     game = Game(brain, autopilot=not args.no_autopilot, seed=args.seed, columnar=not args.no_columnar,
-                profile_name=profile, brain_factory=lambda c, **kw: build_brain(c, profile, **{**overrides, **kw}))
+                profile_name=profile, brain_factory=lambda c, **kw: build_brain(c, profile, **{**overrides, **kw}),
+                parts_list=parts_list)
     if args.no_learning:
         game.learning_on = False
     if args.grow:
