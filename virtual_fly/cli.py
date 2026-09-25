@@ -88,6 +88,9 @@ def main(argv=None):
                          "all: also flip the sign of a confident fast prediction; implies --parts)")
     ap.add_argument("--no-receptor-signs", action="store_true",
                     help="parts list: ignore the receptors each target type expresses (one net sign per modulator)")
+    ap.add_argument("--one-sign-rule", action="store_true",
+                    help="parts list: a target whose receptors are unknown feels each tone with the modulator's one net "
+                         "sign, as in v2.7 (default since v2.8: it feels no tone; docs/SCIENCE.md 8.4)")
     ap.add_argument("--global-apl", action="store_true",
                     help="parts list: APL releases as one cell, the same everywhere, instead of following the Kenyon cells "
                          "active around each target (Amin et al. 2020)")
@@ -212,10 +215,11 @@ def main(argv=None):
     if args.noise:
         hz, mv = (float(x) for x in args.noise.split(":"))
         overrides.update(noise_hz=hz, noise_mv=mv)
-    if args.parts or args.part or args.curated or args.no_receptor_signs or args.global_apl:
+    if args.parts or args.part or args.curated or args.no_receptor_signs or args.global_apl or args.one_sign_rule:
         from .parts import PartsList
         try:
-            pl = PartsList(curated=args.curated or "modulators", receptor_signs=not args.no_receptor_signs)
+            pl = PartsList(curated=args.curated or "modulators", receptor_signs=not args.no_receptor_signs,
+                           unknown_sign=1.0 if args.one_sign_rule else 0.0)
             overrides["parts"] = (pl if not args.global_apl else replace(pl, local=())).with_params(args.part)
         except ValueError as e:
             raise SystemExit(f"--part: {e}")
@@ -226,7 +230,9 @@ def main(argv=None):
               f"slow tones on {c['modulated_targets']:,} targets; {c['graded_neurons']:,} graded cells"
               + (f"; curated transmitters ({cur['policy']}): {cur['neurons']:,} neurons in {cur['types']:,} types changed" if cur.get("neurons") else "")
               + (f"; receptor signs on {with_data:,} modulated targets" if with_data else "")
-              + "".join(f"; receptors from the literature for {f['spec']} ({', '.join(f['receptors'])})" for f in c["receptor_signs"].get("facts", []) if f["neurons"])
+              + ("; the one-sign rule for targets without receptor data (v2.7)" if args.one_sign_rule
+                 else f"; no tone on the {c['modulated_targets'] - with_data:,} targets without receptor data" if with_data else "")
+              + "".join(f"; receptors from the literature for {f['spec']} ({f['what']})" for f in c["receptor_signs"].get("facts", []) if f["neurons"])
               + "".join(f"; {x['spec']} releases locally ({x['compartments']} compartments, by "
                         f"{'neuPrint region' if x.get('mode') == 'regions' else 'lobe'})" for x in c["local"])
               + (f"; overrides: {', '.join(p['spec'] + ' -> ' + ', '.join(f'{k} {v}' for k, v in p.items() if k in ('theta_mv', 'graded') and v is not None) for p in c['params'])}" if c["params"] else ""))

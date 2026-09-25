@@ -585,7 +585,7 @@ export class GenomePanel {
         ? `${(c.modulatory_neurons || 0).toLocaleString()} dopamine, octopamine and serotonin neurons act through slow tones on ${(c.modulated_targets || 0).toLocaleString()} targets; ${(c.graded_neurons || 0).toLocaleString()} optic-lobe cells transmit graded signals`
           + (cur.neurons ? `; the literature re-types ${cur.neurons.toLocaleString()} neurons (${cur.types.toLocaleString()} types)` : "")
           + (withData ? `; receptor expression sets the tone's sign on ${withData.toLocaleString()} targets` : "")
-          + (rs.facts || []).filter((f) => f.neurons).map((f) => `; ${f.spec} uses ${f.receptors.join(", ")} (literature)`).join("")
+          + (rs.facts || []).filter((f) => f.neurons).map((f) => f.receptors.length ? `; ${f.spec} uses ${f.receptors.join(", ")} (literature)` : `; ${f.what} in ${f.spec} (literature)`).join("")
           + (c.local || []).map((x) => `; ${x.spec} releases locally, by ${x.mode === "regions" ? "mushroom-body region" : "lobe"}`).join("")
         : "every neuron is the same machine (Shiu et al. 2024); switch on to give each the parts its genes make");
       setShown($("tones"), !!p.on);

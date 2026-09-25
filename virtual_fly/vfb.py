@@ -672,11 +672,12 @@ def transmitter_overrides(conn, policy: str = "modulators", modulators=MODULATOR
                       "by_action": dict(counts)})
 
 
-def receptor_signs(conn, targets: np.ndarray, modulators) -> tuple[np.ndarray, list[dict]]:
-    """Per modulator and target: the sign-weight of the tone from the target type's receptors (+1 where
-    nothing is known, the old one-sign rule). Also a coverage row per modulator."""
+def receptor_signs(conn, targets: np.ndarray, modulators, unknown: float = 0.0) -> tuple[np.ndarray, list[dict]]:
+    """Per modulator and target: the sign-weight of the tone from the target type's receptors, ``unknown``
+    where nothing is known (0: no receptor data, no effect; 1 was the old one-sign rule). Also a coverage
+    row per modulator."""
     K, T = len(modulators), int(targets.size)
-    out = np.ones((K, T), dtype=np.float32)
+    out = np.full((K, T), unknown, dtype=np.float32)
     rx, ont = receptors(), ontology()
     coverage = [{"nt": m.nt, "targets": T, "with_data": 0, "mean_sign": 1.0, "negative": 0} for m in modulators]
     if rx.empty or ont.empty or T == 0:

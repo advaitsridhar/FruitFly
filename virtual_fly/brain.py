@@ -923,6 +923,7 @@ class FlyBrain:
                     "modulated_targets": int(self._mod_targets.size),
                     "modulators": [m.nt for m in self._parts.parts.modulators], "graded_rate_hz": self._parts.parts.graded_rate_hz,
                     "curated": self._parts.parts.curated, "receptor_signs": self._parts.parts.receptor_signs,
+                    "unknown_sign": self._parts.parts.unknown_sign,
                     "co_release_neurons": int(self._parts.keep_fast.sum()),
                     "curated_neurons": int(self._parts.counts["curated"].get("neurons", 0)),
                     "local": [loc.local.spec for loc in self._local],

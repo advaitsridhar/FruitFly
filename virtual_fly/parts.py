@@ -38,12 +38,15 @@ Two more inputs come from Virtual Fly Brain through :mod:`virtual_fly.vfb` (v2.5
 * **Receptor signs.** A modulator's effect on a target follows the receptors the target's cell type
   expresses in the adult single-cell RNA-seq atlases (:data:`RECEPTORS`): Gs- and Gq-coupled receptors
   raise the target's gain, Gi-coupled ones lower it, each weighted by the fraction of cells expressing
-  it. Targets whose type has no adult cluster keep the modulator's one net sign.
+  it. Targets whose type has no adult cluster feel no tone (``unknown_sign``, 0; v2.7 gave them the
+  modulator's one net sign, +1).
 
 Two more tables came from chasing the one readout the parts list missed (v2.6; docs/SCIENCE.md 8.2):
 
 * :data:`RECEPTOR_FACTS`: receptors a cell type is shown to use by direct evidence in that type, for
-  types no atlas cluster covers (APL uses Dop2R, so dopamine lowers its gain; Zhou et al. 2019).
+  types no atlas cluster covers (APL uses Dop2R, so dopamine lowers its gain; Zhou et al. 2019), or the
+  measured effect of a modulator where the receptor is unknown (octopamine raises the HS and VS cells'
+  gain; Suver et al. 2012). Since v2.8 a target with neither feels no tone at all.
 * :data:`LOCAL`: wide-field neurons whose release follows the activity around each target rather
   than the whole cell's. APL's activity and inhibition stay local (Amin et al. 2020); here its
   release onto a target scales with how active the Kenyon cells of that target's lobe system are
@@ -115,11 +118,18 @@ class Local:
 @dataclass(frozen=True)
 class ReceptorFact:
     """Receptors a cell type is shown to use by direct evidence in that cell type. Used for types that no
-    adult single-cell cluster resolves, and only for the modulators whose receptors it names."""
+    adult single-cell cluster resolves, and only for the modulators whose receptors it names. Where the
+    effect of a modulator on the type was measured but its receptor was not identified, ``effects`` gives the
+    measured sign instead, e.g. ``(("octopamine", 1.0),)``."""
     spec: str
     receptors: tuple[str, ...]      # gene symbols from :data:`RECEPTORS`
     label: str
     why: str = ""
+    effects: tuple[tuple[str, float], ...] = ()     # (modulator, sign of its effect on the gain), receptor unknown
+
+    def what(self) -> str:
+        """Short text for the page: the receptors, or the measured effect."""
+        return ", ".join([*self.receptors, *(f"{m} {'raises' if v > 0 else 'lowers'} its gain" for m, v in self.effects)])
 
 
 @dataclass(frozen=True)
@@ -196,6 +206,12 @@ RECEPTOR_FACTS: tuple[ReceptorFact, ...] = (
                  "Dopamine neurons synapse onto APL and suppress it through the D2-like receptor Dop2R; knocking Dop2R "
                  "down in APL impairs aversive learning (Zhou et al. 2019). APL is one cell per side, so the "
                  "single-cell atlases have no cluster for it."),
+    ReceptorFact("prefix:HS,prefix:VS", (), "the HS and VS cells, the lobula plate's wide-field motion neurons",
+                 "Octopamine released during flight raises the HS and VS cells' motion responses (Suver, Mamiya & "
+                 "Dickinson 2012, with an octopamine agonist; Longden & Krapp 2009 in the blowfly); the receptor was "
+                 "not identified, and the adult atlases have no cluster for these few large cells. This is the "
+                 "measured effect the octopamine tone's gain was set from.",
+                 effects=(("octopamine", 1.0),)),
 )
 
 CELL_PARAMS: tuple[CellParam, ...] = ()
@@ -405,7 +421,8 @@ class CompiledParts:
                                 "compartments": sorted(set(loc.labels))}
         if i in self.receptor_facts:
             f = self.receptor_facts[i]
-            out["receptor_fact"] = {"receptors": list(f.receptors), "why": f.why}
+            out["receptor_fact"] = {"receptors": list(f.receptors), "effects": dict(f.effects), "what": f.what(),
+                                    "why": f.why}
         return out
 
 
@@ -418,6 +435,7 @@ class PartsList:
     theta_mv: float = THETA
     curated: str = "modulators"     # vfb.transmitter_overrides policy: off / modulators / all
     receptor_signs: bool = True     # per-target tone signs from the receptors the target type expresses
+    unknown_sign: float = 0.0       # tone sign-weight on a target whose receptors are unknown (v2.7: 1.0, the one-sign rule)
     receptors: tuple[Receptor, ...] = RECEPTORS
     receptor_facts: tuple[ReceptorFact, ...] = RECEPTOR_FACTS
     local: tuple[Local, ...] = LOCAL
@@ -449,7 +467,7 @@ class PartsList:
         target_pos[mod_targets] = np.arange(mod_targets.size)
         kind_targets = [target_pos[t] for t in own_targets]
         if self.receptor_signs:
-            mod_sign, coverage = vfb.receptor_signs(conn, mod_targets, self.modulators)
+            mod_sign, coverage = vfb.receptor_signs(conn, mod_targets, self.modulators, unknown=self.unknown_sign)
             fact_of, fact_rows = self._apply_receptor_facts(conn, mod_sign, target_pos)
         else:
             mod_sign, coverage = np.ones((len(self.modulators), mod_targets.size), dtype=np.float32), []
@@ -500,19 +518,24 @@ class PartsList:
             if unknown:
                 raise ValueError(f"receptor fact for {f.spec}: unknown receptor {', '.join(unknown)} "
                                  f"(known: {', '.join(by_gene)})")
+            bad = [m for m, _ in f.effects if m not in {x.nt for x in self.modulators}]
+            if bad:
+                raise ValueError(f"receptor fact for {f.spec}: unknown modulator {', '.join(bad)}")
+            effects = dict(f.effects)
             idx = conn.select(f.spec)
             atlas = sorted({t for t in conn.types[idx].tolist() if vfb.receptors_of_type(t, conn) is not None})
             idx = idx[~np.isin(conn.types[idx], atlas)]
             signs = {}
             for k, m in enumerate(self.modulators):
                 named = [by_gene[g].sign for g in f.receptors if by_gene[g].modulator == m.nt]
-                if named:
-                    signs[m.nt] = float(max(-1, min(1, sum(named))))
+                if named or m.nt in effects:
+                    signs[m.nt] = float(max(-1, min(1, sum(named)))) if named else float(effects[m.nt])
                     pos = target_pos[idx]
                     mod_sign[k, pos[pos >= 0]] = np.float32(signs[m.nt])
             for i in idx.tolist():
                 fact_of[int(i)] = f
-            rows.append({"spec": f.spec, "label": f.label, "receptors": list(f.receptors), "neurons": int(idx.size),
+            rows.append({"spec": f.spec, "label": f.label, "receptors": list(f.receptors), "effects": effects,
+                         "what": f.what(), "neurons": int(idx.size),
                          "targets": int((target_pos[idx] >= 0).sum()), "signs": signs,
                          "left_to_the_atlas": atlas, "why": f.why})
         return fact_of, rows
@@ -525,9 +548,11 @@ class PartsList:
                 "params": [{"spec": p.spec, "theta_mv": p.theta_mv, "graded": p.graded, "label": p.label, "why": p.why}
                            for p in self.params],
                 "graded_rate_hz": self.graded_rate_hz, "curated": self.curated, "receptor_signs": self.receptor_signs,
+                "unknown_sign": self.unknown_sign,
                 "receptors": [{"gene": r.gene, "fbgn": r.fbgn, "modulator": r.modulator, "coupling": r.coupling,
                                "sign": r.sign, "why": r.why} for r in self.receptors],
-                "receptor_facts": [{"spec": f.spec, "receptors": list(f.receptors), "label": f.label, "why": f.why}
+                "receptor_facts": [{"spec": f.spec, "receptors": list(f.receptors), "effects": dict(f.effects),
+                                    "what": f.what(), "label": f.label, "why": f.why}
                                    for f in self.receptor_facts],
                 "local": [{"spec": x.spec, "groups": list(x.groups), "label": x.label, "tau_ms": x.tau_ms,
                            "by_region": x.by_region, "why": x.why} for x in self.local]}

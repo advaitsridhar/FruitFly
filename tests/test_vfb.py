@@ -212,7 +212,9 @@ def test_the_parts_list_applies_the_overrides_and_the_receptor_signs(conn, mini_
     pos = cp.target_pos[hse]
     assert (pos >= 0).all() and np.allclose(cp.mod_sign[1, pos], -0.3)
     assert np.allclose(cp.mod_sign[0, pos], 0.0)            # a cluster exists but expresses no dopamine receptor: no effect
-    assert np.allclose(cp.mod_sign[0, cp.target_pos[conn.select("MBON11")]], 1.0)     # no cluster: the one-sign rule
+    assert np.allclose(cp.mod_sign[0, cp.target_pos[conn.select("MBON11")]], 0.0)     # no cluster: no tone (v2.7: +1)
+    old = PartsList(unknown_sign=1.0).compile(conn)
+    assert np.allclose(old.mod_sign[0, old.target_pos[conn.select("MBON11")]], 1.0) and np.allclose(old.mod_sign[1, pos], -0.3)
     cov = {c["nt"]: c for c in cp.counts["receptor_signs"]["coverage"]}
     assert cov["octopamine"]["with_data"] >= hse.size and cov["octopamine"]["negative"] >= hse.size and cov["dopamine"]["targets"] == cp.mod_targets.size
     plain = PartsList(receptor_signs=False, curated="off").compile(conn)
@@ -247,8 +249,8 @@ def test_the_brain_follows_the_overrides(conn, mini_vfb, backend):
     cut = FlyBrain(conn, seed=0, parts=PartsList(curated="off"), backend=backend)
     assert (co.w[conn.out_edges(conn.select("PAM01"))] < 0).all() and (cut.w[conn.out_edges(conn.select("PAM01"))] == 0).all()
     # under "all" the bitter interneuron GNG087 is cholinergic, so bitter taste now drives MN9 instead of blocking it
-    mod = FlyBrain(conn, seed=0, parts=PartsList(curated="modulators"), backend=backend)
-    every = FlyBrain(conn, seed=0, parts=PartsList(curated="all"), backend=backend)
+    mod = FlyBrain(conn, seed=0, parts=PartsList(curated="modulators", unknown_sign=1.0), backend=backend)
+    every = FlyBrain(conn, seed=0, parts=PartsList(curated="all", unknown_sign=1.0), backend=backend)
     assert (mod.w[conn.out_edges(conn.select("GNG087"))] < 0).all() and (every.w[conn.out_edges(conn.select("GNG087"))] > 0).all()
     assert _measure(mod, {"LB1a,LB1b": 150}).rate("MN9") == 0 and _measure(every, {"LB1a,LB1b": 150}).rate("MN9") > 20
 
@@ -262,7 +264,8 @@ def test_without_data_files_everything_degrades_to_nothing_known(conn, mini_vfb)
         ov = vfb.transmitter_overrides(conn, "all")
         assert ov.counts["neurons"] == 0 and (ov.sign == conn.sign).all()
         sign, cov = vfb.receptor_signs(conn, np.arange(5), PartsList().modulators)
-        assert sign.shape == (3, 5) and (sign == 1).all() and cov[0]["with_data"] == 0
+        assert sign.shape == (3, 5) and (sign == 0).all() and cov[0]["with_data"] == 0
+        assert (vfb.receptor_signs(conn, np.arange(5), PartsList().modulators, unknown=1.0)[0] == 1).all()
         with pytest.raises(ValueError):
             conn.select("fbbt:lobula columnar neuron")
         with pytest.raises(ValueError):

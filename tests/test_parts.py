@@ -57,12 +57,12 @@ def test_param_overrides_and_parsing(conn):
 
 def test_modulators_lose_their_fast_synapses_and_leave_a_tone(conn):
     plain = FlyBrain(conn, seed=0)
-    parts = FlyBrain(conn, seed=0, parts=True)
+    parts = FlyBrain(conn, seed=0, parts=P.PartsList(unknown_sign=1.0))   # no receptor data here: the tone machinery with the v2.7 fill
     assert parts.settings()["parts"] == {"graded_neurons": parts.parts.graded_idx.size, "modulatory_neurons": 16,
                                          "modulated_targets": parts.parts.mod_targets.size,
                                          "modulators": ["dopamine", "octopamine", "serotonin"], "graded_rate_hz": 300.0,
-                                         "curated": "modulators", "receptor_signs": True, "co_release_neurons": 0,
-                                         "curated_neurons": 0, "local": ["APL"], "receptor_facts": ["APL"]}
+                                         "curated": "modulators", "receptor_signs": True, "unknown_sign": 1.0, "co_release_neurons": 0,
+                                         "curated_neurons": 0, "local": ["APL"], "receptor_facts": ["APL", "prefix:HS,prefix:VS"]}
     # dopamine drives the MBONs directly in the published model; with the parts list it does not
     assert _measure(plain, {"PPL101": 300}).rate("MBON11") > 20
     assert _measure(parts, {"PPL101": 300}).rate("MBON11") == 0 and parts.rate("PPL101") > 150
@@ -84,7 +84,7 @@ def test_modulators_lose_their_fast_synapses_and_leave_a_tone(conn):
 
 
 def test_octopamine_and_serotonin_tone_from_a_sound(conn):
-    b = FlyBrain(conn, seed=0, parts=True)
+    b = FlyBrain(conn, seed=0, parts=P.PartsList(unknown_sign=1.0))
     _measure(b, {"prefix:JO-B": 100}, ms=800, settle=100)
     st = b.parts_status()["tone"]
     assert st["octopamine"]["mean"] > 0.2 and st["serotonin"]["mean"] > 0.2 and st["octopamine"]["targets_on"] >= 6
@@ -96,10 +96,10 @@ def test_octopamine_and_serotonin_tone_from_a_sound(conn):
     assert st2["octopamine"]["mean"] < st["octopamine"]["mean"] and st2["serotonin"]["mean"] < st["serotonin"]["mean"]
     assert st2["octopamine"]["mean"] / st["octopamine"]["mean"] < st2["serotonin"]["mean"] / st["serotonin"]["mean"]
     # octopamine raises the HS cells' response to the same motion
-    quiet = FlyBrain(conn, seed=0, parts=True)
+    quiet = FlyBrain(conn, seed=0, parts=P.PartsList(unknown_sign=1.0))
     motion = {"T4a/R,T5a/R": 10}                                     # below the graded cells' saturation
     base = _measure(quiet, motion, ms=500, settle=200).rate("HSE/R,HSN/R,HSS/R")
-    aroused = FlyBrain(conn, seed=0, parts=True)
+    aroused = FlyBrain(conn, seed=0, parts=P.PartsList(unknown_sign=1.0))
     aroused.set_stimuli({"prefix:JO-B": 100})
     aroused.run(600)
     aroused.set_stimuli(motion)
@@ -225,7 +225,7 @@ def test_receptor_facts_fill_types_the_atlas_does_not_cover(conn, mini_vfb):
     row = cp.counts["receptor_signs"]["facts"][0]
     assert row["left_to_the_atlas"] == ["KCg-m"] and row["neurons"] == 2    # the atlas has a gamma Kenyon cell cluster
     pos = cp.target_pos[conn.select("MBON11")]
-    assert (pos >= 0).all() and (cp.mod_sign[0, pos] == -1).all() and (cp.mod_sign[1:, pos] == 1).all()
+    assert (pos >= 0).all() and (cp.mod_sign[0, pos] == -1).all() and (cp.mod_sign[1:, pos] == 0).all()   # the fact names only Dop2R; no data for OA/5-HT: no tone
     assert "receptor_fact" not in cp.role(int(conn.select("KCg-m")[0]))
     off = P.PartsList(receptor_facts=(fact,), receptor_signs=False).compile(conn)
     assert off.counts["receptor_signs"]["facts"] == [] and (off.mod_sign == 1).all()
@@ -283,3 +283,33 @@ def test_apl_compartments_from_a_region_table(conn):
     b.run(150)
     rel = b.local_status()[0]["release"]
     assert b.local_status()[0]["mode"] == "regions" and rel["γ lobe"] == 1.0 and rel["α lobe"] < rel["calyx"] <= 1.0
+
+
+def test_a_target_without_receptor_data_feels_no_tone(conn):
+    """v2.8: the tone changes a target's gain only through receptors the kit knows it expresses."""
+    b = FlyBrain(conn, seed=0, parts=True)
+    _measure(b, {"PPL101": 80})
+    assert b.parts_status()["tone"]["dopamine"]["mean"] > 0.3          # the tone is there ...
+    assert (b._mod_gain == 1).all()                                     # ... but moves no gain without receptor data
+    old = FlyBrain(conn, seed=0, parts=P.PartsList(unknown_sign=1.0))
+    _measure(old, {"PPL101": 80})
+    assert (old._mod_gain > 1).sum() == 4
+
+
+
+def test_a_measured_effect_stands_in_for_an_unknown_receptor(conn):
+    """The HS/VS fact: octopamine raises their gain (Suver et al. 2012), receptor unknown; the other modulators,
+    with no data, do nothing to them."""
+    cp = P.PartsList().compile(conn)
+    k = {m.nt: j for j, m in enumerate(cp.parts.modulators)}
+    row = next(f for f in cp.counts["receptor_signs"]["facts"] if f["spec"] == "prefix:HS,prefix:VS")
+    idx = conn.select("prefix:HS,prefix:VS")
+    own = idx[~np.isin(conn.types[idx], row["left_to_the_atlas"])]        # an atlas cluster, where there is one, wins
+    pos = cp.target_pos[own]
+    pos = pos[pos >= 0]
+    assert pos.size and (cp.mod_sign[k["octopamine"], pos] == 1).all()
+    assert (cp.mod_sign[k["dopamine"], pos] == 0).all() and (cp.mod_sign[k["serotonin"], pos] == 0).all()
+    assert row["receptors"] == [] and row["effects"] == {"octopamine": 1.0} and "raises its gain" in row["what"]
+    assert cp.role(int(own[0]))["receptor_fact"]["effects"] == {"octopamine": 1.0}
+    with pytest.raises(ValueError):
+        P.PartsList(receptor_facts=(P.ReceptorFact("HSE", (), "bad", effects=(("tyramine", 1.0),)),)).compile(conn)

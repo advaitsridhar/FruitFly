@@ -378,7 +378,7 @@ function partsRole(p) {
   else if (p.sign !== undefined && p.modulator === null) bits.push(`fast ${p.sign > 0 ? "+" : "−"}`);
   if (p.graded) bits.push("graded");
   if (p.local) bits.push("releases locally, following the Kenyon cells around each target");
-  if (p.receptor_fact) bits.push(`<span title="${esc(p.receptor_fact.why)}">receptors from the literature: ${esc(p.receptor_fact.receptors.join(", "))}</span>`);
+  if (p.receptor_fact) bits.push(`<span title="${esc(p.receptor_fact.why)}">from the literature: ${esc(p.receptor_fact.what || p.receptor_fact.receptors.join(", "))}</span>`);
   return bits.length ? ` <small class="muted">· parts list: ${bits.join("; ")}</small>` : "";
 }
 function vfbRows(n) {
