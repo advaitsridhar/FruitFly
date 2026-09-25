@@ -1551,6 +1551,22 @@ the parquet file needs `pyarrow` (`pip install -e ".[female]"`).
 * **Signs** come from each neuron's predicted transmitter in the annotations, the same rule as for
   the male. They agree with the published model's own `Excitatory` column on 98.9 % of the
   connections of 5 or more synapses (the annotations' predictions are newer).
+* **Transmitter labels**, which the parts list and the genetics panel read, follow the male file's
+  rules, because FlyWire's predictor has no histamine class and calls whole types dopaminergic or
+  serotonergic that are not. It labels all 1,643 α/β Kenyon cells dopaminergic, and several
+  olfactory receptor types serotonergic. Taken as they are, these labels would make 6,754 female
+  neurons slow modulators with their fast synapses removed (male: 2,146), and the Kenyon cells
+  would no longer drive the mushroom body. Two rules restore parity. A prediction below 0.5
+  confidence is labelled "unclear", as in the male file (the sign stays the prediction's, so the
+  model without the parts list is still the published one). And FlyWire's literature column
+  `known_nt` (TAPIN-seq, EASI-FISH, immunostaining) is stored per cell type and read by the parts
+  list's curated rule, the way Virtual Fly Brain's classes are read for the male. A transmitter
+  counts for a type when at least half of all its neurons name it; negative results, peptides and
+  nitric oxide are left out. That gives 1,012 types. The Kenyon cells and olfactory receptor
+  neurons become cholinergic, DPM serotonergic with fast GABA as in the male, and the photoreceptors
+  histaminergic. Afterwards the female has 2,338 modulatory neurons. The literature column names
+  more co-transmitters than the ontology does (Delta7 and FC3 with serotonin), so a few female
+  types gain a tone the male's do not.
 * **Classes** are translated into the male data's vocabulary (e.g. FlyWire's `central` →
   `cb_intrinsic`), so `class:Kenyon_Cell`, `class:ALLN`, `class:DAN` and the profiles work unchanged.
   fru/dsx labels are FlyWire's `fru`, `dsx` and `coexpress` (no confidence grade), and
@@ -1622,6 +1638,12 @@ synapses, against 195 in the male. The female pC1 cluster is 10 cells against th
 sends DNp13 5 synapses against 1,571. That last one is at least partly biology, since female pC1
 lacks the male's P1 cells. Taking a difference between the two flies for biology would need these
 confounds removed first. The kit gives both flies, not that answer.
+
+With the parts list on (game profile, five seeds) and the two label rules above, bitter keeps MN9
+silent (Scapula 117 Hz), bitter wins over sugar (MN9 5.8 Hz), and vinegar reaches the mushroom body
+(DM1 projection neuron 220 Hz, Kenyon cells 3.6 Hz, MBON14 79 Hz, MBON11 76 Hz, above the male's
+60 Hz ceiling). Without the rules, the olfactory receptor neurons were serotonin modulators and the
+Kenyon cells dopamine ones: the projection neuron fired 67 Hz and MBON14 0 Hz.
 
 Checked, pure profile: the time step (at 0.1 ms, the paper's Brian2 value: MN9 80, giant fibre 211, aDN1
 5.5 Hz), the sign rule (above), and a file cut at 5 synapses like the male's. At gain 0.65 every drive

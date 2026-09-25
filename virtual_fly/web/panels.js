@@ -429,7 +429,7 @@ export class GeneticsPanel {
     const rows = $("vfbRows"); rows.innerHTML = "";
     for (const r of c.differ_rows || []) {
       const info = el("div", "g");
-      info.innerHTML = `<span><b>${esc(r.type)}</b> <small>predicted ${esc(r.predicted)}, ${r.evidence === "literature" ? "literature" : "another connectome"} says ${esc(r.curated.join(" + "))}</small><a href="https://virtualflybrain.org/reports/${esc(r.fbbt.replace(":", "_"))}" target="_blank" rel="noopener" title="${esc(r.label)} on Virtual Fly Brain">VFB ↗</a></span><small>${r.n.toLocaleString()} neurons</small>`;
+      info.innerHTML = `<span><b>${esc(r.type)}</b> <small>predicted ${esc(r.predicted)}, ${r.evidence === "literature" ? "literature" : "another connectome"} says ${esc(r.curated.join(" + "))}${r.source ? ` (${esc(r.source)})` : ""}</small>${r.fbbt ? `<a href="https://virtualflybrain.org/reports/${esc(r.fbbt.replace(":", "_"))}" target="_blank" rel="noopener" title="${esc(r.label)} on Virtual Fly Brain">VFB ↗</a>` : ""}</span><small>${r.n.toLocaleString()} neurons</small>`;
       rows.append(info, this.actions(r.type, true));
     }
   }

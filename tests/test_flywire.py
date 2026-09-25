@@ -12,14 +12,15 @@ SUGAR = flywire.SHIU_SUGAR[:3]                 # three of the published model's 
 
 
 def _ann(root, ctype, sc="central", side="left", nt="acetylcholine", cls="", sub="", dim="isomorphic", fd="",
-         soma=None):
+         soma=None, conf="0.9", known=""):
     soma = soma or (100 + 37 * (root % 97), 200 + 23 * (root % 89), 30 + root % 83)     # spread out, for the map
     return {"root_id": str(root), "cell_type": ctype, "hemibrain_type": "", "super_class": sc, "cell_class": cls,
-            "cell_sub_class": sub, "side": side, "top_nt": nt, "dimorphism": dim, "fru_dsx": fd, "nerve": "",
-            "soma_x": str(soma[0]), "soma_y": str(soma[1]), "soma_z": str(soma[2])}
+            "cell_sub_class": sub, "side": side, "top_nt": nt, "top_nt_conf": conf, "known_nt": known,
+            "known_nt_source": "Davis et al., 2020 (TAPIN)" if known else "", "dimorphism": dim, "fru_dsx": fd,
+            "nerve": "", "soma_x": str(soma[0]), "soma_y": str(soma[1]), "soma_z": str(soma[2])}
 
 
-def _female(tmp_path, min_syn=1):
+def _female(tmp_path, min_syn=1, more=()):
     ann = [_ann(SUGAR[0], "LB3", "sensory", cls="gustatory", sub="sugar/water"),
            _ann(SUGAR[1], "LB3", "sensory", "right", cls="gustatory", sub="sugar/water"),
            _ann(SUGAR[2], "LB3", "sensory", cls="gustatory", sub="sugar/water"),
@@ -33,7 +34,7 @@ def _female(tmp_path, min_syn=1):
            _ann(70, "vpoDN", "descending", fd="fru", dim="female-specific"),
            _ann(71, "aIP-g", fd="coexpress", dim="potentially female-specific"),
            _ann(80, "R7", "sensory", cls="visual", soma=("", "", "")),
-           _ann(90, "lLN1", cls="ALLN", nt="gaba"), _ann(91, "PAM01", cls="DAN", nt="dopamine")]
+           _ann(90, "lLN1", cls="ALLN", nt="gaba"), _ann(91, "PAM01", cls="DAN", nt="dopamine"), *more]
     pairs = [(SUGAR[0], 30, 80), (SUGAR[1], 31, 80), (SUGAR[2], 30, 80), (30, 50, 80), (31, 51, 80),
              (20, 40, 80), (21, 41, 80), (40, 50, 60), (41, 51, 60), (60, 70, 30), (61, 71, 3),
              (70, 99, 12)]                      # 99: connected, but not in the annotations
@@ -42,7 +43,8 @@ def _female(tmp_path, min_syn=1):
     pre, post, syn = pre[keep], post[keep], syn[keep]
     extra = sorted({int(x) for x in np.concatenate([pre, post])} - {int(a["root_id"]) for a in ann})
     rows = flywire.neuron_rows(ann, extra)
-    meta = {"sex": "female", "aliases": flywire.aliases({r["root"] for r in rows})}
+    meta = {"sex": "female", "aliases": flywire.aliases({r["root"] for r in rows}),
+            "known_nt": flywire.known_transmitters(ann)}
     return Connectome(flywire.write_flyb(tmp_path / "female.flyb.gz", rows, pre, post, syn, meta))
 
 
@@ -181,3 +183,48 @@ def test_no_pyarrow_fails_before_downloading(tmp_path, monkeypatch):
     monkeypatch.setattr(flywire, "download_sources", lambda *a, **k: pytest.fail("downloaded without pyarrow"))
     with pytest.raises(SystemExit, match="pyarrow"):
         flywire.build_female(tmp_path / "f.flyb.gz", tmp_path, quiet=True)
+
+
+def test_known_transmitters_follow_the_literature_column():
+    ann = [_ann(1, "KCab", nt="dopamine", known="acetylcholine; sNPF; acetylcholine, sNPF"),
+           _ann(2, "KCab", nt="dopamine", known="acetylcholine; sNPF"),
+           _ann(3, "Delta7", nt="glutamate", known="glutamate, serotonin, proctolin, gaba-negative, dopamine-negative"),
+           _ann(4, "Sm03", nt="glutamate", known="acetylcholine, nitric oxide, dopamine"),
+           _ann(5, "Sm03", nt="glutamate"), _ann(6, "Sm03", nt="glutamate"),        # one labelled cell of three
+           _ann(7, "NP", known="sNPF, gaba-negative")]                            # nothing the kit models
+    k = flywire.known_transmitters(ann)
+    assert k["KCab"]["nt"] == ["acetylcholine"] and "TAPIN" in k["KCab"]["source"]
+    assert k["Delta7"]["nt"] == ["glutamate", "serotonin"]                      # negatives and peptides left out
+    assert "Sm03" not in k and "NP" not in k
+
+
+def test_a_low_confidence_prediction_is_unclear_but_keeps_its_sign(tmp_path):
+    c = _female(tmp_path, more=[_ann(200, "LowConf", nt="glutamate", conf="0.31"), _ann(201, "HighConf", nt="glutamate")])
+    lo, hi = c.select("LowConf")[0], c.select("HighConf")[0]
+    assert c.nt[lo] == "unclear" and c.sign[lo] == -1                          # the published model's sign
+    assert c.nt[hi] == "glutamate" and c.sign[hi] == -1
+
+
+def test_the_parts_list_reads_flywires_literature(tmp_path):
+    from virtual_fly import parts as P
+    c = _female(tmp_path, more=[_ann(300, "KCab", nt="dopamine", known="acetylcholine; sNPF"),
+                                _ann(301, "KCab", nt="dopamine", known="acetylcholine; sNPF"),
+                                _ann(302, "DPM", nt="dopamine", known="serotonin; amnesiac; gaba; gaba, serotonin")])
+    cp = P.PartsList().compile(c)
+    kc, dpm = cp.role(c.select("KCab")[0]), cp.role(c.select("DPM")[0])
+    assert kc["modulator"] is None and kc["sign"] == 1 and kc["curated"]["action"] == "not a modulator: fast synapses kept"
+    assert dpm["modulator"] == "serotonin" and dpm["keep_fast"] and dpm["sign"] == -1   # as the male's curated DPM
+    rows = {r["type"]: r for r in cp.counts["curated"]["rows"]}
+    assert rows["KCab"]["source"].startswith("Davis") and rows["KCab"]["fbbt"] == ""    # no ontology class needed
+    off = P.PartsList(curated="off").compile(c)                                  # the policy still decides
+    assert off.role(c.select("KCab")[0])["modulator"] == "dopamine"
+
+
+def test_an_old_female_file_is_rebuilt(tmp_path, monkeypatch):
+    c = _female(tmp_path)                                                        # its meta has no build number
+    assert flywire.built_with(c.path) == 0
+    monkeypatch.setattr(flywire, "FEMALE_FILE", c.path)
+    monkeypatch.setattr(flywire, "build_female", lambda quiet=False: "rebuilt")
+    assert flywire.ensure_female() == "rebuilt"
+    monkeypatch.setattr(flywire, "BUILD", 0)
+    assert flywire.ensure_female() == c.path

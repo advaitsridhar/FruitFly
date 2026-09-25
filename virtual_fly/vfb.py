@@ -325,7 +325,8 @@ class Ontology:
                              "fbbt": e["fbbt"][0], "label": self.label(e["fbbt"][0])})
         rows.sort(key=lambda r: -r["n"])
         return {"available": True, "source": self.source, "overlay_source": self.overlay_source,
-                "types_mapped": len(self.types), "types_total": len(tc), "neurons_mapped": mapped_n, "neurons_typed": typed_n,
+                "types_mapped": sum(1 for t in self.types if t in tc), "types_total": len(tc),
+                "neurons_mapped": mapped_n, "neurons_typed": typed_n,
                 "classes": len(self.classes), "curated": {"agree": agree, "differ": differ, "unclear_with_curated": filled,
                                                             "differ_rows": rows[:12]}}
 
@@ -539,6 +540,21 @@ class Overrides:
     counts: dict = field(default_factory=dict)
 
 
+def file_curated(conn) -> dict[str, dict]:
+    """A connectome file's own literature transmitters per cell type, in the ontology's entry format: the female
+    fly's FlyWire file carries its ``known_nt`` column this way (flywire.known_transmitters). Empty for the male."""
+    table = (getattr(conn, "meta", None) or {}).get("known_nt") or {}
+    if not table:
+        return {}
+    ont = ontology()
+    out = {}
+    for t, v in table.items():
+        e = None if ont.empty else ont.types.get(t)
+        out[t] = {"nt": list(v["nt"]), "evidence": "literature", "fbbt": list(e["fbbt"]) if e and e.get("fbbt") else [""],
+                  "source": v.get("source", "")}
+    return out
+
+
 def transmitter_overrides(conn, policy: str = "modulators", modulators=MODULATOR_NTS) -> Overrides:
     """Apply the ontology's curated transmitters to the connectome's predictions.
 
@@ -553,7 +569,8 @@ def transmitter_overrides(conn, policy: str = "modulators", modulators=MODULATOR
     (FBbt:2xxxxxxx: another data set's own prediction for the same type) fill "unclear" predictions.
     They never change a confident one, and coarse matches (a ``_a`` type mapped to its stem's class, a
     neuron's class read from one VFB individual) only ever annotate. ``modulators`` are the modulator
-    names the caller models; a curated modulator outside them is ignored."""
+    names the caller models; a curated modulator outside them is ignored. A file's own literature table
+    (:func:`file_curated`, the female fly's) is read the same way and wins over the ontology for its types."""
     if policy not in POLICIES:
         raise ValueError(f"curated policy must be one of {POLICIES}, not '{policy}'")
     n = conn.n
@@ -565,12 +582,14 @@ def transmitter_overrides(conn, policy: str = "modulators", modulators=MODULATOR
     rows: list[dict] = []
     ont = ontology()
     counts = collections.Counter()
-    if policy == "off" or ont.empty:
+    own = file_curated(conn)
+    if policy == "off" or (ont.empty and not own):
         return Overrides(sign, mod_nt, keep_fast, action, curated, rows, {"policy": policy, "types": 0, "neurons": 0, "by_action": {}})
+    entries = {**({} if ont.empty else ont.types), **own}
     lookup = {t: k for k, t in enumerate(conn.tables["types"])}
     order = np.argsort(conn.type_idx, kind="stable")
     bounds = np.searchsorted(conn.type_idx[order], np.arange(len(conn.tables["types"]) + 1))
-    for t, e in ont.types.items():
+    for t, e in entries.items():
         S = e.get("nt")
         k_type = lookup.get(t)
         if not S or k_type is None:
@@ -640,8 +659,10 @@ def transmitter_overrides(conn, policy: str = "modulators", modulators=MODULATOR
                 sign[i] = fast_sign
                 per_action["sign flipped"].append(i)
         for what, ids in per_action.items():
+            fb = e["fbbt"][0]
             rows.append({"type": t, "n": len(ids), "predicted": _majority_nt(conn).get(t), "curated": S,
-                         "evidence": e.get("evidence"), "action": what, "fbbt": e["fbbt"][0], "label": ont.label(e["fbbt"][0])})
+                         "evidence": e.get("evidence"), "action": what, "fbbt": fb,
+                         "label": ont.label(fb) if fb else t, **({"source": e["source"]} if "source" in e else {})})
             counts[what] += len(ids)
             for i in ids:
                 action[i], curated[i] = what, S

@@ -22,6 +22,13 @@ more synapses, the published model uses all of them), the paper's 0.275 mV per s
 sign as the published model's table; the annotations' predictions are newer). ``build_female(min_synapses=5)``
 builds a file cut like the male one, for comparisons.
 
+Transmitter *labels*, which the parts list and the genetics panel read, follow the male file's rules: a prediction
+below 0.5 confidence is "unclear" (``NT_CONF_FALLBACK``; the sign stays the prediction's), and FlyWire's
+literature column ``known_nt`` is stored per cell type (:func:`known_transmitters`) for the parts list's curated
+rule, as Virtual Fly Brain's classes are for the male. FlyWire's predictor has no histamine class and calls whole
+types dopaminergic or serotonergic that are not (the Kenyon cells), so without this the parts list would silence
+the mushroom body's fast synapses.
+
 The kit's experiments and senses are written with MaleCNS cell-type names. ``ALIASES`` maps the ones FlyWire calls
 something else to FlyWire's cells; the table is stored in the file and :meth:`Connectome.select` reads it.
 
@@ -32,10 +39,12 @@ female fly.
 """
 from __future__ import annotations
 
+import collections
 import csv
 import gzip
 import hashlib
 import json
+import re
 import struct
 import sys
 import time
@@ -47,6 +56,7 @@ import numpy as np
 from .connectome import PROJECT_DIR
 
 FEMALE_FILE = PROJECT_DIR / "data" / "flywire-v783.flyb.gz"
+BUILD = 3                             # bump when the builder changes what goes in the file: older files are rebuilt
 SOURCE_DIR = PROJECT_DIR / "data" / "flywire-src"
 DATASET = "flywire:v783"
 MIN_SYNAPSES = 1                      # every connection, as the published model uses them
@@ -73,6 +83,10 @@ SIDE = {"left": "L", "right": "R", "center": "M"}
 NT_SIGN = {"acetylcholine": 1, "glutamate": -1, "gaba": -1, "histamine": -1, "dopamine": 1, "octopamine": 1,
            "serotonin": 1, "unclear": 1, "": 1}                        # as in the male file
 VOXEL_NM = (4.0, 4.0, 40.0)                                            # FlyWire's annotation voxel size
+# As in the male file: a transmitter predicted with less than this confidence is labelled "unclear". The sign stays
+# the prediction's, so the model without the parts list is the published one; the parts list (which reads the
+# labels) then no longer takes a low-confidence "serotonin" for a modulator, and literature can fill the label.
+NT_CONF_FALLBACK = 0.5
 
 # The labellar sugar cells the published model drives (Shiu et al. 2024, figures.ipynb at the pinned commit; one
 # side). FlyWire types all 122 sugar and water cells of the labellum as LB3, where the MaleCNS splits them into
@@ -160,6 +174,8 @@ def neuron_rows(annotations: list[dict], extra_ids=()) -> list[dict]:
     rows = []
     for a in annotations:
         nt = a.get("top_nt") or "unclear"
+        conf = a.get("top_nt_conf")
+        label = nt if conf in (None, "", "nan") or float(conf) >= NT_CONF_FALLBACK else "unclear"
         sc = SUPERCLASS.get(a.get("super_class", ""), "")
         if sc == "cb_sensory" and a.get("cell_class") == "visual":
             sc = "ol_sensory"                                            # photoreceptors and ocelli
@@ -167,7 +183,7 @@ def neuron_rows(annotations: list[dict], extra_ids=()) -> list[dict]:
                 for k, v in zip(("soma_x", "soma_y", "soma_z"), VOXEL_NM)]
         rows.append({"root": int(a["root_id"]), "type": a.get("cell_type") or a.get("hemibrain_type") or "",
                      "superclass": sc, "cls": a.get("cell_class", ""), "subclass": a.get("cell_sub_class", ""),
-                     "nt": nt, "side": SIDE.get(a.get("side", ""), ""),
+                     "nt": label, "sign_nt": nt, "side": SIDE.get(a.get("side", ""), ""),
                      "dimorphism": "" if a.get("dimorphism") in (None, "", "isomorphic") else a["dimorphism"],
                      "frudsx": a.get("fru_dsx", ""), "neuromere": "", "nerve": a.get("nerve", ""), "soma": soma})
     for r in extra_ids:
@@ -175,6 +191,36 @@ def neuron_rows(annotations: list[dict], extra_ids=()) -> list[dict]:
                      "side": "", "dimorphism": "", "frudsx": "", "neuromere": "", "nerve": "",
                      "soma": [np.nan] * 3})
     return rows
+
+
+# the transmitters the kit models (vfb.FAST_SIGN and vfb.MODULATOR_NTS)
+KNOWN_NTS = ("acetylcholine", "gaba", "glutamate", "histamine", "dopamine", "octopamine", "serotonin")
+
+
+def known_transmitters(annotations: list[dict]) -> dict[str, dict]:
+    """Per cell type, the transmitters FlyWire's ``known_nt`` column gives from the literature (Davis et al. 2020
+    TAPIN-seq, Nern et al. 2024 EASI-FISH, immunostaining ...). FlyWire's *predicted* transmitters come from a
+    classifier with no histamine class, which calls whole types dopaminergic or serotonergic that are not
+    (all 1,643 alpha/beta Kenyon cells, many olfactory receptor neurons); the parts list reads this table the way
+    it reads Virtual Fly Brain's curated classes for the male fly. A transmitter counts for a type when at least
+    half of all its neurons name it (one labelled cell does not speak for 173 unlabelled ones); negative results
+    ("gaba-negative"), peptides and nitric oxide are left out."""
+    per: dict[str, list[set[str]]] = collections.defaultdict(list)
+    src: dict[str, collections.Counter] = collections.defaultdict(collections.Counter)
+    for a in annotations:
+        t, k = a.get("cell_type") or "", a.get("known_nt") or ""
+        if not t:
+            continue
+        per[t].append({x.strip() for x in re.split(r"[;,]", k)} & set(KNOWN_NTS))
+        if k:
+            src[t][a.get("known_nt_source") or ""] += 1
+    out = {}
+    for t, sets in per.items():
+        n = len(sets)
+        nts = [x for x in KNOWN_NTS if sum(x in S for S in sets) * 2 >= n]
+        if nts:
+            out[t] = {"nt": nts, "source": src[t].most_common(1)[0][0][:120]}
+    return out
 
 
 def aliases(roots) -> dict[str, str]:
@@ -216,7 +262,7 @@ def write_flyb(path: Path | str, rows: list[dict], pre_root, post_root, n_syn, m
     parts = [b"FLYB", struct.pack("<IIII", 1, n, len(post), 0), s16(DATASET), struct.pack("<I", len(body)) + body]
     for key in ("type", "superclass", "cls", "subclass", "nt", "side", "dimorphism", "frudsx", "neuromere", "nerve"):
         parts.append(struct.pack("<H", len(tables[key])) + b"".join(s16(t) for t in tables[key]))
-    sign = np.asarray([NT_SIGN.get(r["nt"], 1) for r in rows], dtype="i1")
+    sign = np.asarray([NT_SIGN.get(r.get("sign_nt", r["nt"]), 1) for r in rows], dtype="i1")
     arrays = [np.asarray([r["root"] for r in rows], dtype="<i8"), col("type", "<i4"), col("superclass", "u1"),
               col("cls", "u1"), col("subclass", "<u2"), col("nt", "u1"), sign, col("side", "u1"),
               np.full(n, -1, dtype="i1"), np.full(n, -1, dtype="i1"),          # no medulla column coordinates
@@ -249,8 +295,9 @@ def build_female(out: Path | str = FEMALE_FILE, src_dir: Path | str = SOURCE_DIR
     extra = sorted({int(x) for x in np.unique(np.concatenate([pre, post]))} - known)
     rows = neuron_rows(ann, extra)
     meta = {"dataset": DATASET, "sex": "female", "built": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-            "aliases": aliases({r["root"] for r in rows}), "alias_notes": {k: v[1] for k, v in ALIASES.items()},
-            "min_weight": min_synapses, "nt_signs": NT_SIGN, "neurons": len(rows), "edges": int(pre.size),
+            "build": BUILD, "aliases": aliases({r["root"] for r in rows}),
+            "alias_notes": {k: v[1] for k, v in ALIASES.items()}, "known_nt": known_transmitters(ann),
+            "min_weight": min_synapses, "nt_signs": NT_SIGN, "nt_conf_fallback": NT_CONF_FALLBACK, "neurons": len(rows), "edges": int(pre.size),
             "synapses_in_edges": int(syn.sum()), "unannotated_connected_neurons": len(extra),
             "sources": {k: {"url": s["url"], "sha256": s["sha256"]} for k, s in SOURCES.items()},
             "credits": ("FlyWire connectome v783 (Dorkenwald et al. 2024, Nature); annotations Schlegel et al. 2024 "
@@ -262,9 +309,24 @@ def build_female(out: Path | str = FEMALE_FILE, src_dir: Path | str = SOURCE_DIR
     return Path(out)
 
 
+def built_with(path: Path | str) -> int:
+    """The ``BUILD`` a female file was made with (0 for one from before the number existed), from its header."""
+    with gzip.open(path, "rb") as f:
+        head = f.read(4 + 16 + 2)
+        if head[:4] != b"FLYB":
+            return 0
+        (n_ds,) = struct.unpack("<H", head[20:22])
+        f.read(n_ds)
+        (n_meta,) = struct.unpack("<I", f.read(4))
+        return int(json.loads(f.read(n_meta)).get("build", 0))
+
+
 def ensure_female(quiet: bool = False) -> Path:
-    """The female FLYB file, built on first use."""
-    return FEMALE_FILE if FEMALE_FILE.exists() else build_female(quiet=quiet)
+    """The female FLYB file, built on first use (and rebuilt from the downloaded sources when this version of
+    the builder puts more in it than the file has)."""
+    if FEMALE_FILE.exists() and built_with(FEMALE_FILE) >= BUILD:
+        return FEMALE_FILE
+    return build_female(quiet=quiet)
 
 
 if __name__ == "__main__":
