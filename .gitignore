@@ -2,6 +2,7 @@ data/*
 !data/fbbt_map.json.gz
 !data/fbbt_tree.json.gz
 !data/vfb_receptors.json.gz
+!data/mb_roi_connectivity.json.gz
 __pycache__/
 *.pyc
 .pytest_cache/
