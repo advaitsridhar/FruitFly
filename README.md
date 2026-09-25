@@ -150,12 +150,12 @@ the numbers from this kit, every neuron simulated, nothing tuned for these tests
 | Experiment | Neuron listened to | pure | game | Expected |
 |---|---|---|---|---|
 | No input | the whole brain | 0 | 0 | silence |
-| Sugar on the mouthparts | MN9, proboscis motor neuron | 69 Hz | 47 Hz | 30-90 Hz |
-| Bitter taste | Scapula (bitter relay) / MN9 | 287 / 0 Hz | 225 / 0 Hz | relay fires, MN9 silent |
+| Sugar on the mouthparts | MN9, proboscis motor neuron | 69 Hz | 50 Hz | 30-90 Hz |
+| Bitter taste | Scapula (bitter relay) / MN9 | 287 / 0 Hz | 222 / 0 Hz | relay fires, MN9 silent |
 | Sugar and bitter together | MN9 | 0 Hz | 0 Hz | bitter wins |
-| Something looming on the right | DNp01 giant fibre / TTMn jump motor neuron | 343 / 68 Hz | 293 / 58 Hz | 250-400 / 40-100 Hz |
-| Dust on the antennae | aDN1 / aDN2 grooming neurons | 192 / 139 Hz | 144 / 106 Hz | 100-260 / 80-200 Hz |
-| 1 s after bitter or dust stops | the whole brain | runaway loop | calm | calm |
+| Something looming on the right | DNp01 giant fibre / TTMn jump motor neuron | 343 / 68 Hz | 295 / 60 Hz | 250-400 / 40-100 Hz |
+| Dust on the antennae | aDN1 / aDN2 grooming neurons | 192 / 139 Hz | 142 / 105 Hz | 100-260 / 80-200 Hz |
+| 1 s after bitter or dust stops | the whole brain | runaway loop | calm after bitter; a small loop after dust | calm |
 
 Scanning hundreds of sensory cell types on the real connectome (the experiments are in
 `docs/SCIENCE.md`) found what else the wiring supports, and what it does not:
@@ -170,8 +170,9 @@ Scanning hundreds of sensory cell types on the real connectome (the experiments 
   different odours (overlap 0.00-0.02 between odours with no shared glomerulus, 0.9 across random
   seeds). Halving the Kenyon-cell synapses onto the punishment-side MBONs cuts their odour response
   (MBON11 31 → 14 Hz, MBON14 26 → 3 Hz) without touching an unpaired odour. Bitter taste fires the
-  PPL1 punishment dopamine neurons (PPL101 at 91 Hz); sugar never reaches the PAM reward neurons in
-  this model, so eating sugar drives them directly, and the game says so.
+  PPL1 punishment dopamine neurons (PPL101 at about 80 Hz); sugar never reaches the PAM reward neurons in
+  this model, so eating sugar drives them directly (all but PAM-γ3, which sugar suppresses in real
+  flies), and the game says so.
 - **Courtship.** `pC1` at 60 Hz drives `pIP10` at 80 Hz and the wing motor neurons of song. The
   tarsal taste neurons that should carry the female's pheromone to `pC1` are about eight times too
   weak in this model, so tapping the female fires them (wiring) *and* drives `pC1` directly
@@ -210,7 +211,8 @@ kit on FlyWire, the whole female brain the published model was built on (Dorkenw
 the model exactly as published: every connection, and 0.275 mV per synapse. The experiments and senses
 find her cells under the male names (`MN9` is FlyWire's `CB0701`, and so on). Cells she doesn't have
 come out as n/a, never as 0 Hz: she has no nerve cord, and no male-specific cells such as pIP10. Sugar
-drives her MN9 and bitter wins over it, as in the paper. Most readouts differ from the male's, and
+drives her MN9 and bitter wins over it, as in the paper. The parts list, the physics body and the
+background re-test run on her too; `docs/SCIENCE.md` section 9.5 compares each with the male. Most readouts differ from the male's, and
 `docs/SCIENCE.md` section 9 says why most of those differences are not yet sex differences.
 
 **In code**, start with `my_first_fly.py`: poke, wait, listen, in three lines. Then:
@@ -285,15 +287,21 @@ cells, the medulla inputs to T4/T5, T4/T5 and the HS/VS cells do not spike in re
 they transmit graded signals below the spike threshold. APL, the mushroom body's inhibitory
 feedback neuron, releases locally: onto the Kenyon cells and output neurons of a lobe that is
 quieter than the rest it releases less, as in the real fly (Amin et al. 2020), and dopamine turns
-it down through its Dop2R receptor. The reflexes are re-tested on the switch: all 16 validated
-experiments pass (`--global-apl` puts APL back to one cell releasing the same everywhere). Every
-re-test runs each experiment five times on a fly with nothing learned carried over between runs,
-and a reflex that passes on average but misses on some run gets an amber mark ("fragile"). `python fly_brain.py --parts` runs any experiment
+it down through its Dop2R receptor. A tone acts only through receptors the kit has evidence for
+(the target's single-cell atlas cluster, or a fact from the literature such as octopamine sharpening
+the VS motion cells); a target with neither feels none. That rule closed a leak of song past the
+silenced fruitless neurons (`--one-sign-rule` brings back the old rule, under which every tone raised
+every target's gain). The reflexes are re-tested on the switch: all 16 validated experiments pass,
+none of them fragile (`--global-apl` puts APL back to one cell releasing the same everywhere). Every
+re-test runs each experiment five times on a fly with nothing learned carried over between runs, in a
+separate low-priority process so the game keeps its speed, and a reflex that passes on average but
+misses on some run gets an amber mark ("fragile"). `python fly_brain.py --parts` runs any experiment
 that way, `--part "class:Kenyon_Cell:theta=10"` overrides a type's threshold, and
-`python fly_game.py --parts` starts the game with the parts on. The parts cost about a third
-more brain time (the graded cells emit more events), so under heavy stimulation the game runs
-at 0.8-0.9 of real time on a laptop with the compiled integrator; `--fast` restores it. Section 8
-of `docs/SCIENCE.md` has the before/after table.
+`python fly_game.py --parts` starts the game with the parts on. The parts cost about half as much
+brain time again, so under heavy stimulation the game runs at 0.8-0.9 of real time on a laptop with
+the compiled integrator; `--fast` restores it. With the parts on, the header's brain counter says
+events/s: the graded cells' release quanta count with the spikes (hover it for the split). Section 8
+of `docs/SCIENCE.md` has the tables.
 
 **What the literature says (Virtual Fly Brain).** Each cell type is joined to its class in the
 FlyBase anatomy ontology, so `fbbt:lobula columnar neuron`, `fbbt:adult descending neuron` or
@@ -329,12 +337,16 @@ These are the things the critics point at, so it's worth knowing them:
   drive the MBONs directly. With the parts list on, octopamine and serotonin neurons are treated
   the same way and all three leave a slow tone; its sign on a target follows the receptors the
   target's cell type expresses only where an adult single-cell cluster exists (mostly the mushroom
-  body and the optic lobe), and is one guess per transmitter everywhere else.
+  body and the optic lobe) or the literature has measured it; everywhere else a tone does nothing.
 - **The mushroom body's inhibition hangs on two neurons.** APL and DPM are modelled as spiking
   points that inhibit each other, and whichever wins sets the inhibition of the whole mushroom
   body. With the parts list on, DPM wins during an odour, and about twice as many Kenyon cells
-  respond as real flies use (16 % against 5-10 %). Section 8.2 of `docs/SCIENCE.md` has the
-  details.
+  respond as real flies use (about 15 % against 5-10 %). Sections 8.2 and 8.6 of `docs/SCIENCE.md`
+  have the details; giving the cells their measured resting rates does not fix it.
+- **The brain doesn't always settle.** With the parts list on, the graded optic-lobe cells can keep
+  releasing after a strong stimulus (the model's graded cells release nothing at rest and never
+  adapt), and over a long quiet session the brain drifts into a busy state, with the occasional
+  escape jump. Section 3.5 of `docs/SCIENCE.md` traces it.
 - **No spontaneous activity**, unless you switch on the (hand-built) background noise. The
   "walking urge", hunger, thirst and odour-guided steering are hand-built and can be switched off.
 - **Vision is computed, not grown.** The retina, the feature detectors and the correlator are our

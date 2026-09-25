@@ -11,6 +11,7 @@ virtual_fly/
   plasticity.py    mushroom-body learning: dopamine-gated depression of KC->MBON synapses
   pathways.py      static analysis: strongest routes between populations, lesion candidates
   experiments.py   validated protocols, seeds, sweeps, lesion scans, JSON export
+  retest.py        the game's background re-test (the survival report) in a separate low-priority process
   genetics.py      gene-expression populations (fru, dsx, transmitter genes), FlyBase links, NeuronBridge lookups
   wiring.py        the genome as a recipe: cell-type wiring rules, grown flies, the rank bottleneck
   parts.py         the genes as a parts list: slow modulators (DA/OA/5-HT), graded cell types, per-type thresholds,
@@ -27,6 +28,7 @@ tools/
   cli.py           `python fly_brain.py ...`
   world.py         the arena: food, posts, odour sources and plume puffs, wind, the drum, the female
   body.py          the fly's body: inertia, gait, appendages, collisions
+  physics.py       the optional physics body: NeuroMechFly v2 legs in MuJoCo through flygym (--body physics)
   senses/
     vision.py      retina (two compound eyes), feature detectors, columnar T4/T5 motion detectors
     olfaction.py   odours -> glomeruli -> ORN rates, with adaptation

@@ -1089,7 +1089,7 @@ class Game:
                 b.reset()
             self.calms += 1
             self.runaway_s = 0.0
-            self.say("Runaway firing (a known flaw of this simple model, mostly in the smell centre). Brain calmed.", 4.0)
+            self.say("Runaway firing (a known flaw of this simple model: the smell centre, or with the parts list the optic lobe). Brain calmed.", 4.0)
             self.events.add(self.t, "system", "runaway firing: brain reset to rest")
         if self.recording is not None and self.record_active:
             self.recording.append({"t": round(self.t, 3), "fly": self.body.to_dict(), "mode": mode,
