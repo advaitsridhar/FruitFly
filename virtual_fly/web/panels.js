@@ -500,7 +500,7 @@ export class GeneticsPanel {
 
 // ================================================================= 8c. Genome
 const TONE_COLOURS = { dopamine: "#d9a2ff", octopamine: "#ffb454", serotonin: "#6ad1ff" };
-const LOBE_NAMES = { "prefix:KCg": "γ", "prefix:KCab": "α/β", "prefix:KCa'b'": "α′/β′" };   // the Kenyon-cell lobe systems
+const LOBE_NAMES = { "prefix:KCg": "γ lobe", "prefix:KCab": "α/β lobes", "prefix:KCa'b'": "α′/β′ lobes" };   // the Kenyon-cell lobe systems
 
 export class GenomePanel {
   constructor(L) {
@@ -526,18 +526,9 @@ export class GenomePanel {
       const val = el("span", "n", "0 %"); val.title = "mean tone over this modulator's targets, as a fraction of its full effect";
       tones.append(lab, bar, val); this.toneEls[m.nt] = { fill, val };
     }
-    // a neuron that releases locally (APL): how much of the whole cell's release reaches each compartment right now
-    this.localEls = {};
-    for (const x of ((L.parts && L.parts.tables && L.parts.tables.local) || [])) {
-      for (const g of x.groups) {
-        const lab = el("span", "lbl", `${esc(x.spec)} → ${esc(LOBE_NAMES[g] || g.replace(/^prefix:/, ""))}`);
-        lab.title = `${x.label}: its release onto the targets among the ${g.replace(/^prefix:/, "")} Kenyon cells, as a fraction of the whole cell's. ${x.why}`;
-        const bar = el("div", "bar thin"); const fill = document.createElement("div");
-        fill.style.background = "var(--muted)"; bar.appendChild(fill);
-        const val = el("span", "n", "100 %"); val.title = "release here as a fraction of the whole cell's (100 % when nothing is going on)";
-        tones.append(lab, bar, val); this.localEls[`${x.spec}|${g}`] = { fill, val };
-      }
-    }
+    // a neuron that releases locally (APL): one line, only while some lobe gets less than the whole cell's release
+    const local = (L.parts && L.parts.tables && L.parts.tables.local) || [];
+    $("localInfo").title = local.map((x) => `${x.label}: ${x.why}`).join("\n\n");
   }
   async grow(level) {
     const seed = parseInt($("genomeSeed").value) || 0;
@@ -601,14 +592,14 @@ export class GenomePanel {
         setWidth(e.fill, 100 * t.mean);
         setText(e.val, `${Math.round(100 * t.mean)} %`);
       }
-      for (const x of p.status.local || []) {
-        for (const [g, rel] of Object.entries(x.release)) {
-          const e = this.localEls[`${x.spec}|${g}`]; if (!e) continue;
-          setWidth(e.fill, 100 * rel);
-          setText(e.val, `${Math.round(100 * rel)} %`);
-        }
-      }
     }
+    // e.g. "APL is releasing locally: γ lobe 45 %, α′/β′ lobes 80 % of its full output" (hidden while it releases evenly)
+    const lines = (p.on && p.status ? p.status.local || [] : []).map((x) => {
+      const low = Object.entries(x.release).filter(([, rel]) => rel < 0.995);
+      return low.length ? `${x.spec} is releasing locally: ${low.map(([g, rel]) => `${LOBE_NAMES[g] || g.replace(/^prefix:/, "")} ${Math.round(100 * rel)} %`).join(", ")} of its full output` : "";
+    }).filter(Boolean);
+    setText($("localInfo"), lines.join("; "));
+    setShown($("localInfo"), lines.length > 0);
   }
 }
 
