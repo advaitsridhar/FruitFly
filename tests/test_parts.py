@@ -186,7 +186,7 @@ def test_apl_releases_where_its_kenyon_cells_are_active(conn):
     assert b._local_active and p.max() <= 1.0 and p[on_ab].mean() < p[on_g].mean()
     assert np.allclose(b.w[loc.edges], base * p)
     rel = b.local_status()[0]["release"]
-    assert rel["prefix:KCg"] == 1.0 and rel["prefix:KCab"] < 1.0 and b.parts_status()["local"][0]["spec"] == "APL"
+    assert rel["γ lobe"] == 1.0 and rel["α/β lobes"] < 1.0 and b.parts_status()["local"][0]["spec"] == "APL"
     b.silence("APL")                                           # silencing still silences
     assert (b.w[loc.edges] == 0).all()
     b.run(40)
@@ -233,3 +233,53 @@ def test_receptor_facts_fill_types_the_atlas_does_not_cover(conn, mini_vfb):
         P.PartsList(receptor_facts=(P.ReceptorFact("MBON11", ("Dop9R",), "bad"),)).compile(conn)
     d = P.PartsList().describe()
     assert d["receptor_facts"][0]["receptors"] == ["Dop2R"] and d["local"][0]["spec"] == "APL" and d["local"][0]["why"]
+
+
+def _synthetic_region_table(conn, lobe_of_ab="aL"):
+    """A hand-made neuPrint region table for the synthetic APLs: every Kenyon-cell <-> APL connection split
+    between the calyx and the cell's lobe (a quarter of the synapses in the calyx)."""
+    apl = conn.select("APL")
+    rois = ["CA(L)", "CA(R)", "gL(L)", "gL(R)", f"{lobe_of_ab}(L)", f"{lobe_of_ab}(R)"]
+    roi = {r: k for k, r in enumerate(rois)}
+    neurons, edges = {}, []
+    for a in apl.tolist():
+        side = conn.side[a]
+        for direction in ("in", "out"):
+            e = conn.edges_between("class:Kenyon_Cell", [a]) if direction == "in" else conn.edges_between([a], "class:Kenyon_Cell")
+            for k in e.tolist():
+                pre, post = int(conn.pre_idx[k]), int(conn.post_idx[k])
+                kc = pre if direction == "in" else post
+                lobe = "gL" if str(conn.types[kc]).startswith("KCg") else lobe_of_ab
+                w = int(conn.n_syn[k]); calyx = w // 4
+                for b in (pre, post):
+                    neurons[str(int(conn.body_id[b]))] = [str(conn.types[b]), ""]
+                if calyx:
+                    edges.append([int(conn.body_id[pre]), int(conn.body_id[post]), roi[f"CA({side})"], calyx])
+                edges.append([int(conn.body_id[pre]), int(conn.body_id[post]), roi[f"{lobe}({side})"], w - calyx])
+    return {"dataset": "synthetic", "cells": ["APL"], "rois": rois, "neurons": neurons, "edges": edges}
+
+
+def test_apl_compartments_from_a_region_table(conn):
+    table = _synthetic_region_table(conn)
+    loc = P.compile_local(conn, P.LOCAL[0], table)
+    assert loc.mode == "regions" and set(loc.labels) == {"calyx", "γ lobe", "α lobe"} and loc.placed.all()
+    assert loc.syn_to.shape[1:] == (2, 6) and (loc.sites > 0).sum() == 6               # per side: each APL uses its own three
+    assert np.allclose(loc.mix.sum(axis=1), 1.0)
+    cal = [c for c, lab in enumerate(loc.labels) if lab == "calyx"]
+    kc_in = conn.edges_between("class:Kenyon_Cell", "APL")
+    assert loc.sites.sum() == conn.n_syn[kc_in].sum() and 0.15 < loc.sites[:, cal].sum() / loc.sites.sum() < 0.3
+    # a table that does not cover the neurons leaves the lobe-system compartments in place
+    other = dict(table, neurons={})
+    assert P.compile_local(conn, P.LOCAL[0], other).mode == "groups"
+    assert P.compile_local(conn, P.Local("APL", P.LOCAL[0].groups, "APL", by_region=False), table).mode == "groups"
+    # in the brain: the calyx, shared by both lobe systems, keeps APL's full release while the quiet lobe gets less
+    P.use_region_table(table)
+    try:
+        b = FlyBrain(conn, seed=0, parts=True, kenyon_gain=1.0)
+    finally:
+        P.use_region_table(None)
+    assert b.parts.counts["local"][0]["mode"] == "regions" and b.parts.role(int(conn.select("APL")[0]))["local"]["mode"] == "regions"
+    b.set_stimuli({"ORN_DM1,ORN_DM4,ORN_VM7d": 120})          # the vinegar Kenyon cells are gamma cells
+    b.run(150)
+    rel = b.local_status()[0]["release"]
+    assert b.local_status()[0]["mode"] == "regions" and rel["γ lobe"] == 1.0 and rel["α lobe"] < rel["calyx"] <= 1.0

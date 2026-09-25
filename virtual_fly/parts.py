@@ -55,12 +55,14 @@ game's Genome card switches it on and off and shows the tone of each modulator.
 
 from __future__ import annotations
 
+import gzip
+import json
 from dataclasses import dataclass, field, replace
 
 import numpy as np
 
 from .brain import THETA
-from .connectome import Connectome
+from .connectome import PROJECT_DIR, Connectome
 
 # ------------------------------------------------------------------ the tables
 @dataclass(frozen=True)
@@ -106,6 +108,8 @@ class Local:
     label: str
     why: str = ""
     tau_ms: float = 20.0            # how long a compartment's activity lingers (the membrane time constant)
+    by_region: bool = True          # compartments are the brain regions where the synapses are, when the harvested
+                                    # region table (:func:`region_table`) covers these neurons; else the groups
 
 
 @dataclass(frozen=True)
@@ -201,29 +205,74 @@ BIG_THRESHOLD = 1e9        # graded cells never cross it
 
 
 # ------------------------------------------------------------------ the compiled parts of one connectome
+REGION_FILE = PROJECT_DIR / "data" / "mb_roi_connectivity.json.gz"
+_REGIONS: dict = {"table": None, "loaded": False}
+REGION_LABELS = {"CA": "calyx", "PED": "pedunculus", "gL": "γ lobe", "aL": "α lobe", "a'L": "α′ lobe",
+                 "bL": "β lobe", "b'L": "β′ lobe"}
+GROUP_LABELS = {"prefix:KCg": "γ lobe", "prefix:KCab": "α/β lobes", "prefix:KCa'b'": "α′/β′ lobes"}
+
+
+def region_table() -> dict | None:
+    """Where APL's and DPM's synapses are, region by region (``data/mb_roi_connectivity.json.gz``, harvested
+    from neuPrint by ``tools/harvest_neuprint_rois.py``), or None when the file is not installed."""
+    if not _REGIONS["loaded"]:
+        _REGIONS["loaded"] = True
+        try:
+            with gzip.open(REGION_FILE, "rt", encoding="utf-8") as f:
+                _REGIONS["table"] = json.load(f)
+        except (OSError, ValueError):
+            _REGIONS["table"] = None
+    return _REGIONS["table"]
+
+
+def use_region_table(table: dict | None):
+    """Install a region table (tests use a hand-made one; None = no table)."""
+    _REGIONS.update(table=table, loaded=True)
+
+
+OUTSIDE = "outside the mushroom body"
+
+
+def region_label(roi: str) -> str:
+    """'gL(R)' -> 'γ lobe'; every region outside the mushroom body's named compartments -> OUTSIDE."""
+    return REGION_LABELS.get(roi.split("(")[0], OUTSIDE)
+
+
 @dataclass
 class CompiledLocal:
-    """One :class:`Local` entry on one connectome: its compartments and how each output synapse weighs them."""
+    """One :class:`Local` entry on one connectome: its compartments and how each output synapse weighs them.
+
+    A compartment is a brain region where the neuron has synapses (from the harvested region table) or, without
+    the table, the territory of one input group (a Kenyon-cell lobe system)."""
     local: Local
     neurons: np.ndarray             # (A,) the local neurons
     member_pos: np.ndarray          # (n,) row of each group member in ``syn_to``, -1 for everyone else
-    member_group: np.ndarray        # (M,) the compartment of each group member
-    syn_to: np.ndarray              # (M, A) synapses from each group member onto each local neuron
+    syn_to: np.ndarray              # (M, A, C) synapses from each group member onto each local neuron, per compartment
     sites: np.ndarray               # (A, C) input synapses of each local neuron in each compartment
     edges: np.ndarray               # (E,) the local neurons' output connections
     owner: np.ndarray               # (E,) which local neuron (0..A-1) each connection leaves from
-    mix: np.ndarray                 # (E, C) the target's share of each compartment (its own, or its group input)
-    placed: np.ndarray              # (E,) False: the target has no group input, so release there stays global
+    mix: np.ndarray                 # (E, C) the share of each output connection's synapses in each compartment
+    placed: np.ndarray              # (E,) False: nothing places this connection, so release there stays global
+    labels: list = field(default_factory=list)       # (C,) a name per compartment ('calyx', 'γ lobe', ...)
+    mode: str = "groups"            # "regions" (from the table) or "groups"
+    out_weight: np.ndarray = None   # (A, C) output synapses in each compartment
     group_sizes: list = field(default_factory=list)
 
     def summary(self) -> dict:
+        per: dict[str, list[float]] = {}
+        for c, lab in enumerate(self.labels):
+            per.setdefault(lab, [0.0, 0.0])
+            per[lab][0] += float(self.sites[:, c].sum())
+            per[lab][1] += float(self.out_weight[:, c].sum())
         return {"spec": self.local.spec, "label": self.local.label, "neurons": int(self.neurons.size),
                 "groups": [{"spec": s, "neurons": k} for s, k in zip(self.local.groups, self.group_sizes)],
+                "mode": self.mode, "compartments": len(self.labels),
+                "by_label": {lab: {"input_synapses": int(v[0]), "output_synapses": int(v[1])} for lab, v in per.items()},
                 "outputs": int(self.edges.size), "placed": int(self.placed.sum()), "tau_ms": self.local.tau_ms,
                 "why": self.local.why}
 
 
-def compile_local(conn: Connectome, loc: Local) -> CompiledLocal:
+def compile_local(conn: Connectome, loc: Local, table: dict | None = None) -> CompiledLocal:
     n, neurons = conn.n, np.unique(conn.select(loc.spec)).astype(np.int64)
     group = np.full(n, -1, dtype=np.int64)
     sizes = []
@@ -234,31 +283,84 @@ def compile_local(conn: Connectome, loc: Local) -> CompiledLocal:
     members = np.flatnonzero(group >= 0)
     member_pos = np.full(n, -1, dtype=np.int64)
     member_pos[members] = np.arange(members.size)
-    A, C = int(neurons.size), len(loc.groups)
-    syn_to = np.zeros((members.size, A), dtype=np.float32)
-    if A and members.size:
-        into = conn.edges_between(members, neurons)
-        np.add.at(syn_to, (member_pos[conn.pre_idx[into]], np.searchsorted(neurons, conn.post_idx[into])),
-                  conn.n_syn[into].astype(np.float32))
-    sites = np.zeros((A, C), dtype=np.float64)
-    for c in range(C):
-        sites[:, c] = syn_to[group[members] == c].sum(axis=0)
+    A = int(neurons.size)
     edges = conn.out_edges(neurons) if A else np.zeros(0, dtype=np.int64)
     owner = np.searchsorted(neurons, conn.pre_idx[edges])
     post = conn.post_idx[edges]
-    # each target's compartment mix: a group member sits in its own; anyone else in proportion to its group input
-    per_group = np.zeros((n, C), dtype=np.float64)
-    from_members = conn.out_edges(members) if members.size else np.zeros(0, dtype=np.int64)
-    for c in range(C):
-        e = from_members[group[conn.pre_idx[from_members]] == c]
-        per_group[:, c] = np.bincount(conn.post_idx[e], weights=conn.n_syn[e], minlength=n)
-    per_group[members] = 0.0
-    per_group[members, group[members]] = 1.0
-    total = per_group[post].sum(axis=1)
-    placed = total > 0
+    layout = _region_layout(conn, neurons, members, member_pos, edges, owner, table) if loc.by_region and table else None
+    if layout is not None:
+        syn_to, mix, placed, labels = layout
+        mode = "regions"
+    else:
+        C = len(loc.groups)
+        syn_to = np.zeros((members.size, A, C), dtype=np.float32)
+        if A and members.size:
+            into = conn.edges_between(members, neurons)
+            m = member_pos[conn.pre_idx[into]]
+            np.add.at(syn_to, (m, np.searchsorted(neurons, conn.post_idx[into]), group[members][m]),
+                      conn.n_syn[into].astype(np.float32))
+        # each target's compartment mix: a group member sits in its own; anyone else in proportion to its group input
+        per_group = np.zeros((n, C), dtype=np.float64)
+        from_members = conn.out_edges(members) if members.size else np.zeros(0, dtype=np.int64)
+        for c in range(C):
+            e = from_members[group[conn.pre_idx[from_members]] == c]
+            per_group[:, c] = np.bincount(conn.post_idx[e], weights=conn.n_syn[e], minlength=n)
+        per_group[members] = 0.0
+        per_group[members, group[members]] = 1.0
+        total = per_group[post].sum(axis=1)
+        placed = total > 0
+        mix = np.zeros((edges.size, C), dtype=np.float32)
+        mix[placed] = per_group[post[placed]] / total[placed, None]
+        labels = [GROUP_LABELS.get(g, g) for g in loc.groups]
+        mode = "groups"
+    sites = syn_to.sum(axis=0, dtype=np.float64)
+    out_weight = np.zeros((A, len(labels)), dtype=np.float64)
+    if edges.size:
+        np.add.at(out_weight, owner, mix * conn.n_syn[edges][:, None])
+    return CompiledLocal(loc, neurons, member_pos, syn_to, sites, edges, owner, mix, placed, labels, mode,
+                         out_weight, sizes)
+
+
+def _region_layout(conn, neurons, members, member_pos, edges, owner, table):
+    """Compartments from the harvested region table: the mushroom body's named regions on each side (calyx,
+    pedunculus, each lobe) where these neurons have synapses, plus one OUTSIDE compartment for everything else,
+    which takes no group input and so keeps the whole cell's release (a few hundred synapses per region are too
+    few to carry a local signal). None when the table does not cover these neurons (another connectome, a grown
+    fly, or neurons it was not harvested for)."""
+    bid = conn.body_id
+    local_b = {int(b): a for a, b in enumerate(bid[neurons].tolist())}
+    known = table.get("neurons", {})
+    if not local_b or any(str(b) not in known for b in local_b):
+        return None
+    member_b = {int(b): int(member_pos[i]) for i, b in zip(members.tolist(), bid[members].tolist())}
+    names = [region_label(r) for r in table["rois"]]
+    comp: dict[str, int] = {}                          # one compartment per mushroom-body region, one OUTSIDE
+    key = [n if n == OUTSIDE else r for r, n in zip(table["rois"], names)]
+    ins, outs = [], {}
+    for pre, post, r, w in table["edges"]:
+        if post in local_b and pre in member_b and names[r] != OUTSIDE:
+            ins.append((member_b[pre], local_b[post], comp.setdefault(key[r], len(comp)), w))
+        if pre in local_b:
+            outs.setdefault((pre, post), []).append((comp.setdefault(key[r], len(comp)), w))
+    C = len(comp)
+    syn_to = np.zeros((members.size, len(local_b), C), dtype=np.float32)
+    for m, a, c, w in ins:
+        syn_to[m, a, c] += w
     mix = np.zeros((edges.size, C), dtype=np.float32)
-    mix[placed] = per_group[post[placed]] / total[placed, None]
-    return CompiledLocal(loc, neurons, member_pos, group[members], syn_to, sites, edges, owner, mix, placed, sizes)
+    placed = np.zeros(edges.size, dtype=bool)
+    pre_b = bid[neurons][owner].tolist()
+    post_b = bid[conn.post_idx[edges]].tolist()
+    for e, key in enumerate(zip(pre_b, post_b)):
+        rows = outs.get((int(key[0]), int(key[1])))
+        if rows:
+            tot = float(sum(w for _, w in rows))
+            for c, w in rows:
+                mix[e, c] += w / tot
+            placed[e] = True
+    labels = [None] * C
+    for k, c in comp.items():
+        labels[c] = k if k == OUTSIDE else region_label(k)
+    return syn_to, mix, placed, labels
 
 
 @dataclass
@@ -299,7 +401,8 @@ class CompiledParts:
             out["curated"] = self.roles[i]
         for loc in self.local:
             if i in loc.neurons:
-                out["local"] = {"label": loc.local.label, "groups": list(loc.local.groups)}
+                out["local"] = {"label": loc.local.label, "groups": list(loc.local.groups), "mode": loc.mode,
+                                "compartments": sorted(set(loc.labels))}
         if i in self.receptor_facts:
             f = self.receptor_facts[i]
             out["receptor_fact"] = {"receptors": list(f.receptors), "why": f.why}
@@ -372,7 +475,7 @@ class PartsList:
         graded_mask[mod_neurons] = False                      # a modulatory neuron keeps its spikes (they are its events)
         graded_idx = np.flatnonzero(graded_mask).astype(np.int64)
         theta[graded_idx] = np.float32(BIG_THRESHOLD)
-        local = [compile_local(conn, loc) for loc in self.local]
+        local = [compile_local(conn, loc, region_table()) for loc in self.local]
         counts = {"modulators": mods, "modulatory_neurons": int(mod_neurons.size), "modulated_targets": int(mod_targets.size),
                   "co_release_neurons": int(keep_fast.sum()),
                   "graded": graded_rows, "graded_neurons": int(graded_idx.size), "graded_rate_hz": self.graded_rate_hz,
@@ -426,8 +529,8 @@ class PartsList:
                                "sign": r.sign, "why": r.why} for r in self.receptors],
                 "receptor_facts": [{"spec": f.spec, "receptors": list(f.receptors), "label": f.label, "why": f.why}
                                    for f in self.receptor_facts],
-                "local": [{"spec": x.spec, "groups": list(x.groups), "label": x.label, "tau_ms": x.tau_ms, "why": x.why}
-                          for x in self.local]}
+                "local": [{"spec": x.spec, "groups": list(x.groups), "label": x.label, "tau_ms": x.tau_ms,
+                           "by_region": x.by_region, "why": x.why} for x in self.local]}
 
     def with_params(self, specs: list[str] | tuple[str, ...]) -> "PartsList":
         """A copy with extra per-type overrides from strings such as ``"class:Kenyon_Cell:theta=10"`` or

@@ -500,7 +500,6 @@ export class GeneticsPanel {
 
 // ================================================================= 8c. Genome
 const TONE_COLOURS = { dopamine: "#d9a2ff", octopamine: "#ffb454", serotonin: "#6ad1ff" };
-const LOBE_NAMES = { "prefix:KCg": "γ lobe", "prefix:KCab": "α/β lobes", "prefix:KCa'b'": "α′/β′ lobes" };   // the Kenyon-cell lobe systems
 
 export class GenomePanel {
   constructor(L) {
@@ -600,7 +599,7 @@ export class GenomePanel {
     // e.g. "APL is releasing locally: γ lobe 45 %, α′/β′ lobes 80 % of its full output" (hidden while it releases evenly)
     const lines = (p.on && p.status ? p.status.local || [] : []).map((x) => {
       const low = Object.entries(x.release).filter(([, rel]) => rel < 0.995);
-      return low.length ? `${x.spec} is releasing locally: ${low.map(([g, rel]) => `${LOBE_NAMES[g] || g.replace(/^prefix:/, "")} ${Math.round(100 * rel)} %`).join(", ")} of its full output` : "";
+      return low.length ? `${x.spec} is releasing locally: ${low.map(([g, rel]) => `${g} ${Math.round(100 * rel)} %`).join(", ")} of its full output` : "";
     }).filter(Boolean);
     setText($("localInfo"), lines.join("; "));
     setShown($("localInfo"), lines.length > 0);

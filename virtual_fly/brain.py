@@ -541,7 +541,7 @@ class FlyBrain:
             m = loc.member_pos[spikes]
             m = m[m >= 0]
             if m.size:
-                np.add.at(acc.T, loc.member_group[m], loc.syn_to[m])
+                acc += loc.syn_to[m].sum(axis=0, dtype=np.float64)
                 self._local_active = True
 
     def _local_block(self):
@@ -567,12 +567,13 @@ class FlyBrain:
 
     @staticmethod
     def _local_release(loc, drive) -> np.ndarray:
-        """(A, C): each compartment's input density relative to the cell's mean, capped at 1."""
+        """(A, C): each compartment's input density relative to the cell's mean, capped at 1. A compartment
+        with no group input (a region with no Kenyon-cell synapses onto the cell) keeps the whole cell's release."""
         dens = drive / np.maximum(loc.sites, 1.0)
         mean = drive.sum(axis=1) / np.maximum(loc.sites.sum(axis=1), 1.0)
         rel = np.ones_like(dens)
-        on = mean > 0
-        rel[on] = np.minimum(dens[on] / mean[on, None], 1.0)
+        on = (mean[:, None] > 0) & (loc.sites > 0)
+        rel[on] = np.minimum((dens / np.where(mean > 0, mean, 1.0)[:, None])[on], 1.0)
         return rel
 
     def local_status(self) -> list[dict]:
@@ -580,7 +581,15 @@ class FlyBrain:
         out = []
         for loc, drive in zip(self._local, self._local_drive):
             rel = self._local_release(loc, drive)
-            out.append({"spec": loc.local.spec, "release": {g: round(float(rel[:, c].mean()), 3) for c, g in enumerate(loc.local.groups)}})
+            local = loc.sites > 0                         # compartments with no group input always release fully
+            rows: dict[str, list[float]] = {}
+            for c, lab in enumerate(loc.labels):
+                w = loc.out_weight[:, c] * local[:, c]
+                if w.sum() > 0:
+                    r = rows.setdefault(lab, [0.0, 0.0])
+                    r[0] += float((rel[:, c] * w).sum()); r[1] += float(w.sum())
+            out.append({"spec": loc.local.spec, "mode": loc.mode,
+                        "release": {lab: round(v[0] / v[1], 3) for lab, v in rows.items()}})
         return out
 
     @property
