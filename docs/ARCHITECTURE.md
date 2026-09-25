@@ -21,6 +21,8 @@ virtual_fly/
 tools/
   build_vfb_data.py    fbbt.obo (+ the connector overlay) -> data/fbbt_map.json.gz, data/fbbt_tree.json.gz
   merge_vfb_harvest.py a Virtual Fly Brain connector harvest -> tools/vfb_overlay.json, data/vfb_receptors.json.gz
+  harvest_neuprint_rois.py  neuPrint (token; run by .github/workflows/neuprint-harvest.yml) -> data/mb_roi_connectivity.json.gz,
+                       APL's and DPM's connections split by region
   settings.py      named model profiles (pure / game / brakes)
   cli.py           `python fly_brain.py ...`
   world.py         the arena: food, posts, odour sources and plume puffs, wind, the drum, the female
