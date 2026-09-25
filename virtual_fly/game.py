@@ -100,9 +100,13 @@ COURTSHIP_SPEC, COURTSHIP_HZ, COURTSHIP_SECS = "prefix:pC1_", 60.0, 2.5
 # the giant fibre, so a loud sound can make the fly jump (as real flies do).
 SOUND_SPEC, SOUND_HZ = "prefix:JO-B", 100.0        # JO-B: the louder-sound channel; JO-A+B together reach the GF less
 
-# Reward: sugar does not reach the PAM dopamine neurons in this model (the taste-to-PAM route runs
-# through neurons the simple model never activates), so eating sugar drives them directly. Hand-built.
-REWARD_SPEC, REWARD_HZ = "prefix:PAM", 40.0
+# Reward: sugar does not reach the PAM dopamine neurons in this model (docs/SCIENCE.md 4.5: the wiring's sugar
+# routes end on PAM-a1 and g5, whose best-connected cells get about a third of the depolarisation they need, and
+# the known sweet-taste route runs through octopamine, which the model cannot turn into firing), so eating sugar
+# drives them directly. Hand-built. PAM12 (PAM-g3) is left out: sugar suppresses its ongoing activity and
+# activating it teaches aversion (Yamagata et al. 2016, doi:10.1371/journal.pbio.1002586). The neuron lab's
+# "prefix:PAM" zap stays the en-masse activation, which in real flies also teaches reward.
+REWARD_SPEC, REWARD_HZ = "prefix:PAM,!PAM12", 40.0
 # Punishment: bitter taste reaches the PPL1 dopamine neurons through the wiring, no injection needed.
 # The "shock" tool (the classic conditioning stimulus, an electric shock) drives PPL1 directly. Hand-built.
 SHOCK_SPEC, SHOCK_HZ = "prefix:PPL1", 80.0
@@ -1176,7 +1180,7 @@ class Game:
                 "How smells, wind, touch and dust become firing rates, and which sensory types they drive.",
                 "How descending-neuron firing becomes movement: speeds, turn rates, the jump, and what wins when commands compete.",
                 "The walking urge, hunger and thirst, odour-guided steering (innate valence + the learned KC→MBON bias), the female's behaviour.",
-                "Sugar reward → PAM dopamine (the connectome route from taste to PAM is not active in this model); the 'shock' tool → PPL1.",
+                "Sugar reward → PAM dopamine except PAM-γ3 (the wiring's taste-to-PAM routes give the best-connected PAM-α1 cells about a third of the drive they need; SCIENCE.md 4.5); the 'shock' tool → PPL1.",
                 "Courtship arousal: tapping the female fires the tarsal taste neurons (wiring), but their route to pC1 is ~8x too weak in this model, so contact also drives pC1 directly.",
                 "Wind on Johnston's organ is kept weak: at the rates real wind would give, the same neurons drive grooming in this model; there is no wind-steering route, so heading upwind is hand-built.",
                 "Efference copy: the eyes' motion signal is damped while the fly turns on purpose, as in real flies.",

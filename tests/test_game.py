@@ -564,3 +564,12 @@ def test_parts_list_toggle_rebuilds_the_brain_and_retests_the_reflexes(game):
     assert _wait(game, lambda: game.genome["growing"] is None and game.brain.parts is None)
     assert not game.parts_on and game.conn is grown and game.genome["level"] == "type" and "class:DAN" in game.brain.silenced
     assert json.loads(game.state_json)["genome"]["parts"] == {"on": False, "status": None}
+
+
+def test_reward_leaves_out_pam_gamma3(conn):
+    """Sugar reward drives the PAM dopamine neurons except PAM12 (PAM-g3; Yamagata et al. 2016)."""
+    from virtual_fly import game as G
+    assert "!PAM12" in G.REWARD_SPEC
+    idx = conn.select(G.REWARD_SPEC)
+    assert idx.size and not np.isin(idx, conn.select("PAM12")).any()
+    assert np.isin(idx, conn.select("prefix:PAM")).all()
