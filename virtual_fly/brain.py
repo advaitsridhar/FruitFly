@@ -60,6 +60,7 @@ from .connectome import Connectome
 MV_PER_SYNAPSE = 0.275       # Shiu et al. 2024
 TAU_M, TAU_S = 20.0, 5.0      # ms
 THETA = 7.0                   # mV above rest
+GAIN_FLOOR = 0.1         # a modulated target's input gain never falls below this (inhibitory receptors)
 REFRACTORY_MS, DELAY_MS = 2.2, 1.8
 
 
@@ -163,10 +164,15 @@ class FlyBrain:
         self._mod_targets = self._empty_i64
         if self._parts is not None:
             cp = self._parts
-            self._w_original[conn.out_edges(cp.mod_neurons)] = 0.0       # modulators make no fast potentials
+            flipped = np.flatnonzero(cp.sign != conn.sign)               # curated transmitters of the other sign
+            if flipped.size:
+                self._w_original[conn.out_edges(flipped)] *= np.float32(-1.0)
+            cut = cp.mod_neurons[~cp.keep_fast[cp.mod_neurons]]          # modulators make no fast potentials ...
+            self._w_original[conn.out_edges(cut)] = 0.0                  # ... unless they co-release a fast transmitter
             self._gmask, self._graded_idx = cp.graded_mask, cp.graded_idx
             self._mod_targets = cp.mod_targets
             self._mod_kind = cp.mod_kind
+            self._mod_sign = cp.mod_sign                                  # per modulator, per target: receptor sign-weight
             self._mod_decay_block = np.array([np.exp(-self._fatigue_block * dt / m.tau_ms) for m in pl.modulators], dtype=np.float32)
             self._mod_gain_k = np.array([m.gain for m in pl.modulators], dtype=np.float32)
             self._mod_half_k = np.array([m.half for m in pl.modulators], dtype=np.float32)
@@ -490,7 +496,8 @@ class FlyBrain:
 
     def _mod_block(self):
         """Every block of 20 steps: the tone decays and the targets' input gain follows it,
-        ``1 + sum_k gain_k * level_k / (level_k + half_k)``."""
+        ``1 + sum_k gain_k * sign_k * level_k / (level_k + half_k)`` where ``sign_k`` is the target's
+        receptor sign-weight for modulator ``k`` (+1 unless the parts list knows the target's receptors)."""
         lvl = self._mod_level
         if lvl.size == 0:
             return
@@ -498,7 +505,8 @@ class FlyBrain:
         if (lvl.max(axis=1) > 0.01 * self._mod_half_k).any():     # some target still feels at least 1 % of an effect
             gain = np.ones(lvl.shape[1], dtype=np.float32)
             for k in range(lvl.shape[0]):
-                gain += self._mod_gain_k[k] * (lvl[k] / (lvl[k] + self._mod_half_k[k]))
+                gain += self._mod_gain_k[k] * (self._mod_sign[k] * (lvl[k] / (lvl[k] + self._mod_half_k[k])))
+            np.maximum(gain, np.float32(GAIN_FLOOR), out=gain)     # Gi-coupled targets never go below a tenth
             self._mod_gain = gain
             self._mod_active = True
         else:
@@ -815,6 +823,9 @@ class FlyBrain:
                 "parts": None if self._parts is None else {
                     "graded_neurons": int(self._graded_idx.size), "modulatory_neurons": int(self._parts.mod_neurons.size),
                     "modulated_targets": int(self._mod_targets.size),
-                    "modulators": [m.nt for m in self._parts.parts.modulators], "graded_rate_hz": self._parts.parts.graded_rate_hz},
+                    "modulators": [m.nt for m in self._parts.parts.modulators], "graded_rate_hz": self._parts.parts.graded_rate_hz,
+                    "curated": self._parts.parts.curated, "receptor_signs": self._parts.parts.receptor_signs,
+                    "co_release_neurons": int(self._parts.keep_fast.sum()),
+                    "curated_neurons": int(self._parts.counts["curated"].get("neurons", 0))},
                 "silenced": sorted(self.silenced), "modulated": {k: v[1] for k, v in self.modulated.items()},
                 "plasticity": None if self.plasticity is None else self.plasticity.settings()}

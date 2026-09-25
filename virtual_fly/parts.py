@@ -25,6 +25,20 @@ of the graded flag, in the same population-spec language as everything else, so 
 values (from patch recordings or, one day, from ion-channel expression in the Fly Cell Atlas) can be
 dropped in without touching the model. It ships empty apart from what the two facts above need.
 
+Two more inputs come from Virtual Fly Brain through :mod:`virtual_fly.vfb` (v2.5):
+
+* **Curated transmitters.** Where the fly anatomy ontology's literature-curated class of a cell type
+  says its transmitter differs from the connectome's synapse-shape prediction (the DPM neuron is
+  GABAergic and serotonergic, not dopaminergic; OA-ASM3 is octopaminergic, not serotonergic; Mi15
+  releases dopamine as well as acetylcholine), or where the prediction is "unclear" and any class
+  asserts one, the parts list gives the neuron the literature's machine: the right tone, its fast
+  synapses kept or removed, the right sign. ``curated`` picks the policy (see
+  :func:`virtual_fly.vfb.transmitter_overrides`).
+* **Receptor signs.** A modulator's effect on a target follows the receptors the target's cell type
+  expresses in the adult single-cell RNA-seq atlases (:data:`RECEPTORS`): Gs- and Gq-coupled receptors
+  raise the target's gain, Gi-coupled ones lower it, each weighted by the fraction of cells expressing
+  it. Targets whose type has no adult cluster keep the modulator's one net sign.
+
 Everything is a :class:`PartsList`; ``FlyBrain(conn, parts=True)`` uses the default one, and the
 game's Genome card switches it on and off and shows the tone of each modulator.
 """
@@ -51,6 +65,17 @@ class Modulator:
     syn_ref: float = 10.0    # one spike through this many synapses raises the target's level by one unit
     half: float = 5.0        # level at which the effect is half its maximum (a sustained 10 Hz through
                              # syn_ref synapses with tau 0.5 s sits at level 5)
+    why: str = ""
+
+
+@dataclass(frozen=True)
+class Receptor:
+    """A slow receptor: which modulator it answers to and which way its G protein pushes the gain."""
+    gene: str
+    fbgn: str
+    modulator: str
+    coupling: str            # Gs / Gq (raise the gain) or Gi (lower it)
+    sign: int
     why: str = ""
 
 
@@ -92,6 +117,23 @@ MODULATORS: tuple[Modulator, ...] = (
                   "without receptor expression per cell type one net gain stands in. 415 neurons."),
 )
 
+RECEPTORS: tuple[Receptor, ...] = (
+    Receptor("Dop1R1", "FBgn0011582", "dopamine", "Gs", +1, "cAMP up (Sugamori et al. 1995; VFB: GO:0001588)"),
+    Receptor("Dop1R2", "FBgn0266137", "dopamine", "Gq", +1, "calcium up (Han, Millar & Davis 1996; Himmelreich et al. 2017)"),
+    Receptor("Dop2R", "FBgn0053517", "dopamine", "Gi", -1, "cAMP down (Hearn et al. 2002; VFB: GO:0001591)"),
+    Receptor("DopEcR", "FBgn0035538", "dopamine", "Gs", +1, "cAMP up, also binds ecdysone (Srivastava et al. 2005; VFB: GO:0001588)"),
+    Receptor("Oamb", "FBgn0024944", "octopamine", "Gq", +1, "calcium up (Han, Millar, Grotewiel & Davis 1998)"),
+    Receptor("Octα2R", "FBgn0038653", "octopamine", "Gi", -1, "cAMP down (Qi et al. 2017)"),
+    Receptor("Octβ1R", "FBgn0038980", "octopamine", "Gs", +1, "cAMP up (Maqueira, Chatwin & Evans 2005)"),
+    Receptor("Octβ2R", "FBgn0038063", "octopamine", "Gs", +1, "cAMP up (Maqueira, Chatwin & Evans 2005)"),
+    Receptor("Octβ3R", "FBgn0250910", "octopamine", "Gs", +1, "cAMP up (Maqueira, Chatwin & Evans 2005)"),
+    Receptor("5-HT1A", "FBgn0004168", "serotonin", "Gi", -1, "cAMP down (Saudou et al. 1992)"),
+    Receptor("5-HT1B", "FBgn0263116", "serotonin", "Gi", -1, "cAMP down (Saudou et al. 1992)"),
+    Receptor("5-HT2A", "FBgn0087012", "serotonin", "Gq", +1, "calcium up (Colas et al. 1995)"),
+    Receptor("5-HT2B", "FBgn0261929", "serotonin", "Gq", +1, "calcium up (Blenau et al. 2017)"),
+    Receptor("5-HT7", "FBgn0004573", "serotonin", "Gs", +1, "cAMP up (Witz, Amlaiky & Hen 1990)"),
+)
+
 GRADED: tuple[Graded, ...] = (
     Graded("prefix:R1-R6,prefix:R7,prefix:R8", "photoreceptors R1-R8",
            "graded, histaminergic (Hardie & Raghu 2001)"),
@@ -125,6 +167,10 @@ class CompiledParts:
     theta: np.ndarray               # per-neuron spike threshold (mV above rest; BIG for graded)
     kind_targets: list = field(default_factory=list)   # per modulator: positions (in mod_targets) of its own targets
     counts: dict = field(default_factory=dict)
+    sign: np.ndarray = None         # per neuron: the sign of its fast synapses after the curated overrides
+    keep_fast: np.ndarray = None    # per neuron: a modulator that also keeps its fast synapses (co-release)
+    mod_sign: np.ndarray = None     # per modulator, per target: the receptor sign-weight of the tone (+1 = unknown)
+    roles: dict = field(default_factory=dict)          # per changed neuron: what the curated data did to it
 
     @property
     def n_kinds(self) -> int:
@@ -132,6 +178,17 @@ class CompiledParts:
 
     def summary(self) -> dict:
         return self.counts
+
+    def role(self, i: int) -> dict:
+        """What this neuron is in the running model: its fast sign, its tone (if any) and why."""
+        i = int(i)
+        k = int(self.mod_kind[i])
+        out = {"sign": int(self.sign[i]), "modulator": self.parts.modulators[k].nt if k >= 0 else None,
+               "keep_fast": bool(self.keep_fast[i]), "graded": bool(self.graded_mask[i]),
+               "theta_mv": None if self.graded_mask[i] else float(self.theta[i])}
+        if i in self.roles:
+            out["curated"] = self.roles[i]
+        return out
 
 
 @dataclass
@@ -141,25 +198,42 @@ class PartsList:
     params: tuple[CellParam, ...] = CELL_PARAMS
     graded_rate_hz: float = GRADED_RATE_HZ
     theta_mv: float = THETA
+    curated: str = "modulators"     # vfb.transmitter_overrides policy: off / modulators / all
+    receptor_signs: bool = True     # per-target tone signs from the receptors the target type expresses
+    receptors: tuple[Receptor, ...] = RECEPTORS
 
     def compile(self, conn: Connectome) -> CompiledParts:
+        from . import vfb
         n = conn.n
+        ov = vfb.transmitter_overrides(conn, self.curated)
+        kind_of = {m.nt: k for k, m in enumerate(self.modulators)}
         mod_kind = np.full(n, -1, dtype=np.int8)
+        for k, m in enumerate(self.modulators):
+            mod_kind[conn.nt == m.nt] = k
+        changed = np.flatnonzero(ov.mod_nt != None)                       # noqa: E711  (object array)
+        for i in changed.tolist():
+            mod_kind[i] = kind_of.get(ov.mod_nt[i], -1)
+        keep_fast = ov.keep_fast & (mod_kind >= 0)
         mods, own_targets = [], []
         for k, m in enumerate(self.modulators):
-            idx = conn.select(f"nt:{m.nt}")
-            mod_kind[idx] = k
+            idx = np.flatnonzero(mod_kind == k).astype(np.int64)
             edges = conn.out_edges(idx) if idx.size else np.zeros(0, dtype=np.int64)
             own_targets.append(np.unique(conn.post_idx[edges]).astype(np.int64))
             mods.append({"nt": m.nt, "label": m.label, "genes": list(m.genes), "receptors": m.receptors,
                          "tau_ms": m.tau_ms, "gain": m.gain, "neurons": int(idx.size), "synapses": int(conn.n_syn[edges].sum()),
-                         "targets": int(own_targets[-1].size), "why": m.why})
+                         "targets": int(own_targets[-1].size), "co_release": int(keep_fast[idx].sum()), "why": m.why})
         mod_neurons = np.flatnonzero(mod_kind >= 0).astype(np.int64)
         edges = conn.out_edges(mod_neurons) if mod_neurons.size else np.zeros(0, dtype=np.int64)
         mod_targets = np.unique(conn.post_idx[edges]).astype(np.int64)
         target_pos = np.full(n, -1, dtype=np.int64)
         target_pos[mod_targets] = np.arange(mod_targets.size)
         kind_targets = [target_pos[t] for t in own_targets]
+        if self.receptor_signs:
+            mod_sign, coverage = vfb.receptor_signs(conn, mod_targets, self.modulators)
+        else:
+            mod_sign, coverage = np.ones((len(self.modulators), mod_targets.size), dtype=np.float32), []
+        roles = {int(i): {"action": ov.action[i], "curated": list(ov.curated[i]), "predicted": conn.nt[i]}
+                 for i in np.flatnonzero(ov.action != None).tolist()}            # noqa: E711
         graded_mask = np.zeros(n, dtype=bool)
         graded_rows = []
         for g in self.graded:
@@ -180,10 +254,15 @@ class PartsList:
         graded_idx = np.flatnonzero(graded_mask).astype(np.int64)
         theta[graded_idx] = np.float32(BIG_THRESHOLD)
         counts = {"modulators": mods, "modulatory_neurons": int(mod_neurons.size), "modulated_targets": int(mod_targets.size),
+                  "co_release_neurons": int(keep_fast.sum()),
                   "graded": graded_rows, "graded_neurons": int(graded_idx.size), "graded_rate_hz": self.graded_rate_hz,
-                  "params": param_rows}
+                  "params": param_rows,
+                  "curated": {**ov.counts, "rows": ov.rows[:40], "sign_flips": int((ov.sign != conn.sign).sum())},
+                  "receptor_signs": {"on": self.receptor_signs, "coverage": coverage,
+                                     "receptors": [{"gene": r.gene, "modulator": r.modulator, "coupling": r.coupling, "sign": r.sign}
+                                                   for r in self.receptors]}}
         return CompiledParts(self, mod_kind, mod_neurons, mod_targets, target_pos, graded_idx, graded_mask, theta,
-                             kind_targets, counts)
+                             kind_targets, counts, sign=ov.sign, keep_fast=keep_fast, mod_sign=mod_sign, roles=roles)
 
     def describe(self) -> dict:
         """The tables, for the docs and the game (no connectome needed)."""
@@ -192,7 +271,9 @@ class PartsList:
                 "graded": [{"spec": g.spec, "label": g.label, "why": g.why} for g in self.graded],
                 "params": [{"spec": p.spec, "theta_mv": p.theta_mv, "graded": p.graded, "label": p.label, "why": p.why}
                            for p in self.params],
-                "graded_rate_hz": self.graded_rate_hz}
+                "graded_rate_hz": self.graded_rate_hz, "curated": self.curated, "receptor_signs": self.receptor_signs,
+                "receptors": [{"gene": r.gene, "fbgn": r.fbgn, "modulator": r.modulator, "coupling": r.coupling,
+                               "sign": r.sign, "why": r.why} for r in self.receptors]}
 
     def with_params(self, specs: list[str] | tuple[str, ...]) -> "PartsList":
         """A copy with extra per-type overrides from strings such as ``"class:Kenyon_Cell:theta=10"`` or

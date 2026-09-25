@@ -32,6 +32,7 @@ from .brain import FlyBrain
 from .plasticity import APPROACH_NTS, AVOID_NTS
 from . import genetics
 from . import parts as partslib
+from . import vfb
 from . import wiring
 from .experiments import survival as survival_report
 from .scenarios import SCENARIOS, ScenarioRunner
@@ -254,6 +255,7 @@ class Game:
         self._survival_token = None
         self.genome: dict = {"level": "real", "seed": 0, "growing": None, "survival": None, "wiring": None, "rules": None, "error": None}
         self.parts_on = brain.parts is not None          # the genes as each neuron's parts list (parts.py)
+        self._parts_list = brain.parts.parts if brain.parts is not None else None   # the PartsList to rebuild with
         self._parts_counts: dict | None = None
         self.rng = random.Random(seed)
         self.seed = seed
@@ -359,6 +361,11 @@ class Game:
         kw.update(extra)
         return build_brain(conn, self.profile_name, **kw)
 
+    def parts_arg(self, on: bool):
+        """The ``parts=`` argument for a rebuild: the PartsList this game was started with (its curated
+        policy and receptor setting), or the default one."""
+        return (self._parts_list or True) if on else False
+
     def parts_counts(self) -> dict:
         """What the parts list finds in this connectome (compiled once; the same whether it is switched on)."""
         if self.brain.parts is not None:
@@ -376,7 +383,7 @@ class Game:
     def _grow_worker(self, level: str, seed: int):
         try:
             conn2, rules = wiring.grow_level(self.real_conn, level, seed, rules_cache=self._rules_cache)
-            brain2 = self.brain_factory(conn2, parts=self.parts_on)
+            brain2 = self.brain_factory(conn2, parts=self.parts_arg(self.parts_on))
             cmp = wiring.compare(self.real_conn, conn2) if conn2 is not self.real_conn else None
             self.actions.put({"type": "_swap_brain", "brain": brain2, "conn": conn2, "level": level, "seed": seed,
                               "rules": rules.summary() if rules is not None else None, "wiring": cmp,
@@ -395,7 +402,7 @@ class Game:
 
     def _rebuild_worker(self, on: bool):
         try:
-            brain2 = self.brain_factory(self.conn, parts=on)
+            brain2 = self.brain_factory(self.conn, parts=self.parts_arg(on))
             self.actions.put({"type": "_swap_brain", "brain": brain2, "conn": self.conn, "level": self.genome["level"],
                               "seed": self.genome["seed"], "rules": self.genome["rules"], "wiring": self.genome["wiring"],
                               "parts": on, "reason": "parts"})
@@ -455,7 +462,7 @@ class Game:
     def _survival_worker(self, conn, token):
         """Run the validated experiments on a private copy of the grown brain (the game keeps going)."""
         try:
-            brain = self.brain_factory(conn, parts=self.parts_on)
+            brain = self.brain_factory(conn, parts=self.parts_arg(self.parts_on))
 
             def progress(rows):
                 if self._survival_token is token:
@@ -1133,6 +1140,7 @@ class Game:
             "genome": {"levels": [{"level": lv, "label": lb} for lv, lb in wiring.LEVELS],
                        "rules": {"type_groups": None}},
             "parts": {"tables": partslib.PartsList().describe(), "counts": self.parts_counts()},
+            "vfb": vfb.ontology().summary(c),
             "settings": self.brain.settings(),
             "decoder": self.decoder.dn_targets,
             "columnar_vision": self.columnar_on,
@@ -1155,6 +1163,7 @@ class Game:
                 "Which neurons express fruitless and doublesex, and which are male-specific or dimorphic: the MaleCNS annotation, read from the data. Silencing the fruitless neurons stops the song (pIP10 and its route to the wing motor neurons are fru+) and leaves feeding and escape alone.",
                 "A grown fly (Genome card) keeps the connectome's cell-type wiring rules and nothing else: 9 of the 11 validated reflexes survive on type-level rules, none on class-level rules.",
                 "The parts list (Genome card): which neurons make dopamine, octopamine or serotonin is the MaleCNS transmitter prediction; that these act only through slow receptors, and that photoreceptors, L1-L5, the medulla inputs to T4/T5, T4/T5 and HS/VS signal without spikes, is the literature (parts.py cites it).",
+                "Which anatomy-ontology class each cell type is (the fbbt: selector, the ontology line in a neuron's popover, the VFB links): the FlyBase anatomy ontology and Virtual Fly Brain's MaleCNS name synonyms, joined offline by name. Where the literature-curated class says a neuron's transmitter differs from the prediction, or fills an 'unclear' one, the parts list follows the literature; the receptors each cell type expresses come from the adult single-cell RNA-seq atlases on VFB and set which way a tone pushes that target.",
             ],
             "hand_built": [
                 "The retina (which facet sees what) and the feature computations that turn retinal images into LC4/LPLC2/LC10a/T4/T5 rates.",
@@ -1170,7 +1179,7 @@ class Game:
             ],
             "not_modelled": [
                 "Real neuron shapes and individual properties, hormones, electrical synapses, most neuromodulation, development.",
-                "Genes beyond two transcription factors' expression labels and the transmitter each neuron makes. With the parts list on, three transmitters act slowly and five cell-type groups signal without spikes; still no ion-channel differences, no receptor identity per target (so one net sign per modulator), no peptides, no development from the genome.",
+                "Genes beyond two transcription factors' expression labels, the transmitter each neuron makes and (with the parts list on) the aminergic receptors its cell type expresses where an adult scRNA-seq cluster exists. Still no ion-channel differences, no peptide signalling (the ontology only names the peptidergic types), no development from the genome.",
                 "Absolute firing rates shouldn't be trusted, only which neurons respond. Nothing here is conscious.",
             ],
         }

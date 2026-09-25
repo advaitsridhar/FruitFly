@@ -169,7 +169,7 @@
       <h2><span>Neuron lab</span></h2>
       <div class="lab">
         <div class="row">
-          <input type="text" id="spec" list="typelist" placeholder="neuron type, e.g. MDN, LC10a/L or prefix:LC10" spellcheck="false" autocomplete="off">
+          <input type="text" id="spec" list="typelist" placeholder="neuron type, e.g. MDN, LC10a/L, prefix:LC10 or fbbt:lobula columnar neuron" spellcheck="false" autocomplete="off">
           <input type="number" id="hz" value="80" min="1" max="500" title="spikes per second"><span class="unit">Hz</span>
         </div>
         <div class="row wrap">
@@ -180,6 +180,10 @@
           <button class="btn" id="watchBtn" title="Add these neurons as a bar in 'Key neurons'">👁 Watch</button>
         </div>
         <div class="presets" id="presets"></div>
+        <div class="row" id="ontoRow" hidden>
+          <input type="text" id="ontoQ" placeholder="or an anatomy-ontology class: lobula columnar, descending, dopaminergic…" spellcheck="false" autocomplete="off" title="Virtual Fly Brain's ontology: pick a class and every cell type below it becomes the population (fbbt:…)">
+        </div>
+        <div class="ontohits" id="ontoHits"></div>
         <div class="silenced" id="silenced"></div>
         <div class="silenced" id="modulated"></div>
         <div class="feedback" id="feedback">Zap = make them fire. Silence = they still fire, but nothing downstream hears them.</div>
@@ -192,6 +196,10 @@
       <div class="feedback" id="geneIntro">Which neurons express <b>fruitless</b> and <b>doublesex</b>, the genes that make a male brain male, and which transmitter each neuron makes. Silence a population as a fly lab would with a driver line, or activate or watch it.</div>
       <div class="genes" id="geneRows"></div>
       <details class="decoder" id="ntGroups"><summary>transmitter genes: who makes what</summary><div class="genes" id="ntRows"></div></details>
+      <details class="decoder" id="vfbBox" hidden><summary id="vfbSummary">what the literature says (Virtual Fly Brain)</summary>
+        <div class="feedback" id="vfbIntro"></div>
+        <div class="genes" id="vfbRows"></div>
+      </details>
       <div class="lab" style="margin-top:8px">
         <div class="row">
           <input type="text" id="lineName" placeholder="driver line, e.g. SS02385, MB112C, R85B12" spellcheck="false" autocomplete="off">

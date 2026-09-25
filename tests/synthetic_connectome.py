@@ -376,3 +376,104 @@ if __name__ == "__main__":                       # python tests/synthetic_connec
     import sys
     out = build_synthetic(sys.argv[1] if len(sys.argv) > 1 else "synthetic.flyb.gz")
     print(out)
+
+
+# ----------------------------------------------------------------------------------------------
+# A hand-made slice of the anatomy ontology and of the receptor table for the synthetic types
+# ----------------------------------------------------------------------------------------------
+
+def build_mini_vfb():
+    """``(Ontology, Receptors)`` built from dicts (no files): a few real FBbt ids and labels plus made-up
+    classes for the test-only disagreements (a made-up class is marked "test" in its label)."""
+    from virtual_fly.vfb import Ontology, Receptors
+    C = {}
+
+    def cls(cid, label, parents=(), symbol=None, definition=None):
+        C[cid] = {"label": label, "parents": list(parents)}
+        if symbol:
+            C[cid]["symbol"] = symbol
+        if definition:
+            C[cid]["def"] = definition
+    cls("FBbt:00005106", "neuron")
+    cls("FBbt:00047095", "adult neuron", ["FBbt:00005106"])
+    for cid, label in (("FBbt:00007173", "cholinergic neuron"), ("FBbt:00007228", "GABAergic neuron"),
+                       ("FBbt:00100291", "glutamatergic neuron"), ("FBbt:00005131", "dopaminergic neuron"),
+                       ("FBbt:00007364", "octopaminergic neuron"), ("FBbt:00005133", "serotonergic neuron"),
+                       ("FBbt:00004101", "peptidergic neuron"), ("FBbt:00047097", "primary neuron")):
+        cls(cid, label, ["FBbt:00005106"])
+    cls("FBbt:00048000", "sNPF neuron", ["FBbt:00004101"])
+    cls("FBbt:00003870", "lobula columnar neuron", ["FBbt:00047095"])
+    cls("FBbt:00003874", "lobula columnar neuron LC4", ["FBbt:00003870", "FBbt:00007173", "FBbt:00100291"], "LC4",
+        "Lobula columnar neuron whose cell body is in the lateral cell body rind (test copy).")
+    cls("FBbt:00111747", "lobula columnar neuron LC10a", ["FBbt:00003870", "FBbt:00007173"], "LC10a")
+    cls("FBbt:00100001", "lobula columnar neuron LC11", ["FBbt:00003870"], "LC11")
+    cls("FBbt:00047511", "adult descending neuron", ["FBbt:00047095"])
+    cls("FBbt:00004020", "giant fiber neuron", ["FBbt:00047511", "FBbt:00047097"], "DNp01")
+    cls("FBbt:00047573", "descending neuron of the anterior dorsal brain DNa02", ["FBbt:00047511", "FBbt:00007173"], "DNa02")
+    cls("FBbt:00049825", "adult Kenyon cell", ["FBbt:00047095", "FBbt:00007173", "FBbt:00048000"], "KC")
+    cls("FBbt:00111061", "gamma main Kenyon cell", ["FBbt:00049825"], "KCg-m")
+    cls("FBbt:00100248", "alpha/beta Kenyon cell", ["FBbt:00049825"], "KCab")
+    cls("FBbt:00100246", "mushroom body output neuron 11", ["FBbt:00047095", "FBbt:00007228"], "MBON11")
+    cls("FBbt:00100243", "mushroom body pedunculus-medial lobe arborizing neuron 1", ["FBbt:00047095", "FBbt:00005131"], "PPL101")
+    cls("FBbt:00111015", "dopaminergic PAM neuron 1 (test: also GABAergic)", ["FBbt:00047095", "FBbt:00005131", "FBbt:00007228"], "PAM01")
+    cls("FBbt:00007405", "adult CSD interneuron", ["FBbt:00047095", "FBbt:00005133"], "CSD")
+    cls("FBbt:00090001", "octopaminergic VPM3 neuron (test)", ["FBbt:00047095", "FBbt:00007364"], "OA-VPM3")
+    cls("FBbt:00090002", "adult GNG087 neuron (test: cholinergic)", ["FBbt:00047095", "FBbt:00007173"], "GNG087")
+    cls("FBbt:20090003", "adult MBON20 neuron (test: glutamatergic)", ["FBbt:00047095", "FBbt:00100291"], "MBON20")
+    cls("FBbt:00090005", "adult LB1a neuron (test: octopaminergic)", ["FBbt:00047095", "FBbt:00007364"], "LB1a")
+    cls("FBbt:00003919", "equatorial giant horizontal cell HSE", ["FBbt:00047095"], "HSE")
+    cls("FBbt:00090006", "adult DNg74 neuron (test)", ["FBbt:00047511"], "DNg74")
+    tree = {"source": {"ontology": "test slice", "release": "test", "licence": "CC-BY 4.0"},
+            "roots": {"neuron": "FBbt:00005106", "adult": "FBbt:00047095", "peptidergic": "FBbt:00004101",
+                      "primary": "FBbt:00047097", "secondary": "FBbt:00047096",
+                      "transmitters": {"acetylcholine": "FBbt:00007173", "gaba": "FBbt:00007228", "glutamate": "FBbt:00100291",
+                                       "dopamine": "FBbt:00005131", "octopamine": "FBbt:00007364", "serotonin": "FBbt:00005133"}},
+            "classes": C}
+
+    def ev(cid):
+        return "connectome" if cid.startswith("FBbt:2") else "literature"
+    types = {}
+    for t, ids, route, nts in (("LC4", ["FBbt:00003874"], "obo_symbol", ["acetylcholine", "glutamate"]),
+                               ("LC10a", ["FBbt:00111747"], "obo_symbol", ["acetylcholine"]),
+                               ("LC11", ["FBbt:00100001"], "obo_symbol", None),
+                               ("DNp01", ["FBbt:00004020"], "obo_symbol", None),
+                               ("DNa02", ["FBbt:00047573"], "obo_symbol", ["acetylcholine"]),
+                               ("KCg-m", ["FBbt:00111061"], "obo_symbol", ["acetylcholine"]),
+                               ("KCab-m", ["FBbt:00100248"], "name_in_male-cns", ["acetylcholine"]),
+                               ("MBON11", ["FBbt:00100246"], "obo_symbol", ["gaba"]),
+                               ("PPL101", ["FBbt:00100243"], "obo_symbol", ["dopamine"]),
+                               ("PAM01", ["FBbt:00111015"], "obo_symbol", ["dopamine", "gaba"]),
+                               ("CSD", ["FBbt:00007405"], "obo_symbol", ["serotonin"]),
+                               ("OA-VPM3", ["FBbt:00090001"], "obo_symbol", ["octopamine"]),
+                               ("GNG087", ["FBbt:00090002"], "obo_symbol", ["acetylcholine"]),
+                               ("MBON20", ["FBbt:20090003"], "obo_symbol", ["glutamate"]),
+                               ("LB1a", ["FBbt:00090005"], "obo_symbol", ["octopamine"]),
+                               ("HSE", ["FBbt:00003919"], "obo_symbol", None),
+                               ("DNg74_a", ["FBbt:00090006"], "obo_stem", None), ("DNg74_b", ["FBbt:00090006"], "obo_stem", None)):
+        e = {"fbbt": ids, "route": route, "n": 1}
+        if route == "obo_stem":
+            e["coarse"] = True
+        if nts:
+            e["nt"] = nts
+            e["evidence"] = ev(ids[0])
+        types[t] = e
+    if True:
+        types["KCab-m"]["coarse"] = True
+    ont = Ontology({"source": tree["source"], "types": types}, tree)
+    rx = Receptors({
+        "source": {"families": {"FCA_MALE": {"label": "Fly Cell Atlas (male)"}, "DAVIE": {"label": "Davie 2018"}, "KURM": {"label": "Kurmangaliyev 2020"}}},
+        "families": ["FCA_MALE", "DAVIE"],
+        "genes": {"Dop1R1": {"fbgn": "FBgn0011582", "modulator": "dopamine", "sign": 1},
+                  "Dop2R": {"fbgn": "FBgn0053517", "modulator": "dopamine", "sign": -1},
+                  "Oamb": {"fbgn": "FBgn0024944", "modulator": "octopamine", "sign": 1},
+                  "Octα2R": {"fbgn": "FBgn0038653", "modulator": "octopamine", "sign": -1},
+                  "5-HT1A": {"fbgn": "FBgn0004168", "modulator": "serotonin", "sign": -1},
+                  "5-HT7": {"fbgn": "FBgn0004573", "modulator": "serotonin", "sign": 1}},
+        "clusters": {"FBlc1": {"family": "FCA_MALE", "stage": "adult"}, "FBlc2": {"family": "KURM", "stage": "pupal"},
+                     "FBlc3": {"family": "DAVIE", "stage": "adult"}, "FBlc4": {"family": "FCA_MALE", "stage": "adult"}},
+        "classes": {"FBbt:00111061": {"Dop1R1": [["FBlc1", 0.8, 2091.7], ["FBlc4", 0.8, 2091.7]], "Dop2R": [["FBlc1", 0.75, 2180.9], ["FBlc4", 0.75, 2180.9]],
+                                      "5-HT1A": [["FBlc1", 0.3, 1209.5], ["FBlc4", 0.3, 1209.5]]},
+                    "FBbt:00003919": {"Oamb": [["FBlc3", 0.3, 100.0]], "Octα2R": [["FBlc3", 0.6, 100.0]]},
+                    "FBbt:00003870": {"Dop2R": [["FBlc3", 0.5, 1.0]]},
+                    "FBbt:00047573": {"Dop1R1": [["FBlc2", 0.9, 1.0]]}}})
+    return ont, rx

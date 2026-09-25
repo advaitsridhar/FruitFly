@@ -79,6 +79,17 @@ def test_parts_list_flags(capsys):
         main(["--part", "GNG232", "--stim", "LB3b:40"])
 
 
+def test_curated_and_receptor_flags(capsys, mini_vfb):
+    main(["--curated", "all", "--stim", "LB1a,LB1b:150", "--watch", "MN9", "--ms", "300"])
+    out = capsys.readouterr().out
+    assert "curated transmitters (all):" in out and "neurons in 4 types changed" in out and "receptor signs on" in out
+    assert float([l for l in out.splitlines() if l.strip().startswith("MN9")][0].split()[-2]) > 20   # bitter now excites (test slice)
+    main(["--parts", "--no-receptor-signs", "--curated", "off", "--stim", "LB1a,LB1b:150", "--watch", "MN9", "--ms", "300"])
+    out = capsys.readouterr().out
+    assert "curated transmitters" not in out and "receptor signs" not in out and "parts list on: 16 modulatory" in out
+    assert float([l for l in out.splitlines() if l.strip().startswith("MN9")][0].split()[-2]) == 0.0
+
+
 def test_grow_and_genome_sweep(capsys):
     main(["--grow", "type", "--grow-seed", "2", "--stim", "LB3b,LB3c:120", "--watch", "MN9", "--ms", "200"])
     out = capsys.readouterr().out

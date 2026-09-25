@@ -1172,6 +1172,104 @@ against 235,000 a second under a typical game load). In the game that means a re
 0.8-0.9 under heavy stimulation on this machine, against 1.0 with the parts off; `--fast` (a 1 ms
 step) restores real time. In NumPy the parts add about 60 %.
 
+### 8.1 What Virtual Fly Brain adds (v2.5)
+
+The connectome names every neuron with a MaleCNS type string; the rest of fly neuroscience is
+keyed by the classes of the FlyBase anatomy ontology, FBbt (Costa et al. 2013), which is what
+Virtual Fly Brain (VFB; Court et al. 2023) indexes: a curated definition per class, a place in an
+`is_a` tree, the transmitter the literature has established, and every other data set that saw the
+same cell type. `vfb.py` joins the two vocabularies offline and uses the join in four places.
+
+**The join.** `tools/build_vfb_data.py` reads the ontology's own OBO release (2026-07-09, CC-BY
+4.0) and matches each of the 11,751 kit type names against the labels, VFB symbols and EXACT
+synonyms of the non-obsolete adult neuron classes, in that order of preference, with three
+tie-breaks (prefer the class whose label ends with the code, so `L1` is the lamina monopolar cell
+and not a lateral-horn neuron with the same symbol; prefer the adult class; never a female-specific
+one) and no guessing: a name that still matches two classes is left unresolved. RELATED synonyms
+are never used, because they are old names that collide (Tm36 is a RELATED synonym of TmY21, Li28
+of Li16). Comma-joined names map to every member and a `_a`/`_b` suffix falls back to its stem's
+class, marked *coarse*. That resolves {{OBO_TYPES}} types ({{OBO_PCT}} % of the typed neurons)
+without touching the network. The names the OBO lacks are VFB's own `name_in_male-cns` synonyms,
+which live only on VFB's server: a one-time harvest through the VFB connector (`search_terms` with
+one row per matching synonym, then `get_term_info` to check that the class carries the exact
+MaleCNS name) adds {{OVERLAY_TYPES}} more types ({{OVERLAY_NEURONS}} neurons: the 3,377
+photoreceptors `R1-R6`, the 745 interommatidial bristle neurons `BM_InOm`, `KCab-m`, the LC10c
+subtypes, ...), and the same check on {{VERIFY_N}} of the offline matches (every EXACT-synonym
+match, every type whose curated transmitter disagrees with the prediction, and a random sample)
+confirmed {{VERIFY_OK}} and rejected {{VERIFY_BAD}}, which the shipped map leaves unresolved.
+The result is `data/fbbt_map.json.gz` ({{MAP_TYPES}} types, {{MAP_PCT}} % of the typed neurons;
+`tools/vfb_overlay.json` holds the harvest so the build is reproducible) and
+`data/fbbt_tree.json.gz`, the {{TREE_CLASSES}} classes above them with labels, parents, symbols
+and short definitions. The unresolved remainder is mostly names MaleCNS coined and no ontology
+class carries yet (`TmY9a`, `Tm38`, `MeTu3c`, most `SNta`/`SNpp` sensory groups, the `pC1_*`
+subtypes) and the 11,916 untyped neurons.
+
+What the join gives: a selector, `fbbt:<class>`, that takes the ontology's `is_a` closure, so
+`fbbt:lobula columnar neuron` is every LC type the kit has (3,652 neurons), `fbbt:adult descending
+neuron` every DN (1,221), `fbbt:dopaminergic neuron` every cell the ontology calls dopaminergic
+(1,577), `fbbt:adult Kenyon cell` all 3,528 Kenyon cells, composable with everything else
+(`fbbt:adult descending neuron&nt:gaba`); an ontology search in the Neuron lab; and, in a neuron's
+popover, what its type *is*: the class and its definition, the anatomical parent chain (each parent
+a click away as a population), the lineage, the peptides the class is known to express, the
+transmitter the literature asserts, and a link to VFB.
+
+**Curated transmitters.** The ontology asserts a transmitter for a class by making it a subclass of
+*cholinergic neuron*, *GABAergic neuron*, and so on; VFB's `get_known_neurotransmitters` reads the
+same assertions (a sample of {{NT_N}} classes checked through the connector agreed with the offline
+reading in {{NT_OK}}). Two kinds of class carry them: the literature-curated classes (FBbt ids below
+2000 0000: the transmitter comes from immunostaining, driver lines or transcriptomics cited in the
+class definition) and the systematic connectome-derived classes (`FBbt:2xxxxxxx`, one per hemibrain,
+FlyWire or MANC type, whose transmitter is that data set's own prediction). Against the MaleCNS
+prediction, the literature agrees for {{AGREE}} of the mapped types with a curated transmitter and
+differs for {{DIFFER}}; {{UNCLEAR_TYPES}} types whose prediction is "unclear" get one. With the parts
+list on, the literature's word wins where the parts model cares (`PartsList(curated="modulators")`,
+the default; `vfb.transmitter_overrides` has the rules):
+
+| what the literature says | neurons | the parts list does |
+|---|---|---|
+| Mi15 is cholinergic *and* dopaminergic (Davis et al. 2020) | 1,151 | keeps the fast synapses, adds a dopamine tone on its targets |
+| the DPM neuron is GABAergic and serotonergic, not dopaminergic | 2 | fast GABA synapses, a serotonin tone |
+| OA-ASM2 ("unclear") and OA-ASM3 (predicted serotonin) are octopaminergic | 4 | an octopamine tone |
+| DNd02 ("unclear") releases glutamate, octopamine and tyramine; DNd03 (predicted glutamate) octopamine | 4 | fast glutamate synapses kept, an octopamine tone |
+| FB6H and FB7B ("unclear") are PPL1 dopamine neurons; LPsP (predicted acetylcholine) is dopaminergic; MeVCMe1 (predicted acetylcholine) is octopaminergic | 10 | a tone (the predicted fast synapses kept) |
+| PPL203 (predicted serotonin) is dopaminergic and GABAergic; LHPV6q1 and aMe8 (predicted serotonin) are cholinergic | 9 | the modulator changed; or no tone at all, fast synapses kept |
+| TmY14 and 146 more "unclear" types have a curated fast transmitter (91 TmY14 from the literature, the rest from another connectome's class) | {{FILL_N}} | the sign of their fast synapses |
+
+Tyramine has no place in the model and is ignored. What the default policy does *not* do is flip
+the sign of a confident fast prediction: the literature classes disagree with MaleCNS on the fast
+transmitter of {{FAST_DIFFER}} types (T3, L3, Mi2, Mi10, Tm39, ... : 5,929 neurons), and where
+two data sets disagree on a fast transmitter the model has no way to pick; `curated="all"` applies
+those flips for anyone who wants to see what they do (`fly-brain --curated all`), and the popover
+shows the disagreement either way. The connectome-derived classes only ever fill an "unclear"
+prediction.
+
+**Receptor signs.** The one net sign per modulator was the gap the parts list admitted to. VFB
+carries, for {{RX_CLASSES}} neuron classes, the single-cell RNA-seq clusters of the Fly Cell Atlas
+(Li et al. 2022), Davie et al. (2018), the Aging Fly Cell Atlas, Özel et al. (2021) and others,
+and for each cluster the fraction of its cells expressing each gene (values of 20 % and above). A
+harvest of the 17 aminergic receptor genes (`data/vfb_receptors.json.gz`, {{RX_CLUSTERS}} clusters,
+CC-BY 4.0) lets the tone's sign follow the target: for a target whose type (or a parent class within
+two steps, provided it groups at most 150 kit types) has an adult cluster, the tone's weight is
+`clip(Σ sign_r · extent_r, -1, 1)` over that modulator's receptors, +1 for the Gs- and Gq-coupled
+ones (Dop1R1, Dop1R2, DopEcR; Oamb, Octβ1R-3R; 5-HT2A, 5-HT2B, 5-HT7) and −1 for the Gi-coupled
+ones (Dop2R; Octα2R; 5-HT1A, 5-HT1B; the couplings and their references are in `parts.RECEPTORS`),
+so `gain = 1 + Σ_k a_k · s_k · level_k / (level_k + 5)`, floored at 0.1. A γ Kenyon cell of the male
+atlas (Dop1R1 80 %, Dop1R2 77 %, DopEcR 69 %, Dop2R 75 %) keeps a positive dopamine weight; its
+5-HT1A (30 %) and 5-HT1B (25 %) make the serotonin tone lower its gain; a PAM neuron (Dop2R 95 %,
+Dop1R1 49 %) is inhibited by dopamine, the autoreceptor effect. Pupal and larval clusters are never
+used; where no adult cluster exists (most of the central brain's small types) the old one-sign rule
+stands. Coverage on this connectome: {{RX_COVERAGE}}.
+
+**What it does to the validated experiments** (game profile; `fly-brain --profile game --parts
+--curated off|modulators|all`):
+
+| | parts off | parts on, curated off | curated: modulators (default) | curated: all |
+|---|---|---|---|---|
+| changed neurons | 0 | 0 | {{MOD_CHANGED}} | {{ALL_CHANGED}} |
+| passed | 16 / 16 | 15 / 16 | {{MOD_PASSED}} / 16 | {{ALL_PASSED}} / 16 |
+
+{{SURVIVAL_TEXT}}
+
 ## 9. Honest limitations
 
 The starter kit's list, extended. These are the things a neuroscientist would point at first.
@@ -1193,7 +1291,10 @@ The starter kit's list, extended. These are the things a neuroscientist would po
 5. **Dopamine is a fast excitatory transmitter** in the data's sign convention, and glutamate is
    inhibitory. The game silences the dopamine neurons' synapses to use them as a slow modulator
    only, and the glutamatergic "avoidance" MBONs can never drive a descending neuron by
-   themselves (section 4.8).
+   themselves (section 4.8). With the parts list on the tones' signs follow receptor expression
+   only where an adult scRNA-seq cluster exists (section 8.1); elsewhere one sign per transmitter
+   still stands, and where the literature and the connectome disagree on a *fast* transmitter the
+   prediction is kept.
 6. **Reward is injected.** Sugar does not reach the PAM dopamine neurons through this wiring
    (section 4.5); eating sugar drives them by hand. Punishment does come from the wiring, and the
    shock tool is a labelled injection.
@@ -1227,9 +1328,11 @@ The starter kit's list, extended. These are the things a neuroscientist would po
 14. **One brain.** Left/right asymmetries (e.g. the DNa02 right-side bias under bilateral MBON
     drive, the right-only wind-responsive DNs) may be features of this individual, its
     reconstruction, or the 5-synapse threshold, not of flies.
-15. **Not modelled at all:** hormones, neuromodulation beyond the two hand-built cases (hunger on
-    the sugar neurons, dopamine gating), electrical synapses, development, the real leg controller,
-    and anything about consciousness, which is not on the table.
+15. **Not modelled at all:** hormones, neuropeptides (the ontology names the peptidergic types;
+    nothing is done with them), neuromodulation beyond the tones and the two hand-built cases
+    (hunger on the sugar neurons, dopamine gating), electrical synapses (the ontology knows the
+    giant fibre's, the model has none), development, the real leg controller, and anything about
+    consciousness, which is not on the table.
 
 ---
 
@@ -1254,11 +1357,31 @@ The starter kit's list, extended. These are the things a neuroscientist would po
 * Berg S, Beckett IR, Costa M, Schlegel P, Januszewski M, et al. (2026). Sexual dimorphism in the
   complete *Drosophila* male central nervous system connectome. *Cell* 189(18):5504-5526.
   doi:10.1016/j.cell.2026.08.015. Data: MaleCNS v1.0, CC BY 4.0, https://male-cns.janelia.org/
+* Blenau W, Daniel S, Balfanz S, Thamm M, Baumann A (2017). Dm5-HT2B: pharmacological
+  characterization of the fifth serotonin receptor subtype of *Drosophila melanogaster*. *Frontiers
+  in Systems Neuroscience* 11:28. doi:10.3389/fnsys.2017.00028
 * Blenau W, Thamm M (2011). Distribution of serotonin (5-HT) and its receptors in the insect brain
   with focus on the mushroom bodies. *Arthropod Structure & Development* 40(5):381-394.
   doi:10.1016/j.asd.2011.01.004
+* Colas JF, Launay JM, Kellermann O, Rosay P, Maroteaux L (1995). *Drosophila* 5-HT2 serotonin
+  receptor: coexpression with fushi-tarazu during segmentation. *PNAS* 92(12):5441-5445.
+  doi:10.1073/pnas.92.12.5441
+* Costa M, Reeve S, Grumbling G, Osumi-Sutherland D (2013). The Drosophila anatomy ontology.
+  *Journal of Biomedical Semantics* 4:32. doi:10.1186/2041-1480-4-32
+* Court R, Costa M, Pilgrim C, Millburn G, Holmes A, McLachlan A, Larkin A, Matentzoglu N,
+  Kir H, Parkinson H, Brown NH, O'Kane CJ, Armstrong JD, Jefferis GSXE, Osumi-Sutherland D (2023).
+  Virtual Fly Brain: an interactive atlas of the *Drosophila* nervous system. *Frontiers in
+  Physiology* 14:1076533. doi:10.3389/fphys.2023.1076533
 * Cohn R, Morantte I, Ruta V (2015). Coordinated and compartmentalized neuromodulation shapes
   sensory processing in *Drosophila*. *Cell* 163(7):1742-1755. doi:10.1016/j.cell.2015.11.019
+* Davie K, Janssens J, Koldere D, De Waegeneer M, Pech U, Kreft Ł, Aibar S, Makhzami S,
+  Christiaens V, Bravo González-Blas C, Poovathingal S, Hulselmans G, Spanier KI, Moerman T,
+  Vanspauwen B, Geurs S, Voet T, Lammertyn J, Thienpont B, Liu S, Konstantinides N, Fiers M,
+  Verstreken P, Aerts S (2018). A single-cell transcriptome atlas of the aging *Drosophila*
+  brain. *Cell* 174(4):982-998. doi:10.1016/j.cell.2018.05.057
+* Davis FP, Nern A, Picard S, Reiser MB, Rubin GM, Eddy SR, Henry GL (2020). A genetic, genomic,
+  and computational resource for exploring neural circuit function. *eLife* 9:e50901.
+  doi:10.7554/eLife.50901
 * Dacks AM, Green DS, Root CM, Nighorn AJ, Wang JW (2009). Serotonin modulates olfactory processing
   in the antennal lobe of *Drosophila*. *Journal of Neurogenetics* 23(4):366-377.
   doi:10.3109/01677060903085722
@@ -1275,6 +1398,12 @@ The starter kit's list, extended. These are the things a neuroscientist would po
   doi:10.1038/s41593-017-0046-4
 * Haag J, Borst A (1996). Amplification of high-frequency synaptic inputs by active dendritic
   membrane processes. *Nature* 379:639-641. doi:10.1038/379639a0
+* Han K-A, Millar NS, Grotewiel MS, Davis RL (1996). DAMB, a novel dopamine receptor expressed
+  specifically in *Drosophila* mushroom bodies. *Neuron* 16(6):1127-1135.
+  doi:10.1016/S0896-6273(00)80139-7
+* Han K-A, Millar NS, Davis RL (1998). A novel octopamine receptor with preferential expression in
+  *Drosophila* mushroom bodies. *Journal of Neuroscience* 18(10):3650-3658.
+  doi:10.1523/JNEUROSCI.18-10-03650.1998
 * Hallem EA, Carlson JR (2006). Coding of odors by a receptor repertoire. *Cell* 125(1):143-160.
   doi:10.1016/j.cell.2006.01.050
 * Hampel S, Franconville R, Simpson JH, Seeds AM (2015). A neural command circuit for grooming
@@ -1287,6 +1416,12 @@ The starter kit's list, extended. These are the things a neuroscientist would po
 * Hassenstein B, Reichardt W (1956). Systemtheoretische Analyse der Zeit-, Reihenfolgen- und
   Vorzeichenauswertung bei der Bewegungsperzeption des Rüsselkäfers *Chlorophanus*. *Zeitschrift
   für Naturforschung B* 11:513-524.
+* Hearn MG, Ren Y, McGrath EW, Grant HR, Ziedonis DM, Hearn GC (2002). A *Drosophila* dopamine
+  2-like receptor: molecular characterization and identification of multiple alternatively spliced
+  variants. *PNAS* 99(22):14554-14559. doi:10.1073/pnas.202498299
+* Himmelreich S, Masuho I, Berry JA, MacMullen C, Skamangas NK, Martemyanov KA, Davis RL (2017).
+  Dopamine receptor DAMB signals via Gq to mediate forgetting in *Drosophila*. *Cell Reports*
+  21(8):2074-2081. doi:10.1016/j.celrep.2017.10.108
 * Hige T, Aso Y, Modi MN, Rubin GM, Turner GC (2015). Heterosynaptic plasticity underlies aversive
   olfactory learning in *Drosophila*. *Neuron* 88(5):985-998. doi:10.1016/j.neuron.2015.11.003
 * Inagaki HK, Ben-Tabou de-Leon S, Wong AM, Jagadish S, Ishimoto H, Barnea G, Kitamoto T, Axel R,
@@ -1302,20 +1437,42 @@ The starter kit's list, extended. These are the things a neuroscientist would po
 * Klapoetke NC, Nern A, Peek MY, Rogers EM, Breads P, Rubin GM, Reiser MB, Card GM (2017).
   Ultra-selective looming detection from radial motion opponency. *Nature* 551:237-241.
   doi:10.1038/nature24626
+* Kurmangaliyev YZ, Yoo J, Valdes-Aleman J, Sanfilippo P, Zipursky SL (2020). Transcriptional
+  programs of circuit assembly in the *Drosophila* visual system. *Neuron* 108(6):1045-1057.
+  doi:10.1016/j.neuron.2020.10.006
 * Laughlin SB, Hardie RC (1978). Common strategies for light adaptation in the peripheral visual
   systems of fly and dragonfly. *Journal of Comparative Physiology A* 128:319-340.
   doi:10.1007/BF00657606
+* Li H, Janssens J, De Waegeneer M, Kolluru SS, Davie K, Gardeux V, Saelens W, David FPA,
+  Brbić M, Spanier K, Leskovec J, McLaughlin CN, Xie Q, Jones RC, Brueckner K, Shim J, Tattikota
+  SG, Schnorrer F, Rust K, Nystul TG, Carvalho-Santos Z, Ribeiro C, Pal S, Mahadevaraju S, Przytycka
+  TM, Allen AM, Goodwin SF, Berry CW, Fuller MT, White-Cooper H, Matunis EL, DiNardo S, Galenza A,
+  O'Brien LE, Dow JAT, FCA Consortium, Jasper H, Oliver B, Perrimon N, Deplancke B, Quake SR,
+  Luo L, Aerts S (2022). Fly Cell Atlas: a single-nucleus transcriptomic atlas of the adult fruit
+  fly. *Science* 375(6584):eabk2432. doi:10.1126/science.abk2432
 * Maisak MS, Haag J, Ammer G, Serbe E, Meier M, Leonhardt A, Schilling T, Bahl A, Rubin GM, Nern A,
   Dickson BJ, Reiff DF, Hopp E, Borst A (2013). A directional tuning map of *Drosophila* elementary
   motion detectors. *Nature* 500:212-216. doi:10.1038/nature12320
+* Maqueira B, Chatwin H, Evans PD (2005). Identification and characterization of a novel family
+  of *Drosophila* β-adrenergic-like octopamine G-protein coupled receptors. *Journal of
+  Neurochemistry* 94(2):547-560. doi:10.1111/j.1471-4159.2005.03251.x
 * Meier M, Borst A (2019). Extreme compartmentalization in a *Drosophila* amacrine cell. *Current
   Biology* 29(9):1545-1550. doi:10.1016/j.cub.2019.03.070
 * Münch D, Galizia CG (2016). DoOR 2.0 - comprehensive mapping of *Drosophila melanogaster*
   odorant responses. *Scientific Reports* 6:21841.
 * Nagel KI, Wilson RI (2011). Biophysical mechanisms underlying olfactory receptor neuron dynamics.
   *Nature Neuroscience* 14:208-216. doi:10.1038/nn.2725
+* Özel MN, Simon F, Jafari S, Holguera I, Chen Y-C, Benhra N, El-Danaf RN, Kapuralin K, Malin
+  JA, Konstantinides N, Desplan C (2021). Neuronal diversity and convergence in a visual system
+  developmental atlas. *Nature* 589(7840):88-95. doi:10.1038/s41586-020-2879-3
+* Qi Y-X, Xu G, Gu G-X, Mao F, Ye G-Y, Liu W, Huang J (2017). A new *Drosophila* octopamine
+  receptor responds to serotonin. *Insect Biochemistry and Molecular Biology* 90:61-70.
+  doi:10.1016/j.ibmb.2017.09.010
 * Ribeiro IMA, Drews M, Bahl A, Machacek C, Borst A, Dickson BJ (2018). Visual projection neurons
   mediating directed courtship in *Drosophila*. *Cell* 174(3):607-621. doi:10.1016/j.cell.2018.06.020
+* Saudou F, Boschert U, Amlaiky N, Plassat J-L, Hen R (1992). A family of *Drosophila* serotonin
+  receptors with distinct intracellular signalling properties and expression patterns. *EMBO
+  Journal* 11(1):7-17. doi:10.1002/j.1460-2075.1992.tb05021.x
 * Schnell B, Joesch M, Forstner F, Raghu SV, Otsuna H, Ito K, Borst A, Reiff DF (2010). Processing
   of horizontal optic flow in three visual interneurons of the *Drosophila* brain. *Journal of
   Neurophysiology* 103(3):1646-1657. doi:10.1152/jn.00950.2009
@@ -1325,6 +1482,13 @@ The starter kit's list, extended. These are the things a neuroscientist would po
   Lavista-Llanos S, Wicher D, Sachse S, Knaden M, Becher PG, Seki Y, Hansson BS (2012). A conserved
   dedicated olfactory circuit for detecting harmful microbes in *Drosophila*. *Cell*
   151(6):1345-1357. doi:10.1016/j.cell.2012.09.046
+* Srivastava DP, Yu EJ, Kennedy K, Chatwin H, Reale V, Hamon M, Smith T, Evans PD (2005). Rapid,
+  nongenomic responses to ecdysteroids and catecholamines mediated by a novel *Drosophila*
+  G-protein-coupled receptor. *Journal of Neuroscience* 25(26):6145-6155.
+  doi:10.1523/JNEUROSCI.1005-05.2005
+* Sugamori KS, Demchyshyn LL, McConkey F, Forte MA, Niznik HB (1995). A primordial dopamine
+  D1-like adenylyl cyclase-linked receptor from *Drosophila melanogaster* displaying poor affinity
+  for benzazepines. *FEBS Letters* 362(2):131-138. doi:10.1016/0014-5793(95)00224-W
 * Suh GSB, Wong AM, Hergarden AC, Wang JW, Simon AF, Benzer S, Axel R, Anderson DJ (2004). A single
   population of olfactory sensory neurons mediates an innate avoidance behaviour in *Drosophila*.
   *Nature* 431:854-859.
@@ -1343,6 +1507,9 @@ The starter kit's list, extended. These are the things a neuroscientist would po
   neurotransmitter release probability. *PNAS* 94(2):719-723. doi:10.1073/pnas.94.2.719
 * Tully T, Quinn WG (1985). Classical conditioning and retention in normal and mutant *Drosophila
   melanogaster*. *Journal of Comparative Physiology A* 157:263-277. doi:10.1007/BF01350033
+* Witz P, Amlaiky N, Plassat J-L, Maroteaux L, Borrelli E, Hen R (1990). Cloning and
+  characterization of a *Drosophila* serotonin receptor that activates adenylate cyclase. *PNAS*
+  87(22):8940-8944. doi:10.1073/pnas.87.22.8940
 * Yang HH, St-Pierre F, Sun X, Ding X, Lin MZ, Clandinin TR (2016). Subcellular imaging of voltage and
   calcium signals reveals neural processing in vivo. *Cell* 166(1):245-257.
   doi:10.1016/j.cell.2016.05.031

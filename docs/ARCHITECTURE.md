@@ -11,7 +11,13 @@ virtual_fly/
   experiments.py   validated protocols, seeds, sweeps, lesion scans, JSON export
   genetics.py      gene-expression populations (fru, dsx, transmitter genes), FlyBase links, NeuronBridge lookups
   wiring.py        the genome as a recipe: cell-type wiring rules, grown flies, the rank bottleneck
-  parts.py         the genes as a parts list: slow modulators (DA/OA/5-HT), graded cell types, per-type thresholds
+  parts.py         the genes as a parts list: slow modulators (DA/OA/5-HT), graded cell types, per-type thresholds,
+                   curated transmitters and receptor signs (both from vfb.py)
+  vfb.py           the anatomy-ontology join (Virtual Fly Brain): fbbt:/rx: selectors, per-type facts, curated
+                   transmitters, receptor expression per class; reads data/fbbt_*.json.gz and data/vfb_receptors.json.gz
+tools/
+  build_vfb_data.py    fbbt.obo (+ the connector overlay) -> data/fbbt_map.json.gz, data/fbbt_tree.json.gz
+  merge_vfb_harvest.py a Virtual Fly Brain connector harvest -> tools/vfb_overlay.json, data/vfb_receptors.json.gz
   settings.py      named model profiles (pure / game / brakes)
   cli.py           `python fly_brain.py ...`
   world.py         the arena: food, posts, odour sources and plume puffs, wind, the drum, the female

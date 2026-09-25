@@ -19,7 +19,7 @@ from virtual_fly.settings import build_brain
 
 
 @pytest.fixture(scope="module")
-def served(conn, tmp_path_factory):
+def served(conn, tmp_path_factory, mini_vfb):
     """(game, base url): a game on the synthetic brain, ticked a few times, behind a live server.
 
     ``WEB_DIR`` is pointed at a temporary directory with a known index.html so the static-file
@@ -246,12 +246,36 @@ def test_genome_endpoint(served):
     assert r["parts"] == {"on": False, "status": None}
 
 
+def test_ontology_endpoint_and_the_neuron_lookup_carries_vfb(served, conn):
+    game, base = served
+    code, r = get_json(base, "/api/ontology?q=lobula&limit=5")
+    assert code == 200 and r["ok"] and r["classes"][0]["label"] == "lobula columnar neuron" and r["classes"][0]["spec"] == "fbbt:FBbt:00003870"
+    code, r = get_json(base, "/api/ontology?id=FBbt_00003870")
+    assert code == 200 and r["class"]["n_types"] == 3 and {t["type"] for t in r["class"]["types"]} == {"LC4", "LC10a", "LC11"}
+    code, r = get_json(base, "/api/ontology?id=FBbt_00000000")
+    assert code == 404 and not r["ok"]
+    code, r = get_json(base, "/api/ontology")
+    assert code == 200 and r["classes"] == []
+    i = int(conn.select("KCg-m")[0])
+    code, r = get_json(base, f"/api/neuron?index={i}")
+    n = r["neuron"]
+    assert n["vfb"]["label"] == "gamma main Kenyon cell" and n["vfb"]["peptides"] == ["sNPF"] and n["vfb"]["url"].endswith("FBbt_00111061")
+    assert [x["gene"] for x in n["receptors"]["receptors"]] == ["Dop1R1", "Dop2R", "5-HT1A"] and n["parts"] is None
+    code, r = get_json(base, f"/api/neuron?index={int(conn.select('MN9')[0])}")
+    assert r["neuron"]["vfb"] is None and r["neuron"]["receptors"] is None
+    code, lay = get_json(base, "/api/layout")
+    assert lay["vfb"]["available"] and lay["vfb"]["types_mapped"] == 18 and lay["vfb"]["curated"]["differ"] == 2
+    assert conn.count("fbbt:lobula columnar neuron") == conn.count("LC4,LC10a,LC11")
+    code, r = post(base, "/api/action", {"type": "watch", "spec": "fbbt:adult descending neuron"})
+    assert r["ok"] and r["n"] == conn.count("DNp01,DNa02,DNg74_a,DNg74_b")
+
+
 def test_parts_endpoint(served):
     game, base = served
     code, r = get_json(base, "/api/parts")
     assert code == 200 and r["ok"] and r["on"] is False and r["status"] is None
     assert [m["nt"] for m in r["tables"]["modulators"]] == ["dopamine", "octopamine", "serotonin"] and len(r["tables"]["graded"]) == 5
-    assert r["counts"]["modulatory_neurons"] == 16 and r["counts"]["graded_neurons"] > 100
+    assert r["counts"]["modulatory_neurons"] == 16 + 8 and r["counts"]["graded_neurons"] > 100   # + LB1a (the test ontology slice)
     assert all(m["receptors"] and m["why"] for m in r["counts"]["modulators"])
 
 

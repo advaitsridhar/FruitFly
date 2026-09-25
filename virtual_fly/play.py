@@ -47,6 +47,9 @@ def main(argv=None):
     ap.add_argument("--grow-seed", type=int, default=1, help="which individual to grow (any whole number)")
     ap.add_argument("--parts", action="store_true",
                     help="start with the parts list on: modulators as slow tones, graded optic-lobe cells (the Genome card toggles it)")
+    ap.add_argument("--curated", choices=("off", "modulators", "all"), default="modulators",
+                    help="parts list: how far Virtual Fly Brain's curated transmitters override the MaleCNS prediction "
+                         "(off; modulators = fill 'unclear' and correct which neurons are modulators; all = also flip fast signs)")
     ap.add_argument("--seed", type=int, default=0)
     args = ap.parse_args(argv)
 
@@ -59,8 +62,9 @@ def main(argv=None):
     if args.noise:
         hz, mv = (float(x) for x in args.noise.split(":"))
         overrides.update(noise_hz=hz, noise_mv=mv)
-    if args.parts:
-        overrides["parts"] = True
+    if args.parts or args.curated != "modulators":
+        from .parts import PartsList
+        overrides["parts"] = PartsList(curated=args.curated)
     print("Loading the fly's nervous system...", file=sys.stderr)
     conn = load_connectome()
     brain = build_brain(conn, profile, **overrides)

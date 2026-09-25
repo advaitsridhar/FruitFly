@@ -11,6 +11,7 @@ engine, a notebook, a robot) can drive the fly:
     POST /api/action  {"type": ...}   see Game.action; e.g. {"type": "zap", "spec": "MDN", "hz": 60}
     GET  /api/types?q=LC10            search cell types
     GET  /api/neuron?index=123        everything known about one neuron (or ?body=<bodyId>)
+    GET  /api/ontology?q=lobula       anatomy-ontology classes matching a text (or ?id=FBbt_00003870 for one class)
     GET  /api/partners?spec=MN9&dir=in    strongest input (or output) types of a population
     GET  /api/trace?from=LC10a/L&to=DNa02/L&hops=4   strongest wiring routes
     GET  /api/history?keys=MN9,GF     rate histories of readouts (one value per tick)
@@ -40,7 +41,7 @@ from pathlib import Path
 
 import numpy as np
 
-from . import genetics, wiring
+from . import genetics, vfb, wiring
 from . import parts as partslib
 
 from .pathways import relay_ranking, strongest_partners, trace
@@ -117,7 +118,19 @@ def make_handler(game):
                     info["inputs"] = conn.inputs_of(f"index:{i}", top=8)
                     info["outputs"] = conn.outputs_of(f"index:{i}", top=8)
                     info["genes"] = genetics.genes_of(conn, i)
+                    info["vfb"] = vfb.describe_type(conn.types[i], conn)
+                    info["receptors"] = vfb.receptors_of_type(conn.types[i], conn)
+                    info["parts"] = game.brain.parts.role(i) if game.brain.parts is not None else None
                     return self._json({"ok": True, "neuron": info})
+                if path == "/api/ontology":
+                    ont = vfb.ontology()
+                    if get("id"):
+                        info = ont.class_info(get("id"), conn)
+                        if info is None:
+                            return self._error("no such class among the kit's cell types", 404)
+                        return self._json({"ok": True, "class": info})
+                    text = get("q", "").strip()
+                    return self._json({"ok": True, "q": text, "classes": ont.search(text, conn, limit=int(get("limit", 30))) if text else []})
                 if path == "/api/partners":
                     spec = get("spec", "")
                     if not spec or conn.count(spec) == 0:

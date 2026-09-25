@@ -232,6 +232,10 @@ class Connectome:
                                  gene:fru_high; or a transmitter gene: gene:VGlut, gene:Gad1, ...)
             dimorphism:male      male-specific incl. 'potentially' (dimorphism:dimorphic, :any,
                                  or an exact label such as dimorphism:sexually dimorphic)
+            fbbt:<class>         an anatomy-ontology class and everything below it, by id or label
+                                 (fbbt:FBbt_00003870, fbbt:lobula columnar neuron, fbbt:dopaminergic neuron)
+            rx:<receptor>        cell types whose adult scRNA-seq cluster expresses a receptor
+                                 (rx:Dop2R = at least 20 % of the cells; rx:5-HT1A>0.5)
             body:10783           one neuron by its neuPrint bodyId
             index:1234           one neuron by its index in this file
             hex:12:7             columnar visual neurons in medulla column (hex1, hex2)
@@ -324,6 +328,12 @@ class Connectome:
         elif key == "dimorphism":
             from . import genetics
             mask = genetics.dimorphism_mask(self, value)
+        elif key == "fbbt":                          # an anatomy-ontology class and everything below it (vfb.py)
+            from . import vfb
+            mask = vfb.fbbt_mask(self, value)
+        elif key == "rx":                            # cell types whose adult scRNA-seq cluster expresses a receptor
+            from . import vfb
+            mask = vfb.rx_mask(self, value)
         elif key in ("class", "superclass", "subclass", "nt", "nerve", "neuromere", "frudsx"):
             col = {"class": self.cls, "superclass": self.superclass, "subclass": self.subclass,
                    "nt": self.nt, "nerve": self.nerve, "neuromere": self.neuromere, "frudsx": self.frudsx}[key]

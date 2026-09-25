@@ -60,7 +60,9 @@ def test_modulators_lose_their_fast_synapses_and_leave_a_tone(conn):
     parts = FlyBrain(conn, seed=0, parts=True)
     assert parts.settings()["parts"] == {"graded_neurons": parts.parts.graded_idx.size, "modulatory_neurons": 16,
                                          "modulated_targets": parts.parts.mod_targets.size,
-                                         "modulators": ["dopamine", "octopamine", "serotonin"], "graded_rate_hz": 300.0}
+                                         "modulators": ["dopamine", "octopamine", "serotonin"], "graded_rate_hz": 300.0,
+                                         "curated": "modulators", "receptor_signs": True, "co_release_neurons": 0,
+                                         "curated_neurons": 0}
     # dopamine drives the MBONs directly in the published model; with the parts list it does not
     assert _measure(plain, {"PPL101": 300}).rate("MBON11") > 20
     assert _measure(parts, {"PPL101": 300}).rate("MBON11") == 0 and parts.rate("PPL101") > 150

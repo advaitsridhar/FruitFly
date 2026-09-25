@@ -63,6 +63,18 @@ def test_numba_matches_numpy_spike_for_spike(conn, name):
         assert a.spike_count[conn.select("T4b/R")].sum() > 0                  # graded events happened
 
 
+def test_numba_matches_numpy_with_the_curated_parts_list(conn, mini_vfb):
+    from virtual_fly.parts import PartsList
+    cfg = {"parts": PartsList(curated="all"), "fatigue_mv": 0.05}
+    a, rec_a = _run(conn, "numpy", cfg)
+    b, rec_b = _run(conn, "numba", cfg)
+    assert a.total_spikes == b.total_spikes > 100 and len(rec_a) == len(rec_b)
+    for (ta, sa), (tb, sb) in zip(rec_a, rec_b):
+        assert ta == tb and np.array_equal(sa, sb)
+    assert np.array_equal(a._mod_gain, b._mod_gain) and np.array_equal(a._mod_level, b._mod_level)
+    assert a.parts.counts["curated"]["neurons"] > 0 and (a.parts.mod_sign < 0).any()
+
+
 def test_numba_matches_numpy_with_learning(conn):
     a, rec_a = _run(conn, "numpy", {"fatigue_mv": 0.05, "kenyon_gain": 1.0}, learning=True)
     b, rec_b = _run(conn, "numba", {"fatigue_mv": 0.05, "kenyon_gain": 1.0}, learning=True)

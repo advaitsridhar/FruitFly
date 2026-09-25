@@ -336,3 +336,20 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; backgro
   header .stats { display: none; }
   main { padding: 8px; }
 }
+
+/* ontology search (Neuron lab) and the popover's ontology lines */
+.ontohits { display: flex; flex-direction: column; gap: 3px; }
+.ontohits:empty { display: none; }
+.ontohits .oh { display: flex; align-items: center; gap: 6px; font-size: 12px; padding: 3px 6px; border: 1px solid var(--line); border-radius: 7px; cursor: pointer; }
+.ontohits .oh:hover { border-color: var(--accent); }
+.ontohits .oh b { font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ontohits .oh small { color: var(--muted); white-space: nowrap; }
+.ontohits .oh a { color: var(--accent); text-decoration: none; font-size: 11px; }
+.popover .crumb { color: var(--accent); cursor: pointer; }
+.popover .crumb:hover { text-decoration: underline; }
+.popover details { margin: 4px 0; font-size: 11.5px; }
+.popover details summary { cursor: pointer; color: var(--muted); }
+.popover .def { color: var(--muted); margin-top: 3px; line-height: 1.35; }
+.muted { color: var(--muted); }
+.warn { color: var(--orange); }
+.ok { color: var(--green); }

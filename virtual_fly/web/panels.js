@@ -273,6 +273,34 @@ export class LabPanel {
     $("modBtn").onclick = () => this.modulate();
     $("watchBtn").onclick = () => this.watch();
     this.silKey = ""; this.modKey = "";
+    if (L.vfb && L.vfb.available) this.wireOntology();
+  }
+  // Virtual Fly Brain's anatomy ontology: type a class name, pick one, and `fbbt:<class>` becomes the population
+  wireOntology() {
+    setShown($("ontoRow"), true);
+    const hits = $("ontoHits");
+    const lookup = debounce(async (q) => {
+      if (q.length < 3) { hits.innerHTML = ""; return; }
+      const r = await getJSON(`api/ontology?q=${encodeURIComponent(q)}&limit=12`);
+      if (!r || !r.ok) return;
+      hits.innerHTML = "";
+      if (!r.classes.length) { hits.innerHTML = `<div class="oh"><small>no ontology class with that name among this data's cell types</small></div>`; return; }
+      for (const c of r.classes) {
+        const d = el("div", "oh");
+        d.innerHTML = `<b>${esc(c.label)}</b><small>${c.types.toLocaleString()} type${c.types === 1 ? "" : "s"} · ${c.neurons.toLocaleString()} neurons</small><a href="https://virtualflybrain.org/reports/${esc(c.fbbt.replace(":", "_"))}" target="_blank" rel="noopener" title="Virtual Fly Brain">VFB ↗</a>`;
+        d.title = `Use fbbt:${c.fbbt} as the population`;
+        d.onclick = (e) => { if (e.target.tagName === "A") return; this.useClass(c); };
+        hits.appendChild(d);
+      }
+    }, 200);
+    $("ontoQ").addEventListener("input", (e) => lookup(e.target.value.trim()));
+    $("ontoQ").addEventListener("keydown", (e) => { if (e.key === "Enter") { const first = hits.querySelector(".oh"); if (first) first.click(); } });
+  }
+  useClass(c) {
+    $("spec").value = c.spec;
+    $("ontoHits").innerHTML = "";
+    this.feedback(`${c.spec} = ${c.label}: ${c.types.toLocaleString()} cell types, ${c.neurons.toLocaleString()} neurons. Zap, silence or watch them.`);
+    $("spec").focus();
   }
   spec() { const s = $("spec").value.trim(); if (!s) this.feedback("Type a neuron type first, or pick one of the presets.", true); return s; }
   feedback(text, err) { setText($("feedback"), text); setClass($("feedback"), "err", !!err); }
@@ -382,10 +410,28 @@ export class GeneticsPanel {
       nt.append(info, this.actions(t.spec, false));
     }
     setText($("geneSource"), (this.G.source || "") + (this.G.unclear ? ` ${this.G.unclear.toLocaleString()} neurons have no confident transmitter prediction and count as excitatory.` : ""));
+    this.renderVfb(L.vfb);
     $("lineBtn").onclick = () => this.neuronsOfLine();
     $("lineName").addEventListener("keydown", (e) => { if (e.key === "Enter") this.neuronsOfLine(); });
     $("linesBtn").onclick = () => this.linesFor();
     $("linesSpec").addEventListener("keydown", (e) => { if (e.key === "Enter") this.linesFor(); });
+  }
+  // what the anatomy ontology (via Virtual Fly Brain) says about the transmitters, where it differs from the prediction
+  renderVfb(v) {
+    if (!v || !v.available) return;
+    setShown($("vfbBox"), true);
+    const c = v.curated || {};
+    setText($("vfbSummary"), `what the literature says: ${c.differ.toLocaleString()} cell types differ from the prediction (Virtual Fly Brain)`);
+    $("vfbIntro").innerHTML = `${v.types_mapped.toLocaleString()} of ${v.types_total.toLocaleString()} cell types (${v.neurons_mapped.toLocaleString()} of ${v.neurons_typed.toLocaleString()} typed neurons) carry a class of the FlyBase anatomy ontology, ` +
+      `so a neuron's popover can say what its type is and link to <a href="https://virtualflybrain.org" target="_blank" rel="noopener">Virtual Fly Brain</a>, and <code>fbbt:</code> selects a class and everything below it (Neuron lab). ` +
+      `The ontology's curated transmitter agrees with the MaleCNS prediction for ${c.agree.toLocaleString()} types and differs for ${c.differ.toLocaleString()}; ${c.unclear_with_curated.toLocaleString()} types the prediction leaves "unclear" get one. ` +
+      `With the parts list on (Genome card) the literature's word wins for the modulators. The largest disagreements:`;
+    const rows = $("vfbRows"); rows.innerHTML = "";
+    for (const r of c.differ_rows || []) {
+      const info = el("div", "g");
+      info.innerHTML = `<span><b>${esc(r.type)}</b> <small>predicted ${esc(r.predicted)}, ${r.evidence === "literature" ? "literature" : "another connectome"} says ${esc(r.curated.join(" + "))}</small><a href="https://virtualflybrain.org/reports/${esc(r.fbbt.replace(":", "_"))}" target="_blank" rel="noopener" title="${esc(r.label)} on Virtual Fly Brain">VFB ↗</a></span><small>${r.n.toLocaleString()} neurons</small>`;
+      rows.append(info, this.actions(r.type, true));
+    }
   }
   actions(spec, activatable) {
     const box = el("div", "acts");
@@ -525,8 +571,12 @@ export class GenomePanel {
       setText($("partsBtn"), p.on ? "Parts list: on" : "Parts list: off");
       setClass($("partsBtn"), "primary", !!p.on);
       const c = (this.L.parts && this.L.parts.counts) || {};
+      const cur = c.curated || {}, rs = c.receptor_signs || {};
+      const withData = (rs.coverage || []).reduce((a, x) => a + (x.with_data || 0), 0);
       setText($("partsInfo"), p.on
         ? `${(c.modulatory_neurons || 0).toLocaleString()} dopamine, octopamine and serotonin neurons act through slow tones on ${(c.modulated_targets || 0).toLocaleString()} targets; ${(c.graded_neurons || 0).toLocaleString()} optic-lobe cells transmit graded signals`
+          + (cur.neurons ? `; the literature re-types ${cur.neurons.toLocaleString()} neurons (${cur.types.toLocaleString()} types)` : "")
+          + (withData ? `; receptor expression sets the tone's sign on ${withData.toLocaleString()} targets` : "")
         : "every neuron is the same machine (Shiu et al. 2024); switch on to give each the parts its genes make");
       setShown($("tones"), !!p.on);
     }

@@ -347,20 +347,58 @@ function wireBrain() {
       <h5>${esc(n.type || "(unannotated)")}${n.side ? " / " + esc(n.side) : ""} <small style="color:var(--muted)">#${n.index}</small></h5>
       <div class="kv">
         <span class="k">class</span><span class="v">${esc([n.superclass, n.class, n.subclass].filter(Boolean).join(" · ") || "–")}</span>
-        <span class="k">transmitter</span><span class="v">${esc(n.nt || "?")} (${n.sign > 0 ? "excitatory" : "inhibitory"})</span>
+        <span class="k">transmitter</span><span class="v">${esc(n.nt || "?")} (${n.sign > 0 ? "excitatory" : "inhibitory"})${partsRole(n.parts)}</span>
+        ${vfbRows(n)}
         <span class="k">connections</span><span class="v">${n.n_inputs} in · ${n.n_outputs} out</span>
         <span class="k">firing now</span><span class="v">${fmt(n.rate_hz, 1)} Hz</span>
         <span class="k">region</span><span class="v">${esc(L.regions[L.region[i]] || "")}</span>
         <span class="k">genes</span><span class="v">${(n.genes || []).length ? n.genes.map((g) => `<a href="${g.flybase}" target="_blank" rel="noopener" title="${esc(g.why)} · FlyBase">${esc(g.symbol)}</a>`).join(", ") : "none known here"}${n.dimorphism ? ` · ${esc(n.dimorphism)}` : ""}</span>
+        ${receptorRow(n.receptors)}
       </div>
+      ${n.vfb && n.vfb.definition ? `<details><summary>what is this cell type?</summary><div class="def">${esc(n.vfb.definition)}</div></details>` : ""}
       <b>strongest inputs</b><ul>${list(n.inputs || [])}</ul>
       <b>strongest outputs</b><ul>${list(n.outputs || [])}</ul>
       <div class="row wrap"><a href="https://neuprint.janelia.org/view?bodyid=${n.body_id}&dataset=male-cns%3Av1.0" target="_blank" rel="noopener">neuPrint ↗</a>
+        ${n.vfb ? `<a href="${esc(n.vfb.url)}" target="_blank" rel="noopener" title="${esc(n.vfb.label)} on Virtual Fly Brain">VFB ↗</a>` : ""}
         <button class="mini" data-act="lab">to the lab</button><button class="mini" data-act="watch">watch ${esc(spec)}</button></div>`;
     pop.querySelector(".close").onclick = () => { setShown(pop, false); brain.picked = -1; };
     pop.querySelector("[data-act=lab]").onclick = () => { $("spec").value = spec; $("spec").focus(); };
     pop.querySelector("[data-act=watch]").onclick = () => post({ type: "watch", spec });
+    pop.querySelectorAll(".crumb").forEach((a) => (a.onclick = () => { $("spec").value = `fbbt:${a.dataset.fbbt}`; $("spec").focus(); }));
   };
+}
+
+// the popover's Virtual Fly Brain lines: the ontology class, its parents (click = select that class),
+// the transmitter the literature asserts, the lineage and peptides, the receptors the type expresses
+function partsRole(p) {
+  if (!p) return "";
+  const bits = [];
+  if (p.modulator) bits.push(`${p.modulator} tone${p.keep_fast ? " + fast synapses" : ""}`);
+  if (p.curated) bits.push(`the literature says ${esc(p.curated.curated.join(" + "))}: ${esc(p.curated.action)}`);
+  else if (p.sign !== undefined && p.modulator === null) bits.push(`fast ${p.sign > 0 ? "+" : "−"}`);
+  if (p.graded) bits.push("graded");
+  return bits.length ? ` <small class="muted">· parts list: ${bits.join("; ")}</small>` : "";
+}
+function vfbRows(n) {
+  const v = n.vfb;
+  if (!v) return `<span class="k">ontology</span><span class="v muted">no FBbt class matched this type</span>`;
+  const crumbs = (v.breadcrumb || []).slice(0, 3).map((b) => `<a class="crumb" data-fbbt="${esc(b.fbbt)}" title="select every ${esc(b.label)} (fbbt:${esc(b.fbbt)})">${esc(b.label)}</a>`).join(" › ");
+  let out = `<span class="k">ontology</span><span class="v"><a href="${esc(v.url)}" target="_blank" rel="noopener" title="${esc(v.fbbt[0])} on Virtual Fly Brain">${esc(v.label)}</a>${v.coarse ? ` <small class="muted">(class of ${v.shared_by || "several"} types)</small>` : v.shared_by ? ` <small class="muted">(shared by ${v.shared_by} types)</small>` : ""}${crumbs ? `<br><small>${crumbs}</small>` : ""}</span>`;
+  if (v.curated_nt && v.curated_nt.length) {
+    const agrees = v.curated_nt.includes(n.nt);
+    out += `<span class="k">${v.evidence === "literature" ? "literature" : "elsewhere"}</span><span class="v">${esc(v.curated_nt.join(" + "))} <small class="${agrees ? "ok" : "warn"}">${agrees ? "agrees" : "differs from the prediction"}</small> <small class="muted">(${v.evidence === "literature" ? "curated in the ontology" : "another connectome's prediction, via the ontology"})</small></span>`;
+  }
+  const extra = [];
+  if (v.lineage && v.lineage.length) extra.push(esc(v.lineage[0]));
+  if (v.birth) extra.push(`${v.birth} neuron`);
+  if (v.peptides && v.peptides.length) extra.push(`peptides: ${esc(v.peptides.join(", "))}`);
+  if (extra.length) out += `<span class="k">also</span><span class="v">${extra.join(" · ")}</span>`;
+  return out;
+}
+function receptorRow(rx) {
+  if (!rx || !rx.receptors.length) return "";
+  const cells = rx.receptors.map((r) => `<a href="${r.flybase || "#"}" target="_blank" rel="noopener" title="${r.modulator ? r.modulator + " receptor, " + (r.sign > 0 ? "raises" : "lowers") + " the gain · " : ""}FlyBase">${esc(r.gene)}</a> ${Math.round(100 * r.extent)} %`).join(", ");
+  return `<span class="k">receptors</span><span class="v">${cells} <small class="muted">(${esc(rx.family_label)}${rx.depth ? ", from " + esc(rx.label) : ""}; % of cells)</small></span>`;
 }
 
 // ---------------------------------------------------------------- dialogs and keyboard
