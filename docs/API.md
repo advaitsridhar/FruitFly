@@ -88,8 +88,11 @@ filaments, up to 300); `wind = {angle, speed}` (direction the wind blows *toward
 
 `{"ok": false, "error": "..."}` means nothing was done: an unknown or missing `type`, a missing field the
 action needs, a field that is not a number where one is needed (text such as `"2.5"` is read as a number,
-`null` as the default), `secs` of 0 or less, a negative `hz`, `factor` or `r`, or something the dish cannot
-take (below). `{"ok": true}` means the action was queued for the next tick.
+`null` as the default), a number that is not finite (`NaN`, `Infinity`, `1e400` or an integer too big for a
+float), a switch (`on`, `forget`, `spikes`) that is not JSON `true` or `false`, a `tool` that is not one of
+`lure`, `hand`, `sugar`, `bitter`, `water`, `dust`, `shock`, `post`, `none` or an odour id, a `scenario` id
+that is not text, `secs` of 0 or less, a negative `hz`, `factor` or `r`, a post whose `r` is not above 0, or
+something the dish cannot take (below). `{"ok": true}` means the action was queued for the next tick.
 
 | type | fields | effect |
 |---|---|---|

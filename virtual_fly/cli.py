@@ -596,7 +596,7 @@ def check(conn, spec):
 
 def _runs(conn, text):
     """The pieces of ``text`` between commas, except that a run of pieces which together are one cell type's name or
-    alias (70 male names contain a comma, e.g. "DLMn a, b") stays whole: the longest run first, as select() tries
+    alias (69 male names contain a comma, e.g. "DLMn a, b") stays whole: the longest run first, as select() tries
     the whole spec first."""
     pieces, i = text.split(","), 0
     while i < len(pieces):
