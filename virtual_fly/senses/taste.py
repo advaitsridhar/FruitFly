@@ -6,8 +6,11 @@ Taste: what is under the mouthparts and the forelegs -> gustatory receptor neuro
   (``LgLG3``), at the rates of Shiu et al. 2024 scaled by concentration and by *hunger*: a starved
   fly's sugar GRNs respond more strongly (dopamine and NPF act on them; Inagaki et al. 2012).
 * **Bitter** drives the labellar bitter cells ``LB1a-d``.
-* **Water** drives the water cells (``LB2a-d`` are the candidates in this annotation; ppk28-expressing
-  labellar cells), only when the fly is thirsty.
+* **Water** drives the labellar water cells, ``LB3a``, only when the fly is thirsty. The MaleCNS data do
+  not say which cells sense water; LB3a is the type whose outputs match the published model's water cells
+  (Shiu et al. 2024, which FlyWire types as LB3 with the sugar cells), and like them at 80 Hz it drives
+  Fudog (DNg67) and not MN9, so in this wiring a thirsty fly tastes water but does not drink. ``LB2a-c``, the
+  earlier choice, are FlyWire's low-salt cells (the published model's Ir94e list). docs/SCIENCE.md 2.2.
 * **Pheromones**: a male's foreleg tarsi carry contact chemoreceptors that detect the female's
   cuticular hydrocarbons when he taps her. Which leg GRN types carry that signal into the courtship
   circuit was measured from the wiring (see :mod:`virtual_fly.game`, ``PHEROMONE_GRNS``).
@@ -19,7 +22,7 @@ import math
 
 SUGAR_GRNS = {"LB3b,LB3c": 120.0, "PhG1a,PhG1b,PhG1c": 100.0, "LgLG3": 80.0}   # labellar, pharyngeal, leg
 BITTER_GRNS = {"LB1a,LB1b,LB1c,LB1d": 120.0}
-WATER_GRNS = {"LB2a,LB2b,LB2c,LB2d": 80.0}
+WATER_GRNS = {"LB3a": 80.0}
 
 
 class Mouth:

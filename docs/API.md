@@ -2,7 +2,8 @@
 
 `python fly_game.py` starts a local HTTP server (default `http://127.0.0.1:8765`). The browser
 page is served from `virtual_fly/web/`. Everything the page does goes through this API, so any
-program that speaks HTTP can drive the fly.
+program that speaks HTTP can drive the fly. `--host 0.0.0.0` makes it reachable from other computers
+on your network: the API has no password and answers any origin (`Access-Control-Allow-Origin: *`).
 
 ## Static data
 
@@ -35,6 +36,7 @@ Returned once at start-up (gzip-compressed if the client accepts it; ~2.4 MB raw
 | `vfb` | `{available, source, overlay_source, types_mapped, types_total, neurons_mapped, neurons_typed, classes, curated: {agree, differ, unclear_with_curated, differ_rows: [{type, n, predicted, curated[], evidence, fbbt, label, source?}]}}` (or `{available: false}` without the data files): the anatomy-ontology join (`vfb.py`); the counts cover only this fly's types, and for the female fly they include FlyWire's own literature column (known_nt): those rows carry `source`, and one whose type has no FBbt class has an empty `fbbt` and the type name as `label` |
 | `decoder` | per decoder DN spec: motor synapses it reaches (`direct_motor_synapses`, `two_hop_motor_synapses_by_neuromere`) |
 | `columnar_vision` | bool: T4/T5 columns driven from the retina |
+| `body`, `stride_average` | which body walks: `drawn` (default) or `physics` (`--body physics`), and whether the senses see its stride-averaged pose (`--stride-average`) |
 | `whats_real` | `{wiring[], hand_built[], not_modelled[]}` text for the "What's real here?" dialog |
 
 ## Live state
@@ -50,7 +52,7 @@ One JSON object per tick (40 per second at real time). Same schema on both endpo
 | `rtf` | real-time factor the brain is achieving (1 = real time) |
 | `speed` | requested time scale |
 | `paused`, `autopilot` | bools |
-| `mode` | `idle`, `walk`, `feed`, `groom`, `escape`, `backward`, `court` |
+| `mode` | `idle` (resting: no command moves the legs), `walk`, `feed`, `groom`, `escape`, `backward`, `court` |
 | `fly` | `{x, y, h, v, w, mode, prob, legs, groom, wingL, wingR, abdomen, jump, hx, hy, dist}`: position mm, heading rad (0 = +x, CCW), forward speed mm/s, yaw rate rad/s, proboscis 0..1, gait phase, groom phase, wing extensions 0..1, abdomen bend 0..1, jump progress 0..1 or null, head position, distance walked; with `--body physics` also `physics: {left, right, z, tarsi[6][x, y]}` (the stepping drive per side, thorax height, tarsus positions) |
 | `world` | `{food[], obstacles[], odours[], puffs[], wind, female, hand, tool}`: see below |
 | `senses` | which senses are active now: keys `taste_sugar`, `taste_bitter`, `taste_water`, `small` (`"L"`,`"R"`,`"LR"`), `loom`, `flow`, `smell` (odour id), `pheromone`, `courting`, `sound`, `wind` (bearing in degrees the wind comes from, + = left; `0` means straight ahead, so test for the key, not the value), `dust`, `touch`, `reward`, `shock`, `zap` (text) |
@@ -84,25 +86,30 @@ filaments, up to 300); `wind = {angle, speed}` (direction the wind blows *toward
 
 ### `POST /api/action` with a JSON body `{"type": ..., ...}` → `{"ok": true}` or `{"ok": false, "error": "..."}`
 
+`{"ok": false, "error": "..."}` means nothing was done: an unknown or missing `type`, a missing field the
+action needs, a field that is not a number where one is needed (text such as `"2.5"` is read as a number,
+`null` as the default), `secs` of 0 or less, a negative `hz`, `factor` or `r`, or something the dish cannot
+take (below). `{"ok": true}` means the action was queued for the next tick.
+
 | type | fields | effect |
 |---|---|---|
 | `hand` | `x, y` | pointer position in mm (lure or hand tool) |
 | `hand_off` | | pointer left the arena |
 | `tool` | `tool` | `lure`, `hand`, `sugar`, `bitter`, `water`, `dust`, `shock`, `post`, an odour id, or `none` |
-| `drop` | `kind, x, y[, food]` | drop `sugar`/`bitter`/`water`, a `post` (`r` optional), or an odour id (optionally with `food: "sugar"`) |
-| `remove` | `id` | remove a food/obstacle/odour by id |
+| `drop` | `kind, x, y[, food]` | drop `sugar`/`bitter`/`water`, a `post` (`r` optional, 4 mm), or an odour id (optionally with `food`: `sugar`, `bitter` or `water`). Refused outside the dish and within 2 mm of its wall (a post: within `r` + 1 mm); the page then shows why |
+| `remove` | `id` | remove a food/obstacle/odour by id (refused if nothing has that id) |
 | `dust` | `x, y` | puff dust (must be within 20 mm of the fly) |
 | `shock` | `[secs]` | electric shock: drives PPL1 punishment dopamine |
-| `sound` | `[secs]` | a loud sound (clap): Johnston's organ A/B neurons, which reach the giant fibre |
+| `sound` | `[secs]` | a loud sound (clap): Johnston's organ B neurons, which reach the giant fibre |
 | `stripes` | `count, drum_speed` | paint `count` vertical stripes on the wall (0 = plain) and spin them at `drum_speed` rad/s (the optomotor drum) |
-| `zap` | `spec, hz[, secs]` | stimulate a population (reply includes `n` neurons) |
+| `zap` | `spec, hz[, secs]` | stimulate a population (reply includes `n` neurons); `hz` 60 and `secs` 2 when left out |
 | `silence` / `unsilence` | `spec` (unsilence: omit for all) | block / restore a population's output |
 | `modulate` | `spec, factor` | scale a population's output (1 = normal) |
 | `watch` / `unwatch` | `spec[, key]` / `key` | add / remove a custom readout (appears in `hz`). A `key` that names a built-in readout (`MN9`, `GF`, `DNp15L`, ...) is refused, since the decoder reads those; without a `key` the spec is the name, prefixed `watch:` if it collides. `unwatch` only removes custom watches. |
 | `grow` | `level[, seed]` | grow a fly from the wiring rules (`type`, `class`, `bottleneck:K`) or go back to `real`; runs in the background (`state.genome.growing`), swaps the brain in when done and then tests every validated experiment on a private copy (`state.genome.survival` fills in) |
 | `parts` | `on` (bool) | rebuild the current fly's brain with the parts list on or off (dopamine, octopamine and serotonin as slow tones; graded optic-lobe cells); the same background rebuild, swap and survival run as `grow`, on the same wiring. Refused while a rebuild or a growth is running, or if already in that state |
 | `clear` | `[what]` | `all`, `food`, `odours`, `obstacles` |
-| `reset` | | new fly, fresh brain (learned synapses kept) |
+| `reset` | | new fly, fresh brain (learned synapses and the checklist are kept) |
 | `calm` | | reset the brain's activity to rest |
 | `autopilot` | `on` | hand-built walking urge |
 | `pause` | `on` | |

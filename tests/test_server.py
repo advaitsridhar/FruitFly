@@ -100,6 +100,13 @@ def test_action_endpoint(served):
     assert code == 404
     code, reply = post(base, "/api/action", [1, 2, 3])
     assert code == 200 and reply["ok"] is False and "JSON object" in reply["error"]
+    # refused at once, with the reason: an unknown or missing type, a missing field, a drop the dish cannot take
+    assert post(base, "/api/action", {"type": "definitely_not_an_action"})[1] == {
+        "ok": False, "error": "unknown action type 'definitely_not_an_action'"}
+    assert post(base, "/api/action", {})[1] == {"ok": False, "error": "the action needs a 'type'"}
+    assert post(base, "/api/action", {"type": "remove"})[1] == {"ok": False, "error": "'remove' needs 'id' (a number)"}
+    assert "wall" in post(base, "/api/action", {"type": "drop", "kind": "sugar", "x": 49.5, "y": 0})[1]["error"]
+    assert game.actions.empty()
 
 
 def test_post_to_an_unknown_path_drains_its_body(served):
@@ -333,5 +340,27 @@ def test_serve_scans_ports_and_opens_the_browser(monkeypatch, capsys):
     assert made == [("127.0.0.1", 9101)] and opened == ["http://127.0.0.1:9101/"] and server.daemon_threads
     assert "alive at http://127.0.0.1:9101/" in capsys.readouterr().out
     monkeypatch.setattr(S, "ThreadingHTTPServer", lambda *a: (_ for _ in ()).throw(OSError("busy")))
-    with pytest.raises(SystemExit, match="free port"):
+    with pytest.raises(SystemExit, match="free port") as e:
         S.serve(FakeGame(), port=9100, open_browser=False)
+    assert "from 9100 to 9119 (busy)" in str(e.value) and "--port 9000" in str(e.value)
+    with pytest.raises(SystemExit) as e:                                      # never advise the range that just failed
+        S.serve(FakeGame(), port=9000, open_browser=False)
+    assert "from 9000 to 9019" in str(e.value) and "--port 8000" in str(e.value)
+    # on every interface: the browser gets a local address, and the terminal says who else can drive the fly
+    monkeypatch.setattr(S, "ThreadingHTTPServer", FakeServer)
+    opened.clear()
+    S.serve(FakeGame(), port=9101, open_browser=True, host="0.0.0.0")
+    out = capsys.readouterr().out
+    assert opened == ["http://127.0.0.1:9101/"] and "other computers on your network" in out and "no password" in out
+
+
+def test_play_refuses_flags_it_cannot_honour(capsys):
+    from virtual_fly import play
+    for argv, err in ((["--port", "70000"], "70000 is not a port"), (["--stride-average"], "only applies to the physics body")):
+        with pytest.raises(SystemExit):
+            play.main(argv)
+        assert err in capsys.readouterr().err
+    with pytest.raises(SystemExit):
+        play.main(["--help"])
+    help_text = " ".join(capsys.readouterr().out.split())
+    assert "--host 0.0.0.0 let other computers on your network" in help_text and "(there is no password)" in help_text

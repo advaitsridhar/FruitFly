@@ -290,19 +290,26 @@ def make_handler(game):
 
 
 def serve(game, port: int = 8765, open_browser: bool = True, host: str = "127.0.0.1"):
-    server = None
-    for p in range(port, port + 20):
+    server, err = None, None
+    last = min(port + 19, 65535)
+    for p in range(port, last + 1):
         try:
             server = ThreadingHTTPServer((host, p), make_handler(game))
             break
-        except OSError:
-            continue
+        except OSError as e:
+            err = e
     if server is None:
-        raise SystemExit("Could not find a free port. Try: python fly_game.py --port 9000")
+        other = 9000 if not port <= 9000 <= last else 8000             # a range that was not just tried
+        raise SystemExit(f"Could not find a free port on {host} from {port} to {last}" + (f" ({err})" if err else "")
+                         + f". Try another one: python3 fly_game.py --port {other} (py on Windows)")
     server.daemon_threads = True
     threading.Thread(target=game.loop, daemon=True).start()
-    url = f"http://{host}:{server.server_address[1]}/"
+    everywhere = host in ("0.0.0.0", "", "::")
+    url = f"http://{'127.0.0.1' if everywhere else host}:{server.server_address[1]}/"
     print(f"\nThe fly is alive at {url}\n(keep this window open; press Ctrl+C here to quit)\n")
+    if everywhere:
+        print(f"Listening on every network interface: other computers on your network can open "
+              f"http://<this computer's address>:{server.server_address[1]}/ and drive the fly (there is no password).\n")
     if open_browser:
         webbrowser.open(url)
     try:

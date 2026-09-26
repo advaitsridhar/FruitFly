@@ -62,7 +62,7 @@ Every tick is 25 ms of fly time:
    for the display but not for the body.
 5. **Decoder** (`MotorDecoder.decode`): descending-neuron rates -> smoothed motor drives (forward,
    yaw, backward, halt, feed, groom, song, court).
-6. **Behaviour selection** (`Game.choose_mode`): giant-fibre spikes win outright (a jump);
+6. **Behaviour selection** (`Game.choose_mode`): a giant-fibre burst wins outright (a jump);
    otherwise the strongest drive above its threshold wins, with hysteresis.
 7. **The body** moves with inertia, respecting the wall and posts; appendages follow their drives.
 8. **The world** steps: puffs drift and grow, the female walks, the drum turns.
@@ -72,7 +72,8 @@ Every tick is 25 ms of fly time:
 
 The game loop runs in one thread; the HTTP server handles requests in others. Anything that
 changes the wiring (silence, modulate, forget) takes `brain.lock`; reads of `state_json` are
-atomic swaps of an immutable bytes object; actions are queued and applied at the start of a tick.
+atomic swaps of an immutable bytes object; actions are checked on arrival (a bad one is refused with
+its reason), queued, and applied at the start of a tick.
 
 ## Performance notes
 
