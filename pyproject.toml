@@ -18,24 +18,30 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-fast = ["numba>=0.59"]                 # compiled integrator: several times faster, identical spikes
+fast = ["numba>=0.59"]                 # compiled integrator: about twice as fast, identical spikes
 female = ["pyarrow>=12"]               # to build the female fly (FlyWire 783) from its connectivity table
 dev = ["pytest>=7", "playwright", "numba>=0.59"]
-# the physics body (virtual_fly/physics.py): these, then `pip install --no-deps flygym==1.2.1`
-# (flygym's own requirements pin numba 0.60 and pull in Jupyter)
+# the physics body (virtual_fly/physics.py; Python 3.10-3.12 only, as flygym 1.2.1 is): these, then
+# `pip install --no-deps flygym==1.2.1` (flygym's own requirements pin numba 0.60 and pull in Jupyter; it imports
+# numba, so numba is here)
 physics = ["mujoco==3.2.7", "dm_control==1.0.27", "dm_tree==0.1.8", "gymnasium", "scipy", "opencv-python-headless>=4",
-           "imageio", "matplotlib", "pyyaml", "tqdm", "networkx"]
+           "imageio", "matplotlib", "pyyaml", "tqdm", "networkx", "numba>=0.59"]
 
 [project.scripts]
 fly-brain = "virtual_fly.cli:main"
 fly-game = "virtual_fly.play:main"
 
-[tool.setuptools.packages.find]
-include = ["virtual_fly*"]
+[tool.setuptools]
+# an installed copy (pip install . or from git) has no data/ folder, so the four small data files that come with
+# the code travel inside the package as virtual_fly/data (connectome.py finds them there)
+packages = ["virtual_fly", "virtual_fly.senses", "virtual_fly.web", "virtual_fly.data"]
+package-dir = {"virtual_fly.data" = "data"}
 
 [tool.setuptools.package-data]
 virtual_fly = ["web/*", "web/**/*"]
+"virtual_fly.data" = ["fbbt_map.json.gz", "fbbt_tree.json.gz", "vfb_receptors.json.gz", "mb_roi_connectivity.json.gz"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]                     # bare `pytest` imports virtual_fly/ and tools/ from here, as `python -m pytest` does
 addopts = "-ra"

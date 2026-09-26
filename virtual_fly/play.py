@@ -26,6 +26,13 @@ from .server import serve
 from .settings import PROFILES, build_brain
 
 def main(argv=None):
+    try:
+        _main(argv)
+    except KeyboardInterrupt:                    # Ctrl+C while the fly is built (the game itself says "Bye!")
+        raise SystemExit("\nStopped before the game started.")
+
+
+def _main(argv=None):
     ap = argparse.ArgumentParser(description="Play with a fly driven by a whole connectome (MaleCNS v1.0; FlyWire 783 with --female).",
                                  formatter_class=argparse.RawDescriptionHelpFormatter, epilog=__doc__)
     ap.add_argument("--port", type=int, default=8765)
@@ -65,9 +72,9 @@ def main(argv=None):
                          "gaze stabilisation) instead of the stride-by-stride wobble")
     args = ap.parse_args(argv)
     if args.body == "physics":
-        from .physics import INSTALL_HINT, available
+        from .physics import available, unavailable_reason
         if not available():
-            raise SystemExit(INSTALL_HINT)
+            raise SystemExit(unavailable_reason())
 
     profile = "pure" if args.pure else args.profile
     overrides = {"seed": args.seed, "dt": 1.0 if args.fast else args.dt, "backend": args.backend}
@@ -87,8 +94,10 @@ def main(argv=None):
     brain = build_brain(conn, profile, **overrides)
     if brain.backend == "numba":
         print("Brain integrator: compiled (numba).", file=sys.stderr)
+    elif args.backend == "numpy":
+        print("Brain integrator: NumPy (as asked with --backend numpy).", file=sys.stderr)
     else:
-        print("Brain integrator: NumPy. For a several-times faster brain: pip install numba", file=sys.stderr)
+        print("Brain integrator: NumPy. For a brain about twice as fast (same spikes): pip install numba", file=sys.stderr)
     if args.no_learning and brain.plasticity is not None:
         brain.plasticity.enabled = False
     if brain.parts is not None:

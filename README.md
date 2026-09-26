@@ -58,24 +58,33 @@ Everything on screen says which of the two it is; the **"What's real here?"** bu
 ```
 git clone https://github.com/advaitsridhar/FruitFly.git
 cd FruitFly
+python3 -m venv .venv               # Windows: py -m venv .venv
+. .venv/bin/activate                # Windows: .venv\Scripts\activate
 python3 -m pip install numpy numba
 python3 fly_game.py
 ```
 
 The first start downloads the 23 MB connectome into `data/` and opens the game in your browser;
-later starts are instant. Already have a clone? `git pull origin main` brings it up to date.
+later starts are instant. The two `.venv` lines give the kit its own virtual environment (current
+Linux systems refuse `pip install` outside one); in a new terminal, activate it again first.
+Already have a clone? `git pull origin main` brings it up to date.
 
 Step by step:
 
-1. Install **Python 3.10 or newer** from [python.org](https://www.python.org/downloads/). On Windows,
-   tick **"Add python.exe to PATH"** in the installer.
+1. Install **Python 3.10 or newer** from [python.org](https://www.python.org/downloads/) (3.10-3.12
+   if you want the optional physics body). On Windows, tick **"Add python.exe to PATH"** in the installer.
 2. Get the code: `git clone https://github.com/advaitsridhar/FruitFly.git` (or download and unzip
    it from GitHub), then open a terminal in the `FruitFly` folder (Windows: click the File Explorer
    address bar, type `cmd`, press Enter).
-3. Install NumPy, and numba for the compiled brain integrator (optional, about twice as fast, same spikes):
+3. Make a virtual environment (the kit's own set of packages, in the folder `.venv`), then install
+   NumPy into it, and numba for the compiled brain integrator (optional, about twice as fast, same spikes):
    ```
+   py -m venv .venv                   # macOS / Linux: python3 -m venv .venv
+   .venv\Scripts\activate             # macOS / Linux: . .venv/bin/activate
    py -m pip install numpy numba      # macOS / Linux: python3 -m pip install numpy numba
    ```
+   In every new terminal, run the second line again (in the `FruitFly` folder) before steps 4 and 5.
+   On Debian or Ubuntu, `python3 -m venv` may first need `sudo apt install python3-venv`.
 4. Check the brain works (downloads the data the first time, then runs the validated experiments):
    ```
    py fly_brain.py --profile game
@@ -87,18 +96,28 @@ Step by step:
    Your browser opens the game. Keep the terminal window open; press `Ctrl+C` in it to quit.
 
 On macOS or Linux, use `python3` instead of `py`. To install the package with its console scripts
-and the test tools: `pip install -e ".[dev]"` then `fly-game`, `fly-brain`, `pytest`.
+and the test tools (in the virtual environment): `py -m pip install -e ".[dev]"` then `fly-game`,
+`fly-brain`, `pytest`. A plain `pip install .` (or `pip install git+https://github.com/advaitsridhar/FruitFly.git`,
+without a clone) works too: that copy carries the four small data files inside the package and
+downloads the connectome to `~/.cache/virtual-fly` instead of `data/` (`FLY_DATA_DIR` sets another folder).
 
 **The female fly** needs one more package, `py -m pip install pyarrow`, and the first `--female` run
 downloads about 130 MB (FlyWire's connectivity table and annotations) and builds a 45 MB file in `data/`.
+
+**The physics body** (`--body physics`, optional) needs Python 3.10-3.12 (flygym 1.2.1 does not install
+on 3.13 or newer) and about 680 MB of packages; in a virtual environment made with such a Python:
+`py -m pip install -e ".[physics]"`, then `py -m pip install --no-deps flygym==1.2.1`
+(docs/SCIENCE.md section 6.7).
 
 **If something goes wrong**
 
 | Problem | Fix |
 |---|---|
 | `'py' is not recognized` | Python isn't on PATH: re-run the installer and tick "Add python.exe to PATH" (or use `python`). |
+| `error: externally-managed-environment` | Your system's Python (Ubuntu 23.04+, Debian 12+, Homebrew) installs packages only into a virtual environment: make and activate one as in step 3 (if `python3 -m venv` says ensurepip is not available: `sudo apt install python3-venv`). |
+| `No module named 'numpy'` | The virtual environment isn't active in this terminal: in the `FruitFly` folder run `.venv\Scripts\activate` (macOS / Linux: `. .venv/bin/activate`), or install NumPy as in step 3 if you haven't. |
 | Download fails with a certificate error (macOS) | Run "Install Certificates.command" in your Python folder in Applications. |
-| Download blocked by a firewall | Download [the file](https://raw.githubusercontent.com/blendi-remade/fly-brain-minecraft/6cfa30175003ef25da68a237d5eda958f8047b82/src/main/resources/connectome/malecns-v1.0.flyb.gz) in your browser and put it in `data/`. |
+| Download blocked by a firewall | Download [the file](https://raw.githubusercontent.com/blendi-remade/fly-brain-minecraft/6cfa30175003ef25da68a237d5eda958f8047b82/src/main/resources/connectome/malecns-v1.0.flyb.gz) in your browser and put it in `data/` as it is (named `malecns-v1.0.flyb.gz`, not unpacked); the error message gives the exact path. |
 | "Could not find a free port" | `py fly_game.py --port 9000` |
 | The game says it's running below real time | Your computer is simulating 176k neurons slower than real time; the fly's world slows down to keep up. First make sure numba is installed (`py -m pip install numba`; the terminal says "Brain integrator: compiled (numba)" at start-up): with it, a 4-core laptop-class machine manages about 1.5x real time with a busy brain, without it about 0.7x. Then close other programs, or start it with `py fly_game.py --fast` (a 1 ms time step, about twice as fast again; every classic experiment still passes). |
 | The 3-D brain map goes dark while its yaw counter keeps ticking | Your browser took the graphics (WebGL) context away, for instance after a GPU driver reset, sleep and resume, or too many WebGL tabs (Firefox drops the least recently used one past 16). The page now asks for it back and redraws the map when it returns, and says "graphics reset, restoring…" in the map meanwhile; if it says to reload, reload the tab. A flat map with the note that WebGL is unavailable means the browser refused WebGL altogether (check its graphics settings). |
@@ -363,9 +382,9 @@ These are the things the critics point at, so it's worth knowing them:
 - **The odour code is odd in places.** Kenyon-cell subtypes are recruited unlike real flies (γ-main
   cells hardly at all), single glomeruli barely reach the mushroom body, and an odour leaves the
   central-complex heading circuit ringing for a second or two after it stops.
-- **The body is a drawing** unless you ask for the optional physics body (`--body physics`: NeuroMechFly v2
-  legs in MuJoCo, about a tenth of real time; docs/SCIENCE.md section 6.7). The drawn body's speeds and
-  turn rates are chosen by hand.
+- **The body is a drawing** unless you ask for the optional physics body (`--body physics`, Python 3.10-3.12
+  only: NeuroMechFly v2 legs in MuJoCo, about a tenth of real time; docs/SCIENCE.md section 6.7). The drawn
+  body's speeds and turn rates are chosen by hand.
   The decoder's weights are hand-chosen too, but it measures and shows which motor pools each
   descending neuron reaches in the wiring.
 - **No hormones, no electrical synapses, no development,** one fly's brain, one seed unless you ask

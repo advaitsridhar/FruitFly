@@ -109,7 +109,20 @@ gathers and scatters cost more than the dense passes they save.
   A multi-threaded version of the dense pass was 1.3x faster on an idle machine and ten times
   slower with one other busy process on the box, so the kernel is single-threaded on purpose.
   The busy game tick (sugar, female, drum) went from 34 to 17 ms (1.5x real time) at `dt` 0.5 and
-  from 20 to 9 ms (2.7x) at `dt` 1.0.
+  from 20 to 9 ms (2.7x) at `dt` 1.0. Per experiment it is about twice as fast too (v2.8.1:
+  `fly_brain.py --profile game --only Sugar --backend numpy` or `numba`, real male connectome, five
+  seeds, `dt` 0.5 ms; Python 3.11, NumPy 2.4.6, numba 0.67; a 4-core 2.1 GHz Xeon shared with another
+  job, load average 0.4-1.7; three runs of each, every table identical between the two):
+
+  | wall time (five seeds) | NumPy | compiled | factor |
+  |---|---|---|---|
+  | Sugar on the mouthparts | 6.2 s (all three runs) | 3.1 s (all three) | 2.0x |
+  | Sugar + bitter together | 4.2-4.4 s | 2.3-2.5 s | 1.8x |
+  | Sugar on the mouthparts, fruitless neurons silenced | 4.5-4.7 s | 2.4-2.6 s | 1.9x |
+  | the whole command, loading included | 15.8-16.9 s | 9.2 s | 1.8x |
+
+  `fly_brain.py` names the integrator in its "Running the validated experiments" line and the game in
+  its "Brain integrator" line at start-up.
 * Every 20 steps, `v` and `g` values below 1 nV (`FLUSH_MV` = 1e-6 mV, seven million times below
   threshold) are snapped to 0. Without this, values decaying for hundreds of milliseconds drift into the float32 denormal
   range and the CPU slows every array operation several-fold: a busy game brain went from 76 ms
@@ -1164,8 +1177,8 @@ would ship as a separate profile judged by the validated experiments.
 ### 6.7 An optional physics body: NeuroMechFly v2 (v2.8)
 
 `--body physics` swaps the drawn body for NeuroMechFly v2 (Wang-Chen et al. 2024) in MuJoCo, through
-the `flygym` package (`virtual_fly/physics.py`; `pip install -e ".[physics]"`, then
-`pip install --no-deps flygym==1.2.1`). The decoder is
+the `flygym` package (`virtual_fly/physics.py`; Python 3.10-3.12, installed as at the end of this
+section). The decoder is
 unchanged; its drives become flygym's two-sided descending signal, one stepping amplitude per body
 side (sign = stepping direction), with flygym's published steering constants: the inner side
 x (1 - 0.6|s|), the outer side x (1 + 0.2|s|). These are the two steering gestures Yang et al. (2024)
@@ -1222,6 +1235,20 @@ Cost: about a tenth of real time, about 0.45 GB more memory and about 680 MB of 
 is needed (MUJOCO_GL=disable); rendering video needs EGL, OSMesa or a display. The drawn body is
 unchanged and bit-identical with or without flygym installed. The physics body runs on the female fly
 too (section 9.5).
+
+Install. The physics body needs Python 3.10-3.12: flygym 1.2.1 requires Python below 3.13, dm_tree 0.1.8
+and labmaze (which dm_control needs) have no wheels for 3.13, and mujoco 3.2.7 has none for 3.14. In the
+kit's folder, with its virtual environment active (README, Setup, step 3; `python --version` must say
+3.10-3.12, else make the environment again with such a Python, e.g. `python3.12 -m venv --clear .venv`):
+
+```
+python -m pip install -e ".[physics]"            # the kit, MuJoCo, dm_control, numba and the rest
+python -m pip install --no-deps flygym==1.2.1
+```
+
+flygym goes in without its dependencies because its own list pins numba 0.60 and pulls in Jupyter; it
+imports numba all the same, so the `physics` extra includes numba (0.67 works). When the body cannot
+start, `--body physics` prints these steps and the import that failed.
 
 ## 7. The genome as a wiring recipe (v2.3)
 
