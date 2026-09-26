@@ -247,8 +247,68 @@ def test_command_names_the_program_the_way_it_was_started(monkeypatch):
     from virtual_fly import connectome
     monkeypatch.setattr(connectome, "INSTALLED", False)
     monkeypatch.setattr("sys.argv", ["fly_brain.py"])
-    assert connectome.command("fly_game.py") == "python fly_game.py"
+    monkeypatch.setattr("sys.platform", "linux")
+    assert connectome.command("fly_game.py") == "python3 fly_game.py"             # what the README has you type
+    monkeypatch.setattr("sys.platform", "darwin")
+    assert connectome.command("fly_brain.py") == "python3 fly_brain.py"
+    monkeypatch.setattr("sys.platform", "win32")
+    assert connectome.command("fly_game.py") == "py fly_game.py"
+    # an editable install started as either console script names the other one's console script too
     monkeypatch.setattr("sys.argv", ["/venv/bin/fly-brain"])
+    assert connectome.command("fly_brain.py") == "fly-brain" and connectome.command("fly_game.py") == "fly-game"
+    monkeypatch.setattr("sys.argv", ["/venv/Scripts/fly-game.exe"])                # Windows' launcher
     assert connectome.command("fly_brain.py") == "fly-brain"
+    monkeypatch.setattr("sys.argv", ["fly_game.py"])
     monkeypatch.setattr(connectome, "INSTALLED", True)
     assert connectome.command("fly_game.py") == "fly-game"
+
+
+# ------------------------------------------------------------------ a file that cannot be read
+def _flyb_variants(synthetic_path, tmp_path):
+    """(file, what the message says is wrong with it) for the ways a connectome file goes bad."""
+    good = synthetic_path.read_bytes()
+    cut = tmp_path / "cut.flyb.gz"
+    cut.write_bytes(good[:len(good) // 2])                                        # a copy cut short
+    html = tmp_path / "page.flyb.gz"
+    html.write_bytes(b"<html>blocked by a firewall</html>")                      # a proxy's page saved as the file
+    unpacked = tmp_path / "unpacked.flyb.gz"
+    unpacked.write_bytes(gzip.decompress(good))                                  # unpacked, but still named .gz
+    other = tmp_path / "other.flyb.gz"
+    other.write_bytes(gzip.compress(b"hello, not a fly"))
+    return [(cut, "it is cut short"), (html, "it is not gzipped"), (unpacked, "it is not gzipped"),
+            (other, "it is not a FLYB connectome file")]
+
+
+def test_a_damaged_file_is_one_line_that_says_what_to_do(synthetic_path, tmp_path, monkeypatch):
+    import virtual_fly.connectome as C
+    for path, why in _flyb_variants(synthetic_path, tmp_path):
+        with pytest.raises(SystemExit) as e:                                      # given explicitly
+            load_connectome(path, quiet=True)
+        assert str(e.value) == f"The connectome file {path} can't be read ({why}): give an intact .flyb.gz file."
+        monkeypatch.setenv("FLY_DATA_FILE", str(path))                           # named by FLY_DATA_FILE
+        monkeypatch.setattr(C, "DATA_FILE", path)
+        with pytest.raises(SystemExit) as e:
+            load_connectome(quiet=True)
+        assert f"{path} (FLY_DATA_FILE) can't be read ({why}). Point FLY_DATA_FILE at an intact" in str(e.value)
+        assert "\n" not in str(e.value)
+    monkeypatch.setattr(C, "DATA_FILE", tmp_path / "missing.flyb.gz")
+    monkeypatch.setenv("FLY_DATA_FILE", str(tmp_path / "missing.flyb.gz"))
+    with pytest.raises(SystemExit, match="There is no connectome file at .*missing.flyb.gz .FLY_DATA_FILE names it"):
+        load_connectome(quiet=True)
+
+
+def test_a_damaged_female_file_says_delete_it_and_run_again(synthetic_path, tmp_path, monkeypatch):
+    from virtual_fly import flywire
+    monkeypatch.setattr(flywire, "SOURCE_DIR", tmp_path / "flywire-src")
+    build = flywire.BUILD
+    for path, why in _flyb_variants(synthetic_path, tmp_path):
+        # a gzipped header is read (and taken as new enough here), so loading the file finds the damage; a file that
+        # is not gzipped fails on its header, before anything is rebuilt
+        monkeypatch.setattr(flywire, "BUILD", 0 if why in ("it is cut short", "it is not a FLYB connectome file") else build)
+        monkeypatch.setattr(flywire, "FEMALE_FILE", path)
+        monkeypatch.setattr(flywire, "build_female", lambda quiet=False: pytest.fail("rebuilt over a damaged file"))
+        with pytest.raises(SystemExit) as e:
+            load_connectome(female=True, quiet=True)
+        assert str(e.value) == (f"The female fly's file {path} is damaged ({why}). Delete it and run again: it is rebuilt "
+                                f"from FlyWire's files in {tmp_path / 'flywire-src'} (downloaded again if they are gone).")
+        assert path.exists()                                                      # nothing is deleted for you

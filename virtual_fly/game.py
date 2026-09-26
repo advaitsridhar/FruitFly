@@ -46,6 +46,7 @@ from .world import ARENA_R, FLY_HALF, World, wrap
 
 TICK_MS = 25.0          # brain time simulated per world update
 GF_BURST = 5            # live giant-fibre spikes over two ticks that start an escape jump (hand-built, see choose_mode)
+STILL_TICKS = 8         # a walk still for this many ticks (0.2 s) is shown as resting
 
 # ----------------------------------------------------------------------------------------------
 # Readouts: neurons we listen to (rates in Hz each tick). Sent to the browser as the panel layout.
@@ -130,19 +131,24 @@ ZAP_PRESETS = [
     ("T4a/R,T5a/R", 60, "T4a/T5a right: front-to-back motion on the right eye (optomotor)"),
 ]
 
-# The action types the API takes (docs/API.md), each with the numbers it reads: {field: (int or float, required)}.
-# Game.action converts them before the action is queued, so a bad or missing field gets {"ok": false, "error": ...}.
+# The action types the API takes (docs/API.md), each with the numbers and switches it reads: {field: (int, float or
+# bool, required)}. Game.action converts the numbers and checks that a switch is a JSON true or false before the
+# action is queued, so a bad or missing field gets {"ok": false, "error": ...}.
 ACTIONS = {
     "hand": {"x": (float, True), "y": (float, True)}, "hand_off": {}, "tool": {},
     "drop": {"x": (float, True), "y": (float, True), "r": (float, False)}, "remove": {"id": (int, True)},
     "dust": {"x": (float, False), "y": (float, False)}, "shock": {"secs": (float, False)}, "sound": {"secs": (float, False)},
     "stripes": {"count": (int, False), "drum_speed": (float, False)}, "zap": {"hz": (float, False), "secs": (float, False)},
     "silence": {}, "unsilence": {}, "modulate": {"factor": (float, False)}, "watch": {}, "unwatch": {}, "grow": {},
-    "parts": {}, "clear": {}, "reset": {}, "calm": {}, "autopilot": {}, "pause": {}, "speed": {"value": (float, False)},
-    "wind": {"angle": (float, False), "speed": (float, False)}, "female": {"x": (float, False), "y": (float, False)},
-    "learning": {}, "scenario": {}, "record": {}, "state": {"hunger": (float, False), "thirst": (float, False)},
+    "parts": {}, "clear": {}, "reset": {}, "calm": {}, "autopilot": {"on": (bool, False)}, "pause": {"on": (bool, False)},
+    "speed": {"value": (float, False)}, "wind": {"angle": (float, False), "speed": (float, False)},
+    "female": {"x": (float, False), "y": (float, False), "on": (bool, False)},
+    "learning": {"on": (bool, False), "forget": (bool, False)}, "scenario": {},
+    "record": {"on": (bool, False), "spikes": (bool, False)}, "state": {"hunger": (float, False), "thirst": (float, False)},
     "place_fly": {"x": (float, True), "y": (float, True), "h": (float, False)},
 }
+# the tools the page offers (and "none", which scenarios use): the "tool" action takes these and the odour ids
+TOOLS = ("lure", "hand", "sugar", "bitter", "water", "dust", "shock", "post", "none")
 
 CHECKS = [
     ("feed", "Feed it: drop sugar in its path → MN9 fires, the proboscis comes out"),
@@ -344,6 +350,7 @@ class Game:
         self.record_spikes = False
         self.learning_on = brain.plasticity is not None
         self.lock = threading.RLock()
+        self.stop_loop = threading.Event()               # set: loop() returns after the tick it is in
         self.subscribers: list[queue.Queue] = []
         self.done: set[str] = set()                      # the checklist: kept when the player asks for a new fly
         self.reset_world(first=True)
@@ -377,6 +384,7 @@ class Game:
         self.driver = ""
         self.gf_cooldown = 0.0
         self.gf_prev = 0                   # live giant-fibre spikes in the last tick (a jump needs a burst)
+        self.still_ticks = STILL_TICKS     # ticks the body has not moved (a new fly starts at rest)
         self.turn_command = 0.0            # last tick's commanded yaw (efference copy for the eyes)
         self.court_left = 0.0              # seconds of pC1 drive left after tapping the female
         self.sound_left = 0.0
@@ -615,17 +623,27 @@ class Game:
                     return {"ok": False, "error": f"'{kind}' needs '{f}' (a number)"}
                 a.pop(f, None)                               # null: the default
                 continue
+            if num is bool:                                  # a switch: true or false, not "false" (which bool() reads as on)
+                if not isinstance(a[f], bool):
+                    return {"ok": False, "error": f"'{f}' must be true or false, not {a[f]!r}"}
+                continue
             try:
                 a[f] = num(a[f])
             except (TypeError, ValueError):
                 return {"ok": False, "error": f"'{f}' must be {'a whole number' if num is int else 'a number'}, not {a[f]!r}"}
             if not math.isfinite(a[f]):
                 return {"ok": False, "error": f"'{f}' must be a finite number"}
-            if (f == "secs" and a[f] <= 0) or (f in ("hz", "factor", "r") and a[f] < 0):
-                return {"ok": False, "error": f"'{f}' must be {'more than 0' if f == 'secs' else '0 or more'}"}
+            positive = f == "secs" or (f == "r" and a.get("kind") == "post")       # a post needs a size
+            if (positive and a[f] <= 0) or (f in ("hz", "factor", "r") and a[f] < 0):
+                return {"ok": False, "error": f"'{f}' must be {'more than 0' if positive else '0 or more'}"}
         if kind == "hand":                                   # pointer moves: just remember it
             self.world.hand = (a["x"], a["y"])
             return {"ok": True}
+        if kind == "tool":
+            if a.get("tool") is None:
+                a.pop("tool", None)                          # null: the default (the lure)
+            elif not isinstance(a["tool"], str) or (a["tool"] not in TOOLS and a["tool"] not in ODOURS):
+                return {"ok": False, "error": f"unknown tool {a['tool']!r}: {', '.join(TOOLS)} or an odour ({', '.join(ODOURS)})"}
         if kind == "drop":
             what = a.get("kind")
             if not isinstance(what, str) or (what not in ("sugar", "bitter", "water", "post") and what not in ODOURS):
@@ -664,6 +682,8 @@ class Game:
             a["key"] = key
         if kind == "unwatch" and a.get("key") not in self.custom_readouts:
             return {"ok": False, "error": f"'{a.get('key')}' is not a custom watch."}
+        if kind == "scenario" and a.get("id") is not None and not isinstance(a["id"], str):
+            return {"ok": False, "error": f"'id' must be a scenario id ({', '.join(SCENARIOS)}), not {a['id']!r}"}
         if kind == "scenario" and a.get("id") and a["id"] not in SCENARIOS:
             return {"ok": False, "error": f"unknown scenario {a['id']}"}
         if kind == "grow":
@@ -673,7 +693,7 @@ class Game:
             if self.genome["growing"]:
                 return {"ok": False, "error": "a fly is already being grown; wait for it"}
             try:
-                a["level"], a["seed"] = level, int(a.get("seed", 1))
+                a["level"], a["seed"] = level, 1 if a.get("seed") is None else int(a["seed"])    # null: the default
             except (TypeError, ValueError):
                 return {"ok": False, "error": "seed must be a whole number"}
             self.genome.update(growing={"level": level, "seed": a["seed"], "t0": time.time()}, error=None)   # claimed now, one at a time
@@ -1079,8 +1099,12 @@ class Game:
             drive["abdomen"] = 1.0 if (m["court"] > 0.5 and d < 6.0) else 0.0
         self.body.move(dt, mode, drive, wander_yaw)
         self.turn_command = wander_yaw if mode in ("walk", "court") else 0.0   # voluntary part only
-        if mode == "walk" and abs(self.body.pose.v) < 0.05 and abs(self.body.pose.w) < 0.05:
-            mode = self.body.pose.mode = "idle"      # nothing moves the legs: say "resting", not "walking"
+        # nothing moves the legs: say "resting", not "walking". Only once the fly has stayed still for STILL_TICKS, since
+        # the physics body's measured speed dips near zero for a tick or two within a stride
+        still = abs(self.body.pose.v) < 0.05 and abs(self.body.pose.w) < 0.05
+        self.still_ticks = self.still_ticks + 1 if still else 0
+        if mode == "walk" and self.still_ticks >= STILL_TICKS:
+            mode = self.body.pose.mode = "idle"
         self.mode = mode
         # eating, drinking, grooming bookkeeping
         self.eating = self.drinking = 0.0
@@ -1139,7 +1163,10 @@ class Game:
         if "taste_water" in self.senses_now and mode != "feed":   # water never reaches MN9 here: say so, add no drive
             why.append("touches water, but this fly's data name no water cells" if not self.water_cells else
                        "touches water, but is not thirsty" if self.state.thirst <= 0.2 else
-                       "tastes water (LB3a), but in this wiring the water cells do not reach MN9: it does not drink")
+                       "tastes water (LB3a), but in this wiring the water cells do not reach MN9: it does not drink"
+                       if getattr(self.real_conn, "sex", "male") != "female" else      # as her What's real says
+                       "tastes water (the published model's water cells), but at the game's rates they do not reach MN9: "
+                       "it does not drink")
         self.driver = "  +  ".join(why)
         if not self.driver:
             self.driver = ("nothing: the brain is quiet" if not spikes.size else
@@ -1245,7 +1272,8 @@ class Game:
             self.subscribers.remove(q)
 
     def loop(self):
-        while True:
+        """Tick in real time (scaled by ``speed``) until :attr:`stop_loop` is set (server.serve sets it after Ctrl+C)."""
+        while not self.stop_loop.is_set():
             t0 = time.perf_counter()
             if self.paused:
                 self._apply_actions()

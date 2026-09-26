@@ -345,11 +345,11 @@ def female(conn, monkeypatch):
 
 
 def test_hints_stay_on_the_female_fly(capsys, female):
-    with pytest.raises(SystemExit, match="No neurons match 'pIP11' in the female fly.*python fly_brain.py --female --find pIP11"):
+    with pytest.raises(SystemExit, match=f"No neurons match 'pIP11' in the female fly.*{cli.command('fly_brain.py')} --female --find pIP11"):
         main(["--female", "--stim", "pIP11:60"])
     main(["--female", "--only", "silence", "--seeds", "1"])
     out = capsys.readouterr().out
-    assert "Try the game's settings: python fly_brain.py --profile game --female" in out and "Then play: python fly_game.py --female" in out
+    assert f"Try the game's settings: {cli.command('fly_brain.py')} --profile game --female" in out and f"Then play: {cli.command('fly_game.py')} --female" in out
     with pytest.raises(SystemExit, match="not available for the female fly"):     # refused before the name is looked up
         main(["--female", "--lines", "pIP11"])
 

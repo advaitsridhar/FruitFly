@@ -27,11 +27,13 @@ engine, a notebook, a robot) can drive the fly:
 
 from __future__ import annotations
 
+import errno
 import gzip
 import io
 import json
 import mimetypes
 import queue
+import socket
 import threading
 import time
 import urllib.parse
@@ -301,13 +303,15 @@ def serve(game, port: int = 8765, open_browser: bool = True, host: str = "127.0.
             server = ThreadingHTTPServer((host, p), make_handler(game))
             break
         except OSError as e:
+            if isinstance(e, socket.gaierror) or e.errno == errno.EADDRNOTAVAIL:   # the address, not the port: no port helps
+                raise SystemExit(f"Could not listen on {host}: it is not one of this computer's addresses ({e}). "
+                                 f"Leave out --host to use this computer only: {_command('fly_game.py')}")
             err = e
     if server is None:
         other = 9000 if not port <= 9000 <= last else 8000             # a range that was not just tried
         raise SystemExit(f"Could not find a free port on {host} from {port} to {last}" + (f" ({err})" if err else "")
                          + f". Try another one: {_command('fly_game.py')} --port {other}")
     server.daemon_threads = True
-    threading.Thread(target=game.loop, daemon=True).start()
     everywhere = host in ("0.0.0.0", "", "::")
     url = f"http://{'127.0.0.1' if everywhere else host}:{server.server_address[1]}/"
     print(f"\nThe fly is alive at {url}\n(keep this window open; press Ctrl+C here to quit)\n")
@@ -316,8 +320,16 @@ def serve(game, port: int = 8765, open_browser: bool = True, host: str = "127.0.
               f"http://<this computer's address>:{server.server_address[1]}/ and drive the fly (there is no password).\n")
     if open_browser:
         webbrowser.open(url)
+    loop = threading.Thread(target=game.loop, daemon=True)
+    loop.start()
     try:
         server.serve_forever()
     except KeyboardInterrupt:
         print("Bye!")
+    finally:
+        # let the game loop finish its tick and stop before Python shuts down: a thread still inside MuJoCo (the physics
+        # body) while the interpreter tears down crashes the process
+        game.stop_loop.set()
+        loop.join(timeout=10)
+        server.server_close()
     return server

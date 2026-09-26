@@ -57,7 +57,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .connectome import DATA_DIR
+from .connectome import DATA_DIR, data_folder
 
 FEMALE_FILE = DATA_DIR / "flywire-v783.flyb.gz"
 BUILD = 6                             # bump when the builder changes what goes in the file: older files are rebuilt
@@ -143,8 +143,7 @@ def _sha256(path: Path) -> str:
 
 def download_sources(src_dir: Path | str = SOURCE_DIR, quiet: bool = False) -> dict[str, Path]:
     """Fetch the two source files (once) and check them."""
-    src_dir = Path(src_dir)
-    src_dir.mkdir(parents=True, exist_ok=True)
+    src_dir = data_folder(src_dir)
     out = {}
     for key, s in SOURCES.items():
         path = src_dir / s["file"]
@@ -328,7 +327,7 @@ def write_flyb(path: Path | str, rows: list[dict], pre_root, post_root, n_syn, m
               post.astype("<i4"), syn]
     parts.extend(a.tobytes() for a in arrays)
     path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
+    data_folder(path.parent)
     tmp = path.with_suffix(path.suffix + ".part")
     try:
         with gzip.open(tmp, "wb", compresslevel=6) as f:
