@@ -27,6 +27,7 @@ import re
 import struct
 import sys
 import tempfile
+import threading
 import time
 import urllib.request
 import zlib
@@ -218,7 +219,7 @@ class Connectome:
         self.aliases: dict[str, str] = dict(self.meta.get("aliases") or {})
         self._by_type = None
         self._cache: dict[str, np.ndarray] = {}
-        self._resolving: set[str] = set()
+        self._resolving = threading.local()     # the aliases each thread is resolving now (see _alias)
         self._col = None
         self._type_graph = None
 
@@ -241,7 +242,7 @@ class Connectome:
         c.meta = dict(self.meta, rewired=label)
         c._by_type = self._by_type            # depends only on the types: safe to share
         c._cache = dict(self._cache)          # population selections depend only on the annotations
-        c._resolving = set()
+        c._resolving = threading.local()
         c._col = None
         c._type_graph = None
         return c
@@ -311,13 +312,12 @@ class Connectome:
         if hit is not None:
             return hit
         self._index_types()
+        refused = self._guard().refused
         exact = self._exact_type(spec.strip())        # 70 type names contain ',' or '&': try whole first
         if exact is None:
             exact = self._alias(spec.strip())
         if exact is not None:
-            result = np.flatnonzero(exact).astype(np.int64)
-            self._cache[key] = result
-            return result
+            return self._remember(key, np.flatnonzero(exact).astype(np.int64), refused)
         keep, drop = [], []
         for term in (s.strip() for s in spec.split(",")):
             if not term:
@@ -339,7 +339,22 @@ class Connectome:
             for d in drop:
                 mask &= ~d
             result = np.flatnonzero(mask).astype(np.int64)
-        self._cache[key] = result
+        return self._remember(key, result, refused)
+
+    def _guard(self):
+        """This thread's recursion guard for aliases: the names it is resolving now (``terms``) and how many times it
+        has refused one that led back to itself (``refused``). Kept per thread: the game's HTTP threads select (find_types,
+        for /api/types) while its loop does, and one thread must not see another's names as a loop."""
+        guard = self._resolving
+        if not hasattr(guard, "terms"):
+            guard.terms, guard.refused = set(), 0
+        return guard
+
+    def _remember(self, key, result: np.ndarray, refused: int) -> np.ndarray:
+        """Cache a selection, unless the guard refused an alias while it was being worked out: that answer depends on
+        what this thread was resolving at the time, and the next select() of the same spec must work it out afresh."""
+        if self._guard().refused == refused:
+            self._cache[key] = result
         return result
 
     def terms(self, spec: str) -> list[str]:
@@ -403,14 +418,18 @@ class Connectome:
         target, side = self.aliases.get(term), None
         if target is None and len(term) > 2 and term[-2] == "/" and term[-1] in "LRM":
             target, side = self.aliases.get(term[:-2]), term[-1]
-        if target is None or term in self._resolving:
+        if target is None:
             return None
-        self._resolving.add(term)
+        guard = self._guard()
+        if term in guard.terms:                  # an alias that leads back to itself: not an alias here
+            guard.refused += 1
+            return None
+        guard.terms.add(term)
         try:
             mask = np.zeros(self.n, dtype=bool)
             mask[self.select(target)] = True
         finally:
-            self._resolving.discard(term)
+            guard.terms.discard(term)
         if side is not None:
             mask &= self.side == side
         return mask

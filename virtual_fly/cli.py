@@ -452,11 +452,17 @@ def _main(argv=None):
     if args.json:
         E.save_json(results, args.json, brain)
         print(f"wrote {args.json}")
+    parts_on = args.parts or args.part or args.curated or args.no_receptor_signs or args.global_apl or args.one_sign_rule
     same_fly = ((" --female" if args.female else "") + (f" --grow {args.grow}" if args.grow else "")
-                + (f" --grow-seed {args.grow_seed}" if args.grow and args.grow_seed != 1 else ""))
+                + (f" --grow-seed {args.grow_seed}" if args.grow and args.grow_seed != 1 else "")
+                + (" --parts" if parts_on else "") + (f" --curated {args.curated}" if args.curated not in (None, "modulators") else ""))
+    brain_only = [o for o, on in (("--part", args.part), ("--no-receptor-signs", args.no_receptor_signs),
+                                  ("--one-sign-rule", args.one_sign_rule), ("--global-apl", args.global_apl)) if on]
     if args.profile == "pure":
-        print(f"Try the game's settings: {command('fly_brain.py')} --profile game" + same_fly)
-    print(f"Then play: {command('fly_game.py')}" + same_fly)
+        print(f"Try the game's settings: {command('fly_brain.py')} --profile game" + same_fly
+              + "".join(f' --part "{p}"' for p in args.part) + "".join(f" {o}" for o in brain_only if o != "--part"))
+    print(f"Then play: {command('fly_game.py')}" + same_fly
+          + (f" (without {', '.join(brain_only)}, which the game does not take)" if brain_only else ""))
 
 
 def _usage_error(ap, message):

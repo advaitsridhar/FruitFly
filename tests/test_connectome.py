@@ -1,6 +1,7 @@
 """Connectome loading, population specs, partner summaries and the cell-type graph."""
 
 import gzip
+import threading
 
 import numpy as np
 import pytest
@@ -154,6 +155,38 @@ def test_find_types_lists_the_aliases(conn):
     c.aliases = {"MN9x": "MN9", "prefix:MN9y": "MN9", "MN9": "GNG232", "NOPEx": "NOPE"}
     assert c.find_types("mn9") == [("MN9", 2), ("MN9x", 2)]       # a real type wins; spec aliases and empty ones are left out
     assert c.find_types("9x") == [("MN9x", 2)] and conn.find_types("mn9") == [("MN9", 2)]
+
+
+def test_an_alias_resolves_in_two_threads_at_once(conn, monkeypatch):
+    """The game's HTTP threads resolve aliases (find_types, for /api/types) while its loop does: an alias one thread is
+    resolving is no loop for another, and a selection worked out while the loop guard refused an alias is not kept."""
+    c = conn.rewired(conn.row_ptr, conn.post_idx, conn.n_syn, label="aliased")
+    c.aliases, c._cache = {"MN9x": "prefix:MN9"}, {}
+    inside, carry_on, match = threading.Event(), threading.Event(), c._match
+
+    def slow(part):                                  # the game loop's thread stops halfway through resolving MN9x
+        if part == "prefix:MN9" and threading.current_thread().name == "loop":
+            inside.set()
+            carry_on.wait(10)
+        return match(part)
+    monkeypatch.setattr(c, "_match", slow)
+    got = {}
+    loop = threading.Thread(target=lambda: got.update(loop=c.select("MN9x").size), name="loop")
+    loop.start()
+    assert inside.wait(10)
+    assert c.find_types("mn9x") == [("MN9x", 2)] and c.select("MN9x").size == 2     # an HTTP thread, meanwhile
+    carry_on.set()
+    loop.join(10)
+    assert got == {"loop": 2} and c._cache["MN9x"].size == 2
+    guard = c._guard()                               # this thread halfway through MN9x: the guard refuses it again ...
+    guard.terms.add("MN9x")
+    c._cache.clear()
+    try:
+        assert c.select("MN9x").size == 0 and c.select("MN9x,MN9").size == 2
+    finally:
+        guard.terms.discard("MN9x")
+    assert "MN9x" not in c._cache and "MN9x,MN9" not in c._cache        # ... and what it gave then was not kept
+    assert c.select("MN9x").size == 2 and c._cache["MN9x"].size == 2
 
 
 def test_describe_and_info(conn):

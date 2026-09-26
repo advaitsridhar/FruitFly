@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from .body import FlyBody, JUMP_TIME
+from .body import FlyBody, JUMP_TIME, WALK_SPEED
 from .brain import FlyBrain
 from .plasticity import APPROACH_NTS, AVOID_NTS
 from . import genetics
@@ -179,8 +179,9 @@ def n01(r: float, top: float) -> float:
 class InternalState:
     """Hand-built drives. Hunger rises with time and falls when the fly eats; it sharpens the sugar
     sense (as dopamine/NPF do in real flies) and makes the fly explore more. Thirst sets how strongly
-    the water cells fire and would fall as it drinks, but in this wiring water does not reach MN9, so
-    the fly never drinks (senses/taste.py). Arousal rises with courtship activity."""
+    the water cells fire and falls as it drinks, but in this wiring the fly never drinks by itself: water
+    alone does not reach MN9 (senses/taste.py; zapping MN9 on a water drop does make it drink). Arousal
+    rises with courtship activity."""
     hunger: float = 0.7
     thirst: float = 0.3
     arousal: float = 0.0
@@ -313,7 +314,9 @@ class Game:
         self.columnar_on = self.retina.columnar is not None
         self.nose = Nose(self.world)
         self.mouth = Mouth(self.world)
-        self.water_cells = int(sum(self.conn.select(s).size for s in WATER_GRNS))   # none in the female file (LB3)
+        # in the female file LB3a is an alias for the published model's 18 water cells (FlyWire's types do not split
+        # sugar from water)
+        self.water_cells = int(sum(self.conn.select(s).size for s in WATER_GRNS))
         self.forelegs = Forelegs(self.world, PHEROMONE_GRNS)
         self.antennae = Antennae(self.world)
         self.bristles = Bristles(self.world)
@@ -627,6 +630,8 @@ class Game:
                 if not isinstance(a[f], bool):
                     return {"ok": False, "error": f"'{f}' must be true or false, not {a[f]!r}"}
                 continue
+            if isinstance(a[f], float) and not math.isfinite(a[f]):   # before int(), which cannot take Infinity (or 1e400)
+                return {"ok": False, "error": f"'{f}' must be a finite number"}
             try:
                 a[f] = num(a[f])
             except (TypeError, ValueError):
@@ -1099,9 +1104,14 @@ class Game:
             drive["abdomen"] = 1.0 if (m["court"] > 0.5 and d < 6.0) else 0.0
         self.body.move(dt, mode, drive, wander_yaw)
         self.turn_command = wander_yaw if mode in ("walk", "court") else 0.0   # voluntary part only
-        # nothing moves the legs: say "resting", not "walking". Only once the fly has stayed still for STILL_TICKS, since
-        # the physics body's measured speed dips near zero for a tick or two within a stride
-        still = abs(self.body.pose.v) < 0.05 and abs(self.body.pose.w) < 0.05
+        # nothing moves the legs: say "resting", not "walking". The drawn body is judged by how it moves; the physics body
+        # by what it is told to do (its stepping drive, as a speed against the same 0.05 mm/s), since MuJoCo's thorax
+        # jitters faster than that while the fly stands. Only once it has stayed still for STILL_TICKS, so that a
+        # one-tick lull does not blink 'resting'
+        if self.body_kind == "physics":
+            still = max(abs(d) for d in self.body.drive_lr) * WALK_SPEED < 0.05
+        else:
+            still = abs(self.body.pose.v) < 0.05 and abs(self.body.pose.w) < 0.05
         self.still_ticks = self.still_ticks + 1 if still else 0
         if mode == "walk" and self.still_ticks >= STILL_TICKS:
             mode = self.body.pose.mode = "idle"
@@ -1335,7 +1345,8 @@ class Game:
                        and not (c.sex == "female" and i in ("groom", "sound", "wall"))],
             "odours": [{"id": o.id, "name": o.name, "glomeruli": o.glomeruli, "innate": o.innate, "colour": o.colour,
                         "note": o.note} for o in ODOURS.values()],
-            "scenarios": [{"id": k, "name": s.name, "description": s.description} for k, s in SCENARIOS.items()],
+            "scenarios": [{"id": k, "name": s.name, "description": s.female if c.sex == "female" and s.female else s.description}
+                          for k, s in SCENARIOS.items()],
             "retina": self.retina.layout(),
             "profile": self.profile_name,
             "genetics": self.genetics,
@@ -1368,8 +1379,9 @@ class Game:
                   "Water taste cells (the published model's 18 water cells) → Fudog (DNg67); at the game's 80 Hz not MN9, "
                   "so a thirsty fly tastes water but does not drink (at 200 Hz they do reach MN9: docs/SCIENCE.md 2.2).")
                  if self.water_cells else
-                 "Water: this fly's data name no water taste cells (FlyWire types every labellar sugar and water cell as "
-                 "LB3), so water tastes of nothing here and she does not drink (docs/SCIENCE.md 9.2)."),
+                 "Water: this fly's data name no water taste cells (FlyWire types its labellar sugar and water cells as "
+                 "LB3 (122) and LB2d (7), without splitting them by taste), so water tastes of nothing here and she does "
+                 "not drink (docs/SCIENCE.md 9.2)."),
                 "Looming detectors (LC4, LPLC2) → giant fibre DNp01, the escape command.",
                 "A small moving object seen on one side (LC10a, a courtship-chase cell type) → DNa02 on that same side → a turn toward it.",
                 ("Head bristles → MDN, the 'moonwalker' backward-walking neurons. Antennal sensors (Johnston's organ) → "

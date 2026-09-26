@@ -93,9 +93,9 @@ VOXEL_NM = (4.0, 4.0, 40.0)                                            # FlyWire
 NT_CONF_FALLBACK = 0.5
 
 # The labellar sugar cells the published model drives (Shiu et al. 2024, figures.ipynb at the pinned commit; one
-# side). FlyWire types all 122 sugar and water cells of the labellum as LB3, where the MaleCNS splits them into
-# LB3a-d, so the kit's sugar populations (LB3b, LB3c) take these cells in the female fly. One of the 21 is not in
-# release 783.
+# side). FlyWire types the labellum's sugar and water cells as LB3 (122) and LB2d (7), without splitting them by
+# taste, where the MaleCNS splits them into LB3a-d, so the kit's sugar populations (LB3b, LB3c) take these cells in
+# the female fly. One of the 21 is not in release 783.
 SHIU_SUGAR = (720575940624963786, 720575940630233916, 720575940637568838, 720575940638202345, 720575940617000768,
               720575940630797113, 720575940632889389, 720575940621754367, 720575940621502051, 720575940640649691,
               720575940639332736, 720575940616885538, 720575940639198653, 720575940620900446, 720575940617937543,

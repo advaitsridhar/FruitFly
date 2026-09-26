@@ -20,7 +20,7 @@ classifiers = [
 [project.optional-dependencies]
 fast = ["numba>=0.59"]                 # compiled integrator: about twice as fast, identical spikes
 female = ["pyarrow>=12"]               # to build the female fly (FlyWire 783) from its connectivity table
-dev = ["pytest>=7", "playwright", "numba>=0.59"]
+dev = ["pytest>=7", "numba>=0.59"]
 # the physics body (virtual_fly/physics.py; Python 3.10-3.12 only, as flygym 1.2.1 is): these, then
 # `pip install --no-deps flygym==1.2.1` (flygym's own requirements pin numba 0.60 and pull in Jupyter; it imports
 # numba, so numba is here)

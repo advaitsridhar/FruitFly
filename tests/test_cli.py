@@ -253,6 +253,23 @@ def test_run_experiments_with_only_and_seeds(capsys, tmp_path):
     assert json.loads(out_json.read_text())["results"][0]["seeds"] == [0, 1, 2, 3, 4]
 
 
+def test_the_hints_start_the_fly_that_was_just_tested(capsys):
+    """The parts list (and a non-default curated policy) carries over to the game; what only fly_brain.py takes is named."""
+    main(["--only", "silence", "--seeds", "1", "--profile", "game", "--curated", "all"])
+    assert f"\nThen play: {cli.command('fly_game.py')} --parts --curated all\n" in capsys.readouterr().out
+    main(["--only", "silence", "--seeds", "1", "--curated", "modulators"])                   # the default policy: --parts is enough
+    out = capsys.readouterr().out
+    assert f"Try the game's settings: {cli.command('fly_brain.py')} --profile game --parts\n" in out
+    assert f"\nThen play: {cli.command('fly_game.py')} --parts\n" in out
+    main(["--only", "silence", "--seeds", "1", "--part", "class:Kenyon_Cell:theta=10", "--global-apl"])
+    out = capsys.readouterr().out
+    assert (f"Try the game's settings: {cli.command('fly_brain.py')} --profile game --parts "
+            '--part "class:Kenyon_Cell:theta=10" --global-apl\n') in out
+    assert f"\nThen play: {cli.command('fly_game.py')} --parts (without --part, --global-apl, which the game does not take)\n" in out
+    main(["--only", "silence", "--seeds", "1", "--profile", "game"])
+    assert f"\nThen play: {cli.command('fly_game.py')}\n" in capsys.readouterr().out
+
+
 def test_module_entry_points_import():
     import virtual_fly
     from virtual_fly import play
@@ -454,6 +471,9 @@ def test_python_dash_m_names_itself():
     r = subprocess.run([sys.executable, "-m", "virtual_fly", "--bogus"], capture_output=True, text=True,
                        cwd=Path(cli.__file__).resolve().parents[1])
     assert r.returncode == 2 and r.stderr.startswith("usage: python -m virtual_fly") and "python -m virtual_fly: error:" in r.stderr
+    r = subprocess.run([sys.executable, "-m", "virtual_fly.play", "--bogus"], capture_output=True, text=True,   # the game too
+                       cwd=Path(cli.__file__).resolve().parents[1])
+    assert r.returncode == 2 and r.stderr.startswith("usage: python -m virtual_fly.play") and "play.py" not in r.stderr
 
 
 def test_a_misspelt_member_of_a_union_is_named(capsys, conn):

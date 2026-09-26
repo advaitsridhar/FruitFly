@@ -45,7 +45,6 @@ import numpy as np
 
 from . import genetics, vfb, wiring
 from . import parts as partslib
-from .connectome import command as _command
 
 from .pathways import relay_ranking, strongest_partners, trace
 
@@ -305,12 +304,12 @@ def serve(game, port: int = 8765, open_browser: bool = True, host: str = "127.0.
         except OSError as e:
             if isinstance(e, socket.gaierror) or e.errno == errno.EADDRNOTAVAIL:   # the address, not the port: no port helps
                 raise SystemExit(f"Could not listen on {host}: it is not one of this computer's addresses ({e}). "
-                                 f"Leave out --host to use this computer only: {_command('fly_game.py')}")
+                                 "Leave out --host to use this computer only: run the same command without it.")
             err = e
     if server is None:
         other = 9000 if not port <= 9000 <= last else 8000             # a range that was not just tried
         raise SystemExit(f"Could not find a free port on {host} from {port} to {last}" + (f" ({err})" if err else "")
-                         + f". Try another one: {_command('fly_game.py')} --port {other}")
+                         + f". Try another one: run the same command with --port {other}")   # keeps --female, --body ...
     server.daemon_threads = True
     everywhere = host in ("0.0.0.0", "", "::")
     url = f"http://{'127.0.0.1' if everywhere else host}:{server.server_address[1]}/"

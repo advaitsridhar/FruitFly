@@ -3,12 +3,13 @@
 import base64
 import json
 import math
+import random
 import time
 
 import numpy as np
 import pytest
 
-from virtual_fly.body import JUMP_TIME
+from virtual_fly.body import JUMP_TIME, FlyBody
 from virtual_fly.game import (ACTIONS, CHECKS, GF_BURST, HIDDEN_READOUTS, READOUTS, STILL_TICKS, TICK_MS, EventLog, Game,
                                InternalState, MotorDecoder)
 from virtual_fly.scenarios import SCENARIOS
@@ -208,6 +209,31 @@ def test_a_walking_fly_reads_resting_only_once_it_has_stayed_still(game, monkeyp
     assert ticks(game, 1)["mode"] == "idle" and game.still_ticks >= STILL_TICKS
 
 
+def test_the_physics_body_rests_by_its_stepping_drive_not_its_jittering_thorax(game):
+    """MuJoCo's thorax jitters faster than 0.05 mm/s while the physics fly stands, and its measured speed can dip to
+    nothing within a stride: a physics walk reads 'resting' when its stepping drive stops, whatever the thorax does."""
+    from virtual_fly.physics import descending_drive
+    noise = random.Random(3)
+
+    class Jittery(FlyBody):                              # the physics body's interface, with a noisy measured pose
+        kind = "physics"
+
+        def move(self, dt, mode, drive, wander_yaw=0.0):
+            self.drive_lr = descending_drive(mode, drive, wander_yaw)
+            super().move(dt, mode, drive, wander_yaw)
+            self.pose.v, self.pose.w = noise.gauss(0, 0.3), noise.gauss(0, 0.2)   # what the thorax reads, standing or not
+    game.body, game.body_kind = Jittery(game.world, game.rng), "physics"
+    assert [ticks(game, 1)["mode"] for _ in range(40)] == ["idle"] * 40                  # standing (walking urge off)
+    game.action({"type": "autopilot", "on": True})
+    game.wander.update(walking=True, left=99.0)
+    assert [ticks(game, 1)["mode"] for _ in range(40)] == ["walk"] * 40                  # walking: no 'resting' blinks
+    game.wander.update(walking=False, left=99.0)                                         # the urge pauses
+    modes = [ticks(game, 1)["mode"] for _ in range(STILL_TICKS + 2)]
+    assert modes == ["walk"] * (STILL_TICKS - 1) + ["idle"] * 3 and game.body.drive_lr == (0.0, 0.0)
+    game.body_kind = "drawn"                             # the same jitter judged by the measured pose: never resting
+    assert [ticks(game, 1)["mode"] for _ in range(40)].count("idle") == 0
+
+
 def test_the_why_panel_says_when_a_feeding_bout_has_ended(conn):
     game = Game(build_brain(conn, "game", seed=0, fatigue_mv=0.6), autopilot=False, seed=1)   # MN9 tires fast
     hx, hy = head_xy(game)
@@ -233,7 +259,8 @@ def test_water_is_tasted_but_not_drunk(game):
 
 
 def test_the_female_tastes_water_with_the_published_models_cells(game, monkeypatch):
-    # she has no LB3a (FlyWire types every labellar taste cell LB3): her Why line names her cells as her What's real does
+    # she has no LB3a type (FlyWire's LB3 and LB2d do not split sugar from water; her LB3a is an alias): her Why line
+    # names her cells as her What's real does
     monkeypatch.setattr(game.real_conn, "sex", "female")
     hx, hy = head_xy(game)
     game.action({"type": "state", "thirst": 1.0})
@@ -252,6 +279,13 @@ def test_female_checklist_and_whats_real_follow_her_wiring(game, monkeypatch):
     ids = {c["id"] for c in lay["checks"]}
     assert "feed" in ids and not ids & {"groom", "sound", "wall"}             # her head bristles do not reach MDN
     assert any("she grooms instead of backing up" in w for w in lay["whats_real"]["wiring"])
+    # the courtship scenario in her own words, as her What's real has them: contact drives pC1 (hand-built), no song
+    court = {s["id"]: s["description"] for s in lay["scenarios"]}["courtship"]
+    assert "does not sing" in court and "sings (pIP10" not in court and "no pIP10 and no nerve cord" in court
+    assert "no tarsal taste neurons" in court and any("no tarsal taste neurons" in h for h in lay["whats_real"]["hand_built"])
+    monkeypatch.setattr(game.conn, "sex", "male")
+    court = {s["id"]: s["description"] for s in json.loads(game._make_layout())["scenarios"]}["courtship"]
+    assert "sings (pIP10, one wing out)" in court
 
 
 def test_lure_on_the_left_turns_the_fly_left(game):
@@ -381,6 +415,10 @@ def test_actions_refuse_unknown_types_bad_fields_and_drops_the_dish_cannot_take(
            ({"type": "modulate", "spec": "MN9", "factor": -1}, "'factor' must be 0 or more"),
            ({"type": "shock", "secs": "long"}, "'secs' must be a number"), ({"type": "wind", "angle": "x", "speed": 5}, "'angle'"),
            ({"type": "stripes", "count": "many"}, "'count' must be a whole number"), ({"type": "state", "hunger": "full"}, "'hunger'"),
+           ({"type": "remove", "id": float("inf")}, "'id' must be a finite number"),          # JSON's Infinity, or 1e400
+           ({"type": "stripes", "count": -float("inf")}, "'count' must be a finite number"),
+           ({"type": "stripes", "count": float("nan")}, "'count' must be a finite number"),
+           ({"type": "zap", "spec": "MDN", "hz": float("inf")}, "'hz' must be a finite number"),
            ({"type": "hand", "x": 1.0}, "'hand' needs 'y'"), ({"type": "drop", "kind": "sugar", "y": 0}, "'drop' needs 'x'"),
            ({"type": "drop", "x": 0, "y": 0}, "unknown drop kind None"), ({"type": "drop", "kind": "nectar", "x": 0, "y": 0}, "'nectar'"),
            ({"type": "drop", "kind": "vinegar", "x": 0, "y": 0, "food": "cake"}, "food must be"),
