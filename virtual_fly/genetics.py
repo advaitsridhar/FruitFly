@@ -168,7 +168,9 @@ def summary(conn, readouts: list[dict] | None = None) -> dict:
                              "synapse_share": share,
                              "genes": [{"symbol": g, "flybase": FLYBASE.format(FLYBASE_ID[g])} for g in genes]})
     unclear = conn.select("nt:unclear")
+    # MaleCNS counts its "unclear" neurons as excitatory; FlyWire's keep the low-confidence prediction's sign
     out = {"expression": groups, "transmitters": transmitters, "unclear": int(unclear.size),
+           "unclear_inhibitory": int((conn.sign[unclear] < 0).sum()),
            "source": SOURCE_FEMALE if sex == "female" else SOURCE,
            "genes": [{"symbol": s, "flybase": FLYBASE.format(fb), "name": n, "marks": m, "spec": sp} for s, fb, n, m, sp in GENES]}
     if readouts is not None:

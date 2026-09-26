@@ -27,6 +27,7 @@ from . import experiments as E
 from .connectome import load_connectome
 from .pathways import relay_ranking, strongest_partners, trace
 from .settings import PROFILES, build_brain
+from .wiring import LEVEL_ERROR, valid_level
 
 
 def parse_stim(text: str, default_hz: float = 80.0) -> list[tuple[str, float]]:
@@ -55,7 +56,8 @@ def main(argv=None):
     ap.add_argument("--seeds", type=int, default=5,
                     help="repeat each experiment with this many random seeds (default 5: the verdict is the mean, and a "
                          "readout that passes on the mean while some seed on its own misses is reported)")
-    ap.add_argument("--json", metavar="FILE", help="write experiment results (or --stim rates) as JSON")
+    ap.add_argument("--json", metavar="FILE",
+                    help="write the results as JSON: the experiments, or those of --stim, --sweep, --lesion, --trace, --inputs/--outputs")
     ap.add_argument("--trace", nargs=2, metavar=("FROM", "TO"), help="strongest wiring routes between two populations")
     ap.add_argument("--hops", type=int, default=4, help="maximum path length for --trace (default 4)")
     ap.add_argument("--avoid", metavar="SPEC", help="route --trace around these types (a virtual lesion)")
@@ -75,7 +77,11 @@ def main(argv=None):
     ap.add_argument("--kenyon-gain", type=float, default=None, help="input gain of Kenyon cells (0.25 pure, 1.0 game)")
     ap.add_argument("--fatigue", type=float, default=None, metavar="MV", help="threshold increase per spike, fading over 2 s")
     ap.add_argument("--std", metavar="U:TAU_MS", help="short-term synaptic depression, e.g. 0.1:150")
-    ap.add_argument("--noise", metavar="HZ:MV", help="background kicks per neuron, e.g. 2:1.0")
+    ap.add_argument("--noise", metavar="HZ:MV",
+                    help="background kicks per neuron: HZ kicks a second, each MV into the synaptic input (a 1 mV kick "
+                         "lifts the membrane by at most 0.16 mV; the threshold is 7 mV above rest). Parts list off: 2:10 "
+                         "fires nothing, 5:15 about 600-900 spikes/s, 2:20 runs away; with the parts list on 2:1 already "
+                         "runs away (docs/SCIENCE.md 3.4)")
     ap.add_argument("--jitter", type=float, default=None, metavar="MV", help="per-neuron threshold jitter (sd, mV)")
     ap.add_argument("--parts", action="store_true",
                     help="the genes as each neuron's parts list: dopamine, octopamine and serotonin act through slow tones, "
@@ -87,13 +93,14 @@ def main(argv=None):
                          "(default modulators: fill 'unclear' predictions and correct which neurons are modulators; "
                          "all: also flip the sign of a confident fast prediction; implies --parts)")
     ap.add_argument("--no-receptor-signs", action="store_true",
-                    help="parts list: ignore the receptors each target type expresses (one net sign per modulator)")
+                    help="parts list: ignore the receptors each target type expresses (one net sign per modulator; "
+                         "implies --parts)")
     ap.add_argument("--one-sign-rule", action="store_true",
                     help="parts list: a target whose receptors are unknown feels each tone with the modulator's one net "
-                         "sign, as in v2.7 (default since v2.8: it feels no tone; docs/SCIENCE.md 8.4)")
+                         "sign, as in v2.7 (default since v2.8: it feels no tone; docs/SCIENCE.md 8.4; implies --parts)")
     ap.add_argument("--global-apl", action="store_true",
                     help="parts list: APL releases as one cell, the same everywhere, instead of following the Kenyon cells "
-                         "active around each target (Amin et al. 2020)")
+                         "active around each target (Amin et al. 2020; implies --parts)")
     ap.add_argument("--silence", metavar="SPEC", default="", help='block the output of a population, e.g. "class:ALLN" or "MN9"')
     ap.add_argument("--modulate", metavar="SPEC:FACTOR", default="", help='scale the output of a population, e.g. "LB3b,LB3c:1.5"')
     ap.add_argument("--record", metavar="FILE.npz", help="with --stim: save every spike (time_ms, neuron) to this file")
@@ -101,7 +108,8 @@ def main(argv=None):
                     help="list the gene-expression populations in the data (fruitless, doublesex, transmitter genes) with FlyBase links")
     ap.add_argument("--lines", metavar="SPEC", help="driver lines whose expression images match these neurons (NeuronBridge; needs internet)")
     ap.add_argument("--driver", metavar="LINE", help="MaleCNS neurons a driver line labels, e.g. SS02385 (NeuronBridge; needs internet)")
-    ap.add_argument("--grow", metavar="LEVEL", help="run everything on a fly grown from its wiring rules: type, class or bottleneck:K")
+    ap.add_argument("--grow", metavar="LEVEL",
+                    help="run everything on a fly grown from its wiring rules: type, class or bottleneck:K (K = 1 to 2048)")
     ap.add_argument("--grow-seed", type=int, default=1, help="which individual to grow")
     ap.add_argument("--genome-sweep", metavar="LEVELS", nargs="?", const="real,type,class,bottleneck:64",
                     help='grow a fly at each level (comma-separated; default "real,type,class,bottleneck:64") and table which experiments survive')
@@ -109,14 +117,20 @@ def main(argv=None):
                     help="the female fly: FlyWire's whole-brain connectome (release 783), built on first use from its public "
                          "sources (needs pyarrow); no nerve cord, so experiments on leg and wing motor neurons are n/a")
     ap.add_argument("--top", type=int, default=15, help="how many rows to show in rankings")
-    ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--seed", type=int, default=0,
+                    help="first random seed (default 0): the experiments and --genome-sweep use SEED to SEED+SEEDS-1; "
+                         "--stim, --sweep and --lesion use SEED")
     args = ap.parse_args(argv)
+    _check_args(ap, args)
 
     conn = load_connectome(female=args.female)
     if args.find:
         hits = conn.find_types(args.find)
+        types = set(conn.tables["types"])
         for t, c in hits[:200]:
-            print(f"  {t:28} {c:6} neurons")
+            alias = conn.aliases.get(t, "") if t not in types else ""     # the kit's name for cells the file calls otherwise
+            note = f"  (alias of {'a list of neuron ids' if alias.startswith('body:') else alias})" if alias else ""
+            print(f"  {t:28} {c:6} neurons{note}")
         print(f"{len(hits)} types match '{args.find}'")
         return
     if args.info:
@@ -138,7 +152,7 @@ def main(argv=None):
     if args.genes:
         from .genetics import summary
         g = summary(conn)
-        print("\nGene expression in the data (the MaleCNS annotation):")
+        print(f"\nGene expression in the data ({'FlyWire' if conn.sex == 'female' else 'the MaleCNS'} annotation):")
         for e in g["expression"]:
             high = f"{e['high']:,} high confidence" if e["high"] is not None else ""
             print(f"  {e['label']:26} {e['n']:7,} neurons in {e['types']:5,} types  {high:24} {e['spec']:22} {e['flybase'] or ''}")
@@ -146,12 +160,18 @@ def main(argv=None):
         for t in g["transmitters"]:
             print(f"  {t['nt']:14} {t['n']:8,} neurons  {100 * t['synapse_share']:5.1f} % of synapses  {'excites ' if t['sign'] > 0 else 'inhibits'}  "
                   + ", ".join(f"{x['symbol']} {x['flybase']}" for x in t["genes"]))
-        print(f"\n  {g['unclear']:,} neurons have no confident transmitter prediction and count as excitatory.\n  {g['source']}")
+        if g["unclear_inhibitory"]:              # FlyWire keeps the prediction's sign under the "unclear" label
+            print(f"\n  {g['unclear']:,} neurons have no confident transmitter prediction (labelled 'unclear'); each keeps its "
+                  f"predicted transmitter's sign ({g['unclear'] - g['unclear_inhibitory']:,} excitatory, "
+                  f"{g['unclear_inhibitory']:,} inhibitory).\n  {g['source']}")
+        else:
+            print(f"\n  {g['unclear']:,} neurons have no confident transmitter prediction and count as excitatory.\n  {g['source']}")
         return
     if args.lines or args.driver:
-        from .genetics import NeuronBridge, NeuronBridgeError
+        from .genetics import NeuronBridge, NeuronBridgeError, _malecns_only
         nb = NeuronBridge()
         try:
+            _malecns_only(conn)                  # the female fly is refused before a name is looked up
             if args.lines:
                 r = nb.lines_for(conn, check_spec(conn, args.lines))
                 print(f"\nDriver lines matching {r['spec']} ({r['n']:,} neurons; {len(r['sampled'])} searched: bodies "
@@ -173,18 +193,27 @@ def main(argv=None):
             raise SystemExit(str(e))
         return
     if args.inputs or args.outputs:
+        out = {}
         for spec, direction in ((args.inputs, "in"), (args.outputs, "out")):
             if not spec:
                 continue
             check(conn, spec)
             rows = strongest_partners(conn, spec, direction, top=args.top)
+            out[f"{direction}puts"] = {"spec": spec, "neurons": conn.count(spec), "rows": rows}
             title = "inputs of" if direction == "in" else "outputs of"
+            # the share is of the partner's own traffic: how much of its output reaches the population (inputs),
+            # or how much of its input comes from the population (outputs)
+            share_of = "% of its output" if direction == "in" else "% of its input"
             print(f"\nStrongest {title} {spec} ({conn.count(spec)} neurons):")
-            print(f"  {'type':28} {'synapses':>9} {'cells':>6} {'nt':14} {'share':>7}")
+            print(f"  {'type':28} {'synapses':>9} {'cells':>6} {'nt':17} {share_of:>15}")
             for r in rows:
                 name = f"{r['type']}/{r['side']}" if r["side"] else r["type"]
                 share = "" if r["fraction"] is None else f"{100 * r['fraction']:.1f}%"
-                print(f"  {name:28} {r['synapses']:9} {r['neurons']:6} {r['nt'] + (' (-)' if r['sign'] < 0 else ' (+)'):14} {share:>7}")
+                print(f"  {name:28} {r['synapses']:9} {r['neurons']:6} {r['nt'] + (' (-)' if r['sign'] < 0 else ' (+)'):17} {share:>15}")
+        if args.json:
+            with open(args.json, "w") as f:
+                json.dump(out, f, indent=1)
+            print(f"wrote {args.json}")
         return
     if args.trace:
         src, dst = args.trace
@@ -216,13 +245,15 @@ def main(argv=None):
         hz, mv = (float(x) for x in args.noise.split(":"))
         overrides.update(noise_hz=hz, noise_mv=mv)
     if args.parts or args.part or args.curated or args.no_receptor_signs or args.global_apl or args.one_sign_rule:
-        from .parts import PartsList
+        from .parts import PartsList, parse_param
         try:
             pl = PartsList(curated=args.curated or "modulators", receptor_signs=not args.no_receptor_signs,
                            unknown_sign=1.0 if args.one_sign_rule else 0.0)
             overrides["parts"] = (pl if not args.global_apl else replace(pl, local=())).with_params(args.part)
         except ValueError as e:
             raise SystemExit(f"--part: {e}")
+        for s in args.part:                      # an override that matches no neuron would change nothing
+            check(conn, parse_param(s).spec)
         c = overrides["parts"].compile(conn).counts
         cur = c["curated"]
         with_data = max((r["with_data"] for r in c["receptor_signs"]["coverage"]), default=0)
@@ -239,7 +270,7 @@ def main(argv=None):
                         for f in c["receptor_signs"].get("facts", []) if f["neurons"])
               + "".join(f"; {x['spec']} releases locally ({x['compartments']} compartments, by "
                         f"{'neuPrint region' if x.get('mode') == 'regions' else 'lobe'})" for x in c["local"])
-              + (f"; overrides: {', '.join(p['spec'] + ' -> ' + ', '.join(f'{k} {v}' for k, v in p.items() if k in ('theta_mv', 'graded') and v is not None) for p in c['params'])}" if c["params"] else ""))
+              + (f"; overrides: {', '.join(p['spec'] + ' (' + format(p['neurons'], ',') + ' neurons) -> ' + ', '.join(f'{k} {v}' for k, v in p.items() if k in ('theta_mv', 'graded') and v is not None) for p in c['params'])}" if c["params"] else ""))
     if args.genome_sweep:
         from .experiments import survival
         from .wiring import compare, grow_level
@@ -265,6 +296,10 @@ def main(argv=None):
                 r = next((x for x in table[lv] if x["name"] == name), None)
                 cells.append("n/a" if r is None or r["ok"] is None else "ok" if r["ok"] else f"{sum(x['ok'] for x in r['readouts'])}/{len(r['readouts'])}")
             print(f"{name[:36]:36}" + "".join(f"{c:>16}" for c in cells))
+        skipped = [e for e in E.CLASSIC + E.EXTENDED if e.profile is not None and e.profile != args.profile]
+        if skipped:                              # survival() leaves them out silently; say so, as run_all() does
+            print(f"\n(skipped {len(skipped)} experiments whose ranges were measured with the '{skipped[0].profile}' profile: "
+                  f"{', '.join(e.name for e in skipped)}; run them with --profile {skipped[0].profile})")
         return
     brain = build_brain(conn, args.profile, **overrides)
     for spec in filter(None, (x.strip() for x in args.silence.split(";"))):
@@ -273,9 +308,14 @@ def main(argv=None):
         spec, _, factor = item.rpartition(":")
         print(f"modulating {spec} x{float(factor):g}: {brain.modulate(check_spec(conn, spec), float(factor))} neurons")
     watch = [w.strip() for w in args.watch.replace(";", ",").split(",") if w.strip()]
+    for spec in watch:                           # a misspelt name would read 0 Hz: refuse it before simulating
+        check(conn, spec)
 
     if args.stim:
         for spec, hz in parse_stim(args.stim):
+            head, _, rate = spec.rpartition(":")
+            if not conn.count(spec) and conn.count(head):          # "MDN:abc": a population, then no rate
+                _usage_error(ap, f"--stim: '{rate}' is not a rate in Hz; use SPEC:HZ, e.g. \"MDN:60\"")
             brain.stimulate(check_spec(conn, spec), hz)
             print(f"stimulating {spec} ({conn.count(spec)} neurons) at {hz:g} Hz")
         if args.record:
@@ -285,11 +325,12 @@ def main(argv=None):
         print(f"simulated {args.ms:g} ms in {time.time() - t0:.1f} s; {brain.total_spikes:,} spikes in total")
         rates = {}
         for spec in watch:
-            rates[spec] = brain.rate(check_spec(conn, spec))
+            rates[spec] = brain.rate(spec)
             print(f"  {spec:28} {conn.count(spec):5} neurons  {rates[spec]:7.1f} Hz")
+        top = [] if watch else brain.top_types(args.top, exclude_stimulated=True)
         if not watch:
             print("  most active cell types (mean Hz per neuron; stimulated ones excluded):")
-            for row in brain.top_types(args.top, exclude_stimulated=True):
+            for row in top:
                 name = f"{row['type']}/{row['side']}" if row["side"] else row["type"]
                 print(f"    {row['hz']:6.0f} Hz  {name:28} {row['active']}/{row['neurons']} neurons active")
         if args.record:
@@ -298,7 +339,9 @@ def main(argv=None):
             print(f"saved {idx.size:,} spikes to {args.record}")
         if args.json:
             with open(args.json, "w") as f:
-                json.dump({"stimulus": args.stim, "ms": args.ms, "rates": rates, "settings": brain.settings()}, f, indent=1)
+                json.dump({"stimulus": args.stim, "ms": args.ms, "rates": rates, "top_types": top, "settings": brain.settings()},
+                          f, indent=1)
+            print(f"wrote {args.json}")
         return
 
     if args.sweep:
@@ -322,14 +365,27 @@ def main(argv=None):
             raise SystemExit(f"no experiment matches '{args.lesion}'")
         exp = exps[0]
         readout = args.readout or exp.readouts[-1].spec
+        spec = next((r.spec for r in exp.readouts if r.spec == readout or r.label == readout), None)
+        if spec is None:
+            _usage_error(ap, f"--readout: '{readout}' is not a readout of '{exp.name}'; choose one of: "
+                             + ", ".join(r.spec for r in exp.readouts))
+        check(conn, spec)
         candidates = [c.strip() for c in args.candidates.split(",") if c.strip()]
+        for c in candidates:
+            check(conn, c)
         if not candidates:
-            src = ",".join(exp.stimulus)
-            paths = trace(conn, src, readout, max_hops=args.hops, top=20)
-            candidates = [name for name, _ in relay_ranking(paths)[:10]]
+            # one trace per stimulus population: traced from their union, the strongest partial routes of some
+            # (the pharyngeal and leg sugar cells) fill the search beam and crowd out every route of another to the readout
+            paths = [p for s in exp.stimulus if conn.count(s) for p in trace(conn, s, spec, max_hops=args.hops, top=20)]
+            stimulated = conn.select(",".join(exp.stimulus))
+            candidates = [name for name, _ in relay_ranking(paths)
+                          if not np.isin(conn.select(name), stimulated).all()][:10]
+            if not candidates:
+                raise SystemExit(f"no wiring route from the stimulus of '{exp.name}' to {readout} within {args.hops} hops; "
+                                 f"name the populations to silence with --candidates")
             print(f"lesion candidates from the wiring between the stimulus and {readout}: {', '.join(candidates)}")
         rows = E.lesion_scan(brain, exp, candidates, readout, seed=args.seed)
-        print(f"\n{exp.name}: {readout} with each population silenced")
+        print(f"\n{exp.name}: {readout} with each population silenced (baseline {rows[0]['baseline']:.1f} Hz)")
         print(f"  {'silenced':28} {'neurons':>7} {'Hz':>8} {'change':>8}")
         for r in rows:
             print(f"  {r['silenced']:28} {r['neurons']:7} {r['hz']:8.1f} {100 * r['change']:+7.0f}%")
@@ -357,24 +413,78 @@ def main(argv=None):
           + (f"; {len(na)} cannot be done on this fly: {', '.join(r.name for r in na)}" if na else "")
           + ")."
           + (f" After the stimulus, {len(loose)} of {len(stim)} leave a runaway loop on at least one seed." if loose else ""))
+    if any(E.in_margin(x) for r in done for x in r.readouts):
+        print("(+N) after a range: a rate passes up to max(1 Hz, 15 %) above the top of its range, on the mean and on each "
+              "seed (docs/SCIENCE.md section 2).")
     if args.json:
         E.save_json(results, args.json, brain)
         print(f"wrote {args.json}")
+    same_fly = ((" --female" if args.female else "") + (f" --grow {args.grow}" if args.grow else "")
+                + (f" --grow-seed {args.grow_seed}" if args.grow and args.grow_seed != 1 else ""))
     if args.profile == "pure":
-        print("Try the game's settings: python fly_brain.py --profile game")
-    print("Then play: python fly_game.py" + (" --female" if args.female else ""))
+        print("Try the game's settings: python fly_brain.py --profile game" + same_fly)
+    print("Then play: python fly_game.py" + same_fly)
+
+
+def _usage_error(ap, message):
+    """Stop with one line and exit code 2, as argparse does for a malformed option (without its 20-line usage)."""
+    ap.exit(2, f"{ap.prog}: error: {message}\n")
+
+
+def _check_args(ap, args):
+    """Refuse malformed option values before anything is loaded or simulated."""
+    def numbers(text, n):                        # "0.1:150" -> [0.1, 150.0]; None unless it is n numbers
+        try:
+            vals = [float(x) for x in text.split(":")]
+        except ValueError:
+            return None
+        return vals if len(vals) == n else None
+    if args.std and numbers(args.std, 2) is None:
+        _usage_error(ap, f"--std wants U:TAU_MS, e.g. 0.1:150 (not '{args.std}')")
+    if args.noise and numbers(args.noise, 2) is None:
+        _usage_error(ap, f"--noise wants HZ:MV, e.g. 5:15 (not '{args.noise}')")
+    for item in filter(None, (x.strip() for x in args.modulate.split(";"))):
+        spec, _, factor = item.rpartition(":")
+        if not spec or numbers(factor, 1) is None:
+            _usage_error(ap, f"--modulate wants SPEC:FACTOR, e.g. \"LB3b,LB3c:1.5\" (not '{item}')")
+    if args.sweep:
+        spec, *rest = args.sweep.rsplit(":", 3)
+        if len(rest) != 3 or not spec or numbers(":".join(rest[:2]), 2) is None or not rest[2].strip().isdigit() \
+                or int(rest[2]) < 1:
+            _usage_error(ap, f"--sweep wants SPEC:LO:HI:N (N rates from LO to HI Hz), e.g. \"LB3b,LB3c:0:200:9\" (not '{args.sweep}')")
+    levels = [x.strip() for x in (args.genome_sweep or "").split(",") if x.strip()]
+    if args.genome_sweep is not None and not levels:
+        _usage_error(ap, "--genome-sweep wants comma-separated levels, e.g. real,type,class,bottleneck:64")
+    grow = [("--grow", args.grow)] if args.grow else []
+    for option, level in grow + [("--genome-sweep", lv) for lv in levels]:
+        if not valid_level(level):               # K is bounded: see wiring.MAX_RANK
+            _usage_error(ap, f"{option}: '{level}': {LEVEL_ERROR}")
+    if args.seeds < 1:
+        _usage_error(ap, f"--seeds must be at least 1 (not {args.seeds})")
+    if args.record and not args.stim:
+        _usage_error(ap, "--record FILE.npz saves the spikes of a --stim run; add --stim")
+    if args.only:                                # the same match as experiments.run_all()
+        exps = E.all_experiments()
+        if not any(args.only.lower() in e.name.lower() or args.only.lower() in " ".join(e.tags) for e in exps):
+            _usage_error(ap, f"no experiment's name or tag contains '{args.only}'; the tags are "
+                             + ", ".join(sorted({t for e in exps for t in e.tags})) + "; the names are "
+                             + "; ".join(e.name for e in exps))
 
 
 def check(conn, spec):
+    """The neurons ``spec`` selects; or stop with one line, and a hint to search the names in the same fly."""
+    female = getattr(conn, "sex", "male") == "female"
     try:
         idx = conn.select(spec)
         if idx.size:
             return idx
-        problem = f"No neurons match '{spec}'."
+        problem = f"No neurons match '{spec}'" + (" in the female fly (no nerve cord, no male-specific cells)" if female else "") + "."
     except ValueError as e:
         problem = str(e).rstrip(".") + "."
+    if spec.split(":")[0] in ("body", "index", "hex", "regex"):
+        raise SystemExit(problem)                # a number or a pattern, not a name: a name search would not help
     word = spec.split(":")[-1].split("/")[0].split(",")[0]
-    raise SystemExit(f"{problem} Search for names with: python fly_brain.py --find {word}")
+    raise SystemExit(f"{problem} Search for names with: python fly_brain.py{' --female' if female else ''} --find {word}")
 
 
 def check_spec(conn, spec):

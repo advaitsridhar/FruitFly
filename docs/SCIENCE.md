@@ -183,7 +183,9 @@ logged as "runaway firing".
 ## 2. Validation: the six classic experiments
 
 The six experiments of Shiu et al. 2024 and the fly-brain-minecraft benches, as coded in
-`experiments.py`. A readout passes when `lo ≤ rate ≤ hi + max(1, 0.15·hi)`.
+`experiments.py`. A readout passes when `lo ≤ rate ≤ hi + max(1, 0.15·hi)`: the rate is the mean over
+the seeds, and the same margin decides whether a seed on its own is outside. `fly_brain.py` writes the
+margin after the range (`0-5(+1) Hz`) whenever a mean or a seed needed it.
 
 | experiment | stimulus (population: Hz) | readout | expected |
 |---|---|---|---|
@@ -406,6 +408,23 @@ and no quiet-skip), the post-bitter loop is kept alive at 36-60k spikes/s unless
 silenced, and the "a few descending neurons flicker, nothing seizes" window is a few hundredths
 of a mV wide. The kit implements the cheap Poisson-kick variant (`noise_hz`, `noise_mv`), off in
 every profile; `--noise HZ:MV` switches it on for anyone who wants to look.
+
+A kick goes into the synaptic input `g`, not the membrane, so a kick of 1 "mV" lifts `v` by at most
+0.16 mV, 9 ms later (`tau_m` 20 ms, `tau_s` 5 ms; the threshold is 7 mV above rest). What the kicks do
+on the kit (v2.8.1; male fly, game profile, no stimulus, seed 0, 1.5 s counted in three 0.5 s windows):
+
+| `--noise` | parts list | events/s in the three windows | neurons that fired |
+|---|---|---|---|
+| 2:1, 2:10 | off | 0, 0, 0 | 0 |
+| 2:15 | off | 24, 20, 20 | 32 |
+| 5:15 | off | 690, 580, 868 | 1,025 |
+| 2:20 | off | 500, 9,130, 62,516: runs away | 4,504 |
+| 2:0.3 | on | 0, 0, 0 | 0 |
+| 2:1 | on | 414, 27,274, 135,634: runs away | 12,067 |
+
+With the parts list on, the graded cells release in proportion to their depolarisation, so kicks
+that fire no neuron with it off start a runaway in them: at 2:1, 412 of the first window's 414
+events/s are graded quanta, and 107,034 of the third window's 135,634.
 
 ### 3.5 What still rings
 
@@ -1265,13 +1284,21 @@ together) is decided connection by connection with the pair's probability, a spa
 sampled, synapse counts come from the pair's distribution, and duplicates merge. A grown fly has
 the same number of connections and synapses (6.26 M / 91 M against 6.29 M / 90 M) and shares
 36 % of its individual connections with the real one; the rest are new neuron-to-neuron pairings
-of the same types. **The bottleneck** approximates the rule matrix at rank K with a randomized SVD
-(each group gets a K-number output code and a K-number input code; a rule is their product),
-re-thresholded to the original number of rules and rescaled to the original number of connections.
+of the same types. No grown connection has fewer synapses than the source's smallest: 5 in MaleCNS,
+whose file keeps connections of 5 or more, and 1 in FlyWire, which keeps them all. (Until v2.8.1 the
+floor was 5 for both flies, and the female grown from her type rules, seed 1, had 98.1 M synapses
+against her 54.5 M; with her own floor the same 15.0 M connections carry 56.5 M, and her class-rule
+fly 48.1 M instead of 86.9 M. The male's grown flies are bit-identical.) **The bottleneck**
+approximates the rule matrix at rank K with a randomized SVD (each group gets a K-number output code
+and a K-number input code; a rule is their product), re-thresholded to the original number of rules
+and rescaled to the original number of connections. K runs from 1 to 2048: from about K = 110 the
+codes hold more numbers than the rule table they compress, and the SVD's memory grows with K
+(K = 2049 took 12 minutes and 2.5 GB).
 **Class rules** use only superclass:class and side (125 groups, 2,665 rules).
 
 **What survives** (game profile; each grown fly tested with all eleven validated experiments;
-`fly-brain --genome-sweep`):
+`fly-brain --profile game --genome-sweep`; the default pure profile runs only the six classic experiments,
+and says which it skipped):
 
 | experiment | real | type, seed 1 | type, seed 2 | bottleneck 256 | bottleneck 64 | bottleneck 16 | class |
 |---|---|---|---|---|---|---|---|
@@ -1499,7 +1526,7 @@ sign of a confident fast prediction: the literature classes disagree with MaleCN
 transmitter of 25 types (5,892 neurons) (T3, L3, Mi2, Mi10, Tm39, ...), and where two data sets disagree on a
 fast transmitter the model has no way to pick. `curated="all"` lets the literature win there too (the
 signs flip, and the three modulatory types above lose their predicted fast synapses) for anyone who
-wants to see what that does (`fly-brain --curated all`); the popover shows the disagreement either
+wants to see what that does (`fly-brain --profile game --curated all`); the popover shows the disagreement either
 way. Classes that are another connectome's type only fill "unclear" predictions, and only under
 `all` (the survival table below shows why), and coarse matches (a `_a` type read as its stem's
 class, or a class read off one VFB individual) are never used for the model at all.
@@ -1666,7 +1693,7 @@ point neurons inhibiting each other. The real pair is also coupled by heterotypi
 (Wu et al. 2011), which the model does not have. One more limit: without receptor signs every tone
 raises the gain, which on top of local release drives the vinegar readouts past their ceilings on
 some seeds.
-`fly-brain --parts --global-apl` (or `PartsList(local=())`) gives the v2.5 behaviour of APL back
+`fly-brain --profile game --parts --global-apl` (or `PartsList(local=())`) gives the v2.5 behaviour of APL back
 with everything else unchanged.
 
 **Where APL's synapses really are (v2.8).** The kit's connectome holds one synapse count per pair of
@@ -1760,7 +1787,7 @@ all five seeds); APL's local release, the receptor facts and the graded cells do
 
 **The rule since v2.8: no receptor evidence, no modelled effect.** A tone changes a target's gain only
 through receptors the kit has data for: an adult atlas cluster (section 8.1) or a receptor fact. A target
-with neither feels no tone (`PartsList(unknown_sign=0.0)`; `fly-brain --one-sign-rule` gives the v2.7
+with neither feels no tone (`PartsList(unknown_sign=0.0)`; `fly-brain --profile game --one-sign-rule` gives the v2.7
 rule back). One measured effect needed a new kind of fact, because its receptor was never identified:
 octopamine raises the VS cells' responses to motion (Suver et al. 2012 recorded VS cells in flight),
 the effect the octopamine tone's size was set from. `RECEPTOR_FACTS` carries it as a measured sign for

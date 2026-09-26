@@ -392,7 +392,10 @@ class Connectome:
         elif key in ("prefix", "contains", "regex"):
             names = self.tables["types"]
             if key == "regex":
-                rx = re.compile(value)
+                try:
+                    rx = re.compile(value)
+                except re.error as e:                # a ValueError like every other bad spec, not a traceback
+                    raise ValueError(f"regex:{value} is not a regular expression Python can read ({e})") from None
                 ok = np.array([bool(t) and rx.search(t) is not None for t in names])
             else:
                 ok = np.array([bool(t) and (t.startswith(value) if key == "prefix" else value in t) for t in names])
@@ -413,14 +416,24 @@ class Connectome:
             col = {"class": self.cls, "superclass": self.superclass, "subclass": self.subclass,
                    "nt": self.nt, "nerve": self.nerve, "neuromere": self.neuromere, "frudsx": self.frudsx}[key]
             mask = col == value
-        elif key == "body":
-            mask = self.body_id == int(value)
-        elif key == "index":
-            mask = np.zeros(self.n, dtype=bool)
-            mask[int(value)] = True
-        elif key == "hex":
-            h1, h2 = (int(v) for v in value.split(":"))
-            mask = (self.hex1 == h1) & (self.hex2 == h2)
+        elif key in ("body", "index", "hex"):         # numbers: say which, instead of int()'s message
+            try:
+                nums = [int(v) for v in value.split(":")]
+            except ValueError:
+                nums = []
+            if len(nums) != (2 if key == "hex" else 1):
+                raise ValueError({"body": "body: needs a neuron's id, a whole number, e.g. body:10783",
+                                  "index": "index: needs a neuron's number in this file, e.g. index:1234",
+                                  "hex": "hex: needs two medulla column numbers, e.g. hex:12:7"}[key])
+            if key == "body":
+                mask = self.body_id == nums[0]
+            elif key == "index":
+                if not 0 <= nums[0] < self.n:
+                    raise ValueError(f"index:{nums[0]} is out of range: this fly's neurons are numbered 0 to {self.n - 1:,}")
+                mask = np.zeros(self.n, dtype=bool)
+                mask[nums[0]] = True
+            else:
+                mask = (self.hex1 == nums[0]) & (self.hex2 == nums[1])
         else:
             raise ValueError(f"unknown filter '{key}:' in population spec")
         if side is not None:
@@ -434,10 +447,14 @@ class Connectome:
             return 0
 
     def find_types(self, text: str, limit: int | None = None) -> list[tuple[str, int]]:
-        """List ``(type, count)`` for every cell type whose name contains ``text`` (case-insensitive)."""
+        """List ``(type, count)`` for every cell type whose name contains ``text`` (case-insensitive), and for every
+        name this file answers to as an alias (:attr:`aliases`: the female file's ``MN9`` is FlyWire's ``CB0701``)."""
         text = text.lower()
         counts = np.bincount(self.type_idx, minlength=len(self.tables["types"]))
         hits = [(t, int(counts[k])) for k, t in enumerate(self.tables["types"]) if t and text in t.lower()]
+        known = set(self.tables["types"])
+        hits += [(a, self.count(a)) for a in self.aliases              # names, not specs such as "prefix:pC1_"
+                 if ":" not in a and a not in known and text in a.lower() and self.count(a)]
         hits.sort(key=lambda tc: (not tc[0].lower().startswith(text), tc[0].lower()))
         return hits[:limit] if limit else hits
 

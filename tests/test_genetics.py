@@ -25,6 +25,7 @@ def test_summary_counts_tags_and_links(conn):
     assert {x["symbol"] for x in g["genes"]} >= {"fru", "dsx", "ChAT", "VGlut", "Gad1", "ple", "Tdc2"}
     assert all(x["flybase"].startswith("https://flybase.org/reports/FBgn") for x in g["genes"])
     assert "MaleCNS" in g["source"] and isinstance(g["unclear"], int)
+    assert g["unclear"] == conn.select("nt:unclear").size > 0 and g["unclear_inhibitory"] == 0     # MaleCNS: all excitatory
 
 
 def test_genotype_and_genes_of(conn):

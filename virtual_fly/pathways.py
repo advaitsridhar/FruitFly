@@ -136,8 +136,9 @@ def relay_ranking(paths: list[Path]) -> list[tuple[str, float]]:
 
 def strongest_partners(conn: Connectome, spec: str, direction: str = "out", top: int = 15,
                        by_side: bool = True) -> list[dict]:
-    """Convenience wrapper: the strongest input or output types of a population as dicts with
-    the input-fraction the connection represents (for output) or contributes (for input)."""
+    """Convenience wrapper: the strongest input or output types of a population as dicts. ``fraction`` is a
+    share of the partner's own traffic: for ``direction="out"`` the share of the partner's input that comes
+    from the population, for ``direction="in"`` the share of the partner's output that goes to it."""
     rows = conn.outputs_of(spec, top=top, by_side=by_side) if direction == "out" else \
         conn.inputs_of(spec, top=top, by_side=by_side)
     tg = conn.type_graph()

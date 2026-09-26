@@ -8,10 +8,10 @@ from virtual_fly.brain import FlyBrain
 from virtual_fly.experiments import Experiment, R, run_experiment
 
 
-def _csr_is_valid(c):
+def _csr_is_valid(c, min_syn=W.MIN_SYN):
     assert c.row_ptr.size == c.n + 1 and c.row_ptr[0] == 0 and c.row_ptr[-1] == c.post_idx.size == c.n_syn.size
     assert (np.diff(c.row_ptr) >= 0).all() and c.post_idx.min() >= 0 and c.post_idx.max() < c.n
-    assert (c.n_syn >= W.MIN_SYN).all()
+    assert (c.n_syn >= min_syn).all()
     for i in range(0, c.n, max(1, c.n // 50)):
         seg = c.post_idx[c.row_ptr[i]:c.row_ptr[i + 1]]
         assert (np.diff(seg) > 0).all(), "targets sorted and unique per row"
@@ -80,8 +80,24 @@ def test_grow_level_and_cache(conn):
     assert r2.rank == 4 and "bottleneck:4" in cache and cache["type"] is r
     g3, r3 = W.grow_level(conn, "class", rules_cache=cache)
     assert r3.level == "class"
-    with pytest.raises(ValueError):
-        W.grow_level(conn, "hemilineage")
+    for bad in ("hemilineage", "bottleneck:abc", "bottleneck:0", "bottleneck:-3", "bottleneck:2049", "bottleneck"):
+        with pytest.raises(ValueError, match="K = 1 to 2048"):             # refused, not clamped to another rank
+            W.grow_level(conn, bad, rules_cache=cache)
+    assert W.valid_level("bottleneck:2048") and not W.valid_level("bottleneck:2049")
+
+
+def test_a_grown_fly_keeps_its_sources_smallest_connections(conn):
+    """The female file keeps connections of 1-4 synapses, the male file starts at 5: growth floors each at its own."""
+    rules = W.learn_rules(conn)
+    g = W.grow(conn, rules, seed=1)
+    assert rules.min_syn == int(conn.n_syn.min()) and g.n_syn.min() >= rules.min_syn
+    weak = conn.rewired(conn.row_ptr, conn.post_idx, np.maximum(conn.n_syn // 20, 1), label="weak")
+    wr = W.learn_rules(weak)
+    assert wr.min_syn == 1 and W.bottleneck(wr, 4).min_syn == 1
+    gw = W.grow(weak, wr, seed=1)
+    _csr_is_valid(gw, min_syn=1)
+    assert gw.n_syn.min() == 1 and (gw.n_syn < W.MIN_SYN).mean() > 0.3
+    assert abs(int(gw.n_syn.sum()) - int(weak.n_syn.sum())) < 0.1 * int(weak.n_syn.sum())   # was far above with a floor of 5
 
 
 def test_a_grown_fly_still_feeds(conn):
