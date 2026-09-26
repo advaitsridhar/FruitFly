@@ -133,7 +133,7 @@ take (below). `{"ok": true}` means the action was queued for the next tick.
 | `GET /api/partners?spec=MN9&dir=in\|out[&top=15]` | `{spec, n, dir, rows: [{type, side, synapses, connections, neurons, nt, sign, fraction}]}` (`fraction` is a share of the partner's own traffic: with `dir=in` the share of the partner's output that goes to `spec`, with `dir=out` the share of its input that comes from `spec`) |
 | `GET /api/trace?from=LC10a/L&to=DNa02/L[&hops=4&top=8&avoid=SPEC]` | `{paths: [{nodes[], score, net_sign, hops: [{src, dst, synapses, fraction, sign, src_size, dst_size}]}], neurons: [[neuron index per node or null]], relays: [[name, score]], secs}` (takes 0.5-3 s) |
 | `GET /api/history?keys=MN9,GF[&n=400]` | `{bin_ms, history: {key: [hz...]}}` one value per tick |
-| `GET /api/learning` | `{learning: {MBONtype: {strength, valence, nt, dopamine, kc_synapses}}, settings, depressed_fraction}` |
+| `GET /api/learning` | `{learning: {MBONtype: {strength, valence, nt, dopamine, kc_synapses}}, settings, depressed_fraction}` (`kc_synapses` and `settings.plastic_synapses` count KC→MBON connections, neuron pairs with one learned weight each, not synapses: 33,496 connections carrying 402,850 synapses in MaleCNS; `depressed_fraction` is a share of those connections) |
 | `GET /api/decoder` | the decoder's DN→motor-pool table |
 | `GET /api/recording` | JSON download of the recorded frames |
 | `GET /api/spikes` | npz download of recorded spikes (`time_ms`, `neuron`, `body_id`) |

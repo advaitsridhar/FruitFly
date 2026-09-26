@@ -730,12 +730,36 @@ direct PN input; MBON31 41 %, mostly lateral horn; MBON20 26 %; MBON26 20 %; MBO
 and MBON09 89 %). The on-screen "approach MBONs" bar is `MBON11,MBON12,MBON14,MBON09` and the
 "avoidance MBONs" bar `MBON01,MBON02,MBON05,MBON06,MBON07`, all KC-dominated.
 
+The same test in the game (v2.8.1; the README quotes this one): `build_brain(conn, "game")` as
+shipped (kenyon_gain 1.0, dopamine neurons' fast synapses muted), parts list off and on, plasticity
+paused so the scales stay where they are set; the connections of the Kenyon cells that MIX (80 Hz)
+activates on any of seeds 0-4 (355 cells with the parts list off, 664 with it on) onto the 21
+PPL1-paired types of section 4.4 scaled by 0.5 or 0; unpaired odours the game's banana
+(`ORN_DM2,ORN_DM3,ORN_VM2,ORN_DC2,ORN_VA6`), yeast (`ORN_DM5,ORN_VC1,ORN_VA1v,ORN_DL1,ORN_VM5d`)
+and MIX2 of section 4.3, each at 80 Hz, none sharing a glomerulus with MIX; `experiments.run_experiment`,
+mean of seeds 0-4 (range over the seeds in brackets). Scaling every Kenyon cell's connections instead
+gives the same MIX numbers.
+
+| MBON | MIX before → ×0.5 → ×0 | banana / yeast / MIX2, before → ×0.5 |
+|---|---|---|
+| MBON14, parts list off | 38.0 (35.5-40) → 6.0 (5-6.5) → 0 | 0 → 0 / 0 → 0 / 1.4 → 0.6 |
+| MBON11, parts list off | 1.6 (0-3) → 0 → 0 | 0 → 0 / 0.2 → 0 / 0 → 0 |
+| MBON14, parts list on | 43.1 (41.5-45) → 4.1 (3-5) → 0 | 0 → 0 / 0 → 0 / 1.8 → 0.9 |
+| MBON11, parts list on | 38.6 (31-48) → 0 → 0 | 0 → 0 / 0 → 0 / 0 → 0 |
+
+MBON11's 31 Hz above came from the dopamine neurons' fast synapses, which the game mutes: in
+probe-game at kenyon_gain 0.75 (seeds 0-4) MBON11 answers MIX with 27.8 Hz, and 0.8 Hz once
+`class:DAN` is silenced too, while MBON14 stays at 26 Hz. In the game APL's inhibition then leaves
+MBON11 at 1-2 Hz unless the parts list is on (section 8.2). The unpaired control is weak here: the
+game's other odours hardly reach these MBONs in the first place (MIX2, which shares a few Kenyon
+cells with MIX, loses half of its 1-2 Hz).
+
 ### 4.7 The learning rule as implemented (`plasticity.py`)
 
 Everything structural is read from the wiring: the plastic synapses are every KC→MBON connection
-(one scale factor per connection), and the dopamine reaching an MBON is the synapse-weighted mean
-rate of the DANs that synapse directly onto it (table 4.4). Only the rule's constants are
-hand-chosen:
+(one scale factor per connection, i.e. per neuron pair: 33,496 connections carrying 402,850 synapses
+in MaleCNS), and the dopamine reaching an MBON is the synapse-weighted mean rate of the DANs that
+synapse directly onto it (table 4.4). Only the rule's constants are hand-chosen:
 
 | constant | value | meaning | basis |
 |---|---|---|---|
@@ -1433,7 +1457,8 @@ dopaminergic, 165 octopaminergic and 415 serotonergic neurons of MaleCNS therefo
 a fast synaptic potential, yet the published model, and the game profile for octopamine and
 serotonin, treat them as ordinary excitatory neurons (the game profile already muted the
 dopamine neurons' fast synapses by hand, section 4). With the parts list on, all 979 lose their
-fast synapses (79,183 connections onto 30,157 targets) and each spike instead adds to a *tone*
+fast synapses (79,183 connections onto 30,157 targets; since v2.5 the literature's transmitters
+change these numbers, section 8.1) and each spike instead adds to a *tone*
 on its targets: one unit per ten synapses, decaying with a time constant of 0.5 s (dopamine;
 Cohn, Morantte & Ruta 2015 see dopamine transients of about a second in the mushroom body),
 1 s (octopamine) or 2 s (serotonin). The tone scales the target's synaptic input,
@@ -1558,9 +1583,10 @@ class carries yet (`TmY9a`, `Tm38`, `MeTu3c`, most `SNta`/`SNpp` sensory groups,
 subtypes) and the 11,916 untyped neurons.
 
 What the join gives: a selector, `fbbt:<class>`, that takes the ontology's `is_a` closure, so
-`fbbt:lobula columnar neuron` is every LC type the kit has (3,652 neurons), `fbbt:adult descending
-neuron` every DN (1,221), `fbbt:dopaminergic neuron` every cell the ontology calls dopaminergic
-(1,577), `fbbt:adult Kenyon cell` all 3,528 Kenyon cells, composable with everything else
+`fbbt:lobula columnar neuron` is every LC type the kit has (4,060 neurons), `fbbt:adult descending
+neuron` every DN (1,242), `fbbt:dopaminergic neuron` every cell the ontology calls dopaminergic
+(1,601), `fbbt:adult Kenyon cell` all 4,064 Kenyon cells (the MaleCNS connectome with the shipped
+`data/fbbt_map.json.gz`, harvest included; `fly-brain --info "fbbt:..."`), composable with everything else
 (`fbbt:adult descending neuron&nt:gaba`); an ontology search in the Neuron lab; and, in a neuron's
 popover, what its type *is*: the class and its definition, the anatomical parent chain (each parent
 a click away as a population), the lineage, the peptides the class is known to express, the
@@ -1591,6 +1617,12 @@ rules):
 | "unclear" types with a curated fast transmitter: TmY14 (91 neurons), LHAV4d1, CEM, aMe8 and two more | 114 | the sign of their fast synapses |
 | under `curated="all"` only: 16 more "unclear" types whose only class is another connectome's type, predicted dopaminergic or serotonergic there (SMP143, ATL043, AVLP594, ...) | 30 | a tone (that data set's prediction, not the literature's) |
 | under `curated="all"` only: 151 "unclear" types with another connectome's fast-transmitter prediction | 476 | the sign of their fast synapses |
+
+In all (MaleCNS, `PartsList(curated=...).compile(conn).counts`), the default policy gives 2,146 neurons
+a tone on 38,998 targets, the count the Genome card and `fly-brain --profile game --parts` print: 976 of
+them lose their fast synapses, and 1,170 (Mi15's 1,151 and 19 others) also release a fast transmitter
+and keep them. `curated="off"` gives the connectome's own 979, none of which keeps its fast synapses (30,157
+targets), and `curated="all"` 2,176, of which 1,162 keep them (39,702 targets).
 
 Tyramine has no place in the model and is ignored. PPL203 is one of the game profile's `class:DAN`
 neurons, whose fast synapses the game mutes by hand when the parts list is off; with the parts list on
@@ -2042,7 +2074,8 @@ the parquet file needs `pyarrow` (`pip install -e ".[female]"`).
   serotonergic that are not. It labels 5,172 of her 5,177 Kenyon cells dopaminergic (every γ, α/β and
   α′/β′ type; 4,652 of them with confidence 0.5 or more), and several
   olfactory receptor types serotonergic. Taken as they are, these labels would make 6,754 female
-  neurons slow modulators with their fast synapses removed (male: 2,146), and the Kenyon cells
+  neurons slow modulators with their fast synapses removed (the male has 2,146 modulators, 976 of them
+  without fast synapses, section 8.1), and the Kenyon cells
   would no longer drive the mushroom body. Two rules restore parity. A prediction below 0.5
   confidence is labelled "unclear", as in the male file (the sign stays the prediction's, so the
   label rule changes no sign; only the parts list reads the label). And FlyWire's literature column

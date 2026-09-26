@@ -47,7 +47,7 @@ Compared with the small starter it grew from, it adds:
 | **Genetics** | the neurons that express *fruitless* and *doublesex* (the genes that make a male brain male) and the male-specific and dimorphic ones, as populations to silence, activate or watch; the transmitter genes behind every neuron's sign; a lookup of which real driver lines label a population and which neurons a line labels (NeuronBridge); five genetic experiments | the expression labels are the MaleCNS annotation read from the data; the lookups are Janelia's; nothing is hand-built, but only two transcription factors and the transmitter identity are known here |
 | **The genome as a recipe** | grow a new fly from the connectome's cell-type wiring rules alone (same neurons, new wiring) and see which reflexes survive; a bottleneck dial squeezes the rules; seeds are individuals | the rules are learned from the data; growth is random within them; 9 of 11 validated reflexes survive type-level rules, none survive class-level rules |
 | **What the literature says** | every cell type joined to its class in the FlyBase anatomy ontology (Virtual Fly Brain): `fbbt:lobula columnar neuron` or `fbbt:dopaminergic neuron` as populations, an ontology search in the Neuron lab, a neuron's popover says what its type is (definition, lineage, peptides, curated transmitter, a VFB link); with the parts list on, the literature's transmitter wins over the prediction for the modulators and the tone's sign on each target follows the receptors its type expresses in the adult scRNA-seq atlases | the join is by name (offline, checked against VFB's own MaleCNS names); the transmitters are the ontology's curated assertions; the receptor fractions are Fly Cell Atlas and other atlases as VFB serves them; the rule that turns receptors into a sign is the kit's |
-| **The genes as a parts list** | a switch that gives each neuron the machine its genes make: the 979 dopamine, octopamine and serotonin neurons lose their fast synapses and leave slow tones on their targets instead (all their receptors are slow), and 43,000 optic-lobe cells that do not spike in real flies release transmitter in proportion to their depolarisation; three tone gauges; a per-type table for thresholds | which neurons make which transmitter is the data; that these three act slowly and that those cell types are graded is the literature (cited in `parts.py`); the strength and time constant of each tone are chosen by hand; all 16 validated experiments pass |
+| **The genes as a parts list** | a switch that gives each neuron the machine its genes make: the dopamine, octopamine and serotonin neurons leave slow tones on their targets (all their receptors are slow; 2,146 neurons with the literature's transmitters, the default, of which 976 lose their fast synapses and 1,170, mostly the Mi15 cells, also release a fast transmitter and keep them; the connectome's own prediction names 979), and 43,000 optic-lobe cells that do not spike in real flies release transmitter in proportion to their depolarisation; three tone gauges; a per-type table for thresholds | which neurons make which transmitter is the data; that these three act slowly and that those cell types are graded is the literature (cited in `parts.py`); the strength and time constant of each tone are chosen by hand; all 16 validated experiments pass |
 
 Everything on screen says which of the two it is; the **"What's real here?"** button lists it all.
 
@@ -119,7 +119,7 @@ on 3.13 or newer) and about 680 MB of packages; in a virtual environment made wi
 | Download fails with a certificate error (macOS) | Run "Install Certificates.command" in your Python folder in Applications. |
 | Download blocked by a firewall | Download [the file](https://raw.githubusercontent.com/blendi-remade/fly-brain-minecraft/6cfa30175003ef25da68a237d5eda958f8047b82/src/main/resources/connectome/malecns-v1.0.flyb.gz) in your browser and put it in `data/` as it is (named `malecns-v1.0.flyb.gz`, not unpacked); the error message gives the exact path. |
 | "Could not find a free port" | `py fly_game.py --port 9000` (the message names the ports it tried; if 9000 was among them, any other number from 1024 to 65535) |
-| The game says it's running below real time | Your computer is simulating 176k neurons slower than real time; the fly's world slows down to keep up. First make sure numba is installed (`py -m pip install numba`; the terminal says "Brain integrator: compiled (numba)" at start-up): with it, a 4-core laptop-class machine manages about 1.5x real time with a busy brain, without it about 0.7x. Then close other programs, or start it with `py fly_game.py --fast` (a 1 ms time step, about twice as fast again; every classic experiment still passes). |
+| The game says it's running below real time | Your computer is simulating 176k neurons slower than real time; the fly's world slows down to keep up. First make sure numba is installed (`py -m pip install numba`; the terminal says "Brain integrator: compiled (numba)" at start-up): with it, a 4-core laptop-class machine manages about 1.5x real time with a busy brain, without it about 0.7x. Then close other programs, or start it with `py fly_game.py --fast` (a 1 ms time step, about twice as fast again; every classic experiment still passes). With `--body physics` about 0.1x is normal: the physics body (MuJoCo) sets that pace, not your computer (`docs/SCIENCE.md` section 6.7). |
 | The 3-D brain map goes dark while its yaw counter keeps ticking | Your browser took the graphics (WebGL) context away, for instance after a GPU driver reset, sleep and resume, or too many WebGL tabs (Firefox drops the least recently used one past 16). The page now asks for it back and redraws the map when it returns, and says "graphics reset, restoring…" in the map meanwhile; if it says to reload, reload the tab. A flat map with the note that WebGL is unavailable means the browser refused WebGL altogether (check its graphics settings). |
 
 ## 3. How it works (the whole idea)
@@ -151,11 +151,12 @@ on 3.13 or newer) and about 680 MB of packages; in a virtual environment made wi
    from the brain to the body, and turns their firing into movement: `MN9` extends the proboscis,
    a burst from `DNp01` (the giant fibre) triggers an escape jump, `DNa02` left vs right steers, `DNp15` carries
    the optomotor reflex, `MDN` walks backward, `pIP10` sings, and so on.
-5. **Learning.** Every synapse from a Kenyon cell onto a mushroom body output neuron (33,496 of them)
-   weakens when the Kenyon cell was active shortly before dopamine arrived in that MBON's
-   compartment. Punishment dopamine (PPL1) waters the approach-promoting MBONs, reward dopamine
-   (PAM) the avoidance-promoting ones, so odour + punishment makes the fly avoid the odour and
-   odour + reward makes it approach. Which dopamine neurons gate which MBON is read from the wiring.
+5. **Learning.** Every connection from a Kenyon cell onto a mushroom body output neuron (33,496 of
+   them, carrying 402,850 synapses; one learned weight each) weakens when the Kenyon cell was active
+   shortly before dopamine arrived in that MBON's compartment. Punishment dopamine (PPL1) waters the
+   approach-promoting MBONs, reward dopamine (PAM) the avoidance-promoting ones, so odour + punishment
+   makes the fly avoid the odour and odour + reward makes it approach. Which dopamine neurons gate
+   which MBON is read from the wiring.
 
 With no input, the brain is completely silent: every spike you see traces back to something the fly
 sensed, something you zapped, or the faint background noise if you switch it on.
@@ -191,8 +192,9 @@ Scanning hundreds of sensory cell types on the real connectome (the experiments 
 - **Smell and learning.** Once the antennal lobe is calm, an odour that excites four or five
   glomeruli activates 7-9 % of Kenyon cells, the same cells every time and different cells for
   different odours (overlap 0.00-0.02 between odours with no shared glomerulus, 0.9 across random
-  seeds). Halving the Kenyon-cell synapses onto the punishment-side MBONs cuts their odour response
-  (MBON11 31 → 14 Hz, MBON14 26 → 3 Hz) without touching an unpaired odour. Bitter taste fires the
+  seeds). Halving the Kenyon-cell connections onto the punishment-side MBONs cuts their odour response
+  (vinegar → MBON14 38 → 6 Hz in the game, the mean of five seeds), and the game's other odours hardly
+  reach MBON14 to begin with (0-2 Hz; `docs/SCIENCE.md` section 4.6). Bitter taste fires the
   PPL1 punishment dopamine neurons (PPL101 at about 80 Hz); sugar never reaches the PAM reward neurons in
   this model, so eating sugar drives them directly (all but PAM-γ3, which sugar suppresses in real
   flies), and the game says so.
@@ -312,10 +314,13 @@ grown fly, and `python fly_game.py --grow type` starts the game with one. The sc
 
 **The genes as a parts list.** The published model gives every neuron the same machine; the
 "Parts list" switch on the Genome card gives each the one its genes make. Dopamine, octopamine and
-serotonin have no fast receptors in the fly, so their 979 neurons stop making fast synaptic
+serotonin have no fast receptors in the fly, so their neurons stop making fast synaptic
 potentials and instead leave a *tone* on their targets that lingers for seconds and raises how
 strongly those targets respond to everything else (three gauges show the tones; a loud sound, for
-instance, raises the octopamine tone that sharpens the motion cells). Photoreceptors, the lamina
+instance, raises the octopamine tone that sharpens the motion cells). The connectome's own prediction
+names 979 such neurons; with the literature's transmitters (the default, see "What the literature
+says" below) the Genome card counts 2,146, and the 1,170 of them that release a fast transmitter as
+well (1,151 are Mi15 cells) keep their fast synapses, so 976 lose them. Photoreceptors, the lamina
 cells, the medulla inputs to T4/T5, T4/T5 and the HS/VS cells do not spike in real flies, so here
 they transmit graded signals below the spike threshold. APL, the mushroom body's inhibitory
 feedback neuron, releases locally: onto the Kenyon cells and output neurons of a lobe that is

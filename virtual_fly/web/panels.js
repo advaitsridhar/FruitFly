@@ -196,7 +196,7 @@ export class LearningPanel {
     const n = $("gaugeNeedle"), left = Math.round(50 + 50 * bias);
     if (n.__l !== left) { n.__l = left; n.style.left = left + "%"; }
     setText($("gaugeText"), l.smelling ? `smelling ${this.odourName[l.smelling] || l.smelling}: learned bias ${bias >= 0 ? "+" : ""}${fmt(bias, 2)}` : "not smelling anything");
-    setText($("learnText"), `${fmt(100 * (l.depressed_fraction || 0), 1)} % of KC→MBON synapses depressed · ${l.events || 0} learning event${l.events === 1 ? "" : "s"}`);
+    setText($("learnText"), `${fmt(100 * (l.depressed_fraction || 0), 1)} % of KC→MBON connections depressed · ${l.events || 0} learning event${l.events === 1 ? "" : "s"}`);
   }
 }
 
@@ -409,7 +409,11 @@ export class GeneticsPanel {
         `<small>${t.n.toLocaleString()} neurons · ${(100 * t.synapse_share).toFixed(1)} % of synapses · <code>${esc(t.spec)}</code></small>`;
       nt.append(info, this.actions(t.spec, false));
     }
-    setText($("geneSource"), (this.G.source || "") + (this.G.unclear ? ` ${this.G.unclear.toLocaleString()} neurons have no confident transmitter prediction and count as excitatory.` : ""));
+    // MaleCNS counts its "unclear" neurons as excitatory; FlyWire's keep the low-confidence prediction's sign
+    const unclear = this.G.unclear || 0, inhibitory = this.G.unclear_inhibitory || 0;
+    setText($("geneSource"), (this.G.source || "") + (!unclear ? "" : inhibitory
+      ? ` ${unclear.toLocaleString()} neurons have no confident transmitter prediction (labelled "unclear"); each keeps its predicted transmitter's sign (${(unclear - inhibitory).toLocaleString()} excitatory, ${inhibitory.toLocaleString()} inhibitory).`
+      : ` ${unclear.toLocaleString()} neurons have no confident transmitter prediction and count as excitatory.`));
     this.renderVfb(L.vfb);
     $("lineBtn").onclick = () => this.neuronsOfLine();
     $("lineName").addEventListener("keydown", (e) => { if (e.key === "Enter") this.neuronsOfLine(); });
@@ -507,7 +511,7 @@ const TONE_COLOURS = { dopamine: "#d9a2ff", octopamine: "#ffb454", serotonin: "#
 
 export class GenomePanel {
   constructor(L) {
-    this.L = L; this.lastKey = ""; this.partsOn = null;
+    this.L = L; this.lastKey = ""; this.partsOn = null; this.grownKey = "";
     const sel = $("genomeLevel"); sel.innerHTML = "";
     for (const lv of (L.genome && L.genome.levels) || []) {
       const o = document.createElement("option"); o.value = lv.level; o.textContent = lv.level; o.title = lv.label; sel.appendChild(o);
@@ -541,6 +545,18 @@ export class GenomePanel {
   update(S) {
     const g = S.genome; if (!g) return;
     const st = $("genomeStatus"), box = $("survival");
+    // the wiring and seed boxes show the fly that grew (from --grow, the API or this card), once per new fly, so
+    // Grow does not silently swap it for seed 1; a box being edited is left alone
+    const gk = `${g.level}|${g.seed}`;
+    if (!g.growing && g.level !== "real" && gk !== this.grownKey) {
+      this.grownKey = gk;
+      if (document.activeElement !== $("genomeSeed")) $("genomeSeed").value = g.seed;
+      const sel = $("genomeLevel");
+      if (document.activeElement !== sel) {
+        if (![...sel.options].some((o) => o.value === g.level)) sel.add(new Option(g.level, g.level));   // e.g. a bottleneck the list lacks
+        sel.value = g.level;
+      }
+    }
     setClass(st, "err", !!g.error);
     $("growBtn").disabled = !!g.growing;
     if (g.error) setText(st, `Could not grow: ${g.error}`);
@@ -586,10 +602,12 @@ export class GenomePanel {
       const cur = c.curated || {}, rs = c.receptor_signs || {};
       const withData = (rs.coverage || []).reduce((a, x) => Math.max(a, x.with_data || 0), 0);   // the same targets for every modulator
       setText($("partsInfo"), p.on
-        ? `${(c.modulatory_neurons || 0).toLocaleString()} dopamine, octopamine and serotonin neurons act through slow tones on ${(c.modulated_targets || 0).toLocaleString()} targets; ${(c.graded_neurons || 0).toLocaleString()} optic-lobe cells transmit graded signals`
+        ? `${(c.modulatory_neurons || 0).toLocaleString()} dopamine, octopamine and serotonin neurons act through slow tones on ${(c.modulated_targets || 0).toLocaleString()} targets`
+          + (c.co_release_neurons ? ` (${c.co_release_neurons.toLocaleString()} of them also release a fast transmitter and keep their fast synapses)` : "")
+          + `; ${(c.graded_neurons || 0).toLocaleString()} optic-lobe cells transmit graded signals`
           + (cur.neurons ? `; the literature re-types ${cur.neurons.toLocaleString()} neurons (${cur.types.toLocaleString()} types)` : "")
           + (withData ? `; receptor expression sets the tone's sign on ${withData.toLocaleString()} targets` : "")
-          + (rs.facts || []).filter((f) => f.neurons).map((f) => f.receptors.length ? `; ${f.spec} uses ${f.receptors.join(", ")} (literature)` : `; ${f.what} in ${f.spec} (literature)`).join("")
+          + (rs.facts || []).filter((f) => f.neurons).map((f) => f.receptors.length ? `; ${f.spec} uses ${f.receptors.join(", ")} (literature)` : `; from the literature: ${f.what} (${f.label})`).join("")
           + (c.local || []).map((x) => `; ${x.spec} releases locally, by ${x.mode === "regions" ? "mushroom-body region" : "lobe"}`).join("")
         : "every neuron is the same machine (Shiu et al. 2024); switch on to give each the parts its genes make");
       setShown($("tones"), !!p.on);
@@ -664,7 +682,7 @@ export class ModelPanel {
       ["fatigue", `${s.fatigue_mv} mV per spike, fading over ${s.fatigue_ms} ms`],
       ["noise", s.noise_hz ? `${s.noise_hz} Hz × ${s.noise_mv} mV (${s.noise_spec})` : "none"],
       ["silenced by profile", (s.silenced || []).join(", ") || "nothing"],
-      ["plasticity", p ? `rate ${p.rate}, KC trace ${p.kc_tau_ms} ms, DAN trace ${p.dan_tau_ms} ms, floor ${p.floor}, recovery ${p.recover_min} min, ${Number(p.plastic_synapses).toLocaleString()} plastic KC→MBON synapses` : "off"],
+      ["plasticity", p ? `rate ${p.rate}, KC trace ${p.kc_tau_ms} ms, DAN trace ${p.dan_tau_ms} ms, floor ${p.floor}, recovery ${p.recover_min} min, ${Number(p.plastic_synapses).toLocaleString()} plastic KC→MBON connections (one weight per neuron pair)` : "off"],
       ["columnar vision", L.columnar_vision ? "on: T4/T5 columns driven from the retina" : "off: LC4/LPLC2/LC10a/HS driven from feature detectors"],
       ["brain speed", `<span id="modelRtf">–</span>`],
     ];
