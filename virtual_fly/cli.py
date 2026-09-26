@@ -24,7 +24,7 @@ from dataclasses import replace
 import numpy as np
 
 from . import experiments as E
-from .connectome import load_connectome
+from .connectome import command, load_connectome
 from .pathways import relay_ranking, strongest_partners, trace
 from .settings import PROFILES, build_brain
 from .wiring import LEVEL_ERROR, valid_level
@@ -258,7 +258,8 @@ def main(argv=None):
         cur = c["curated"]
         with_data = max((r["with_data"] for r in c["receptor_signs"]["coverage"]), default=0)
         by_fact = sum(f["targets"] for f in c["receptor_signs"].get("facts", []))    # signed by a fact, not the atlas
-        print(f"parts list on: {c['modulatory_neurons']:,} modulatory neurons ({', '.join(m['nt'] for m in c['modulators'])}) act through "
+        print(f"parts list on: {c['modulatory_neurons']:,} modulatory neurons ({', '.join(m['nt'] for m in c['modulators'])}; "
+              f"{c['co_release_neurons']:,} of them also keep their fast synapses) act through "
               f"slow tones on {c['modulated_targets']:,} targets; {c['graded_neurons']:,} graded cells"
               + (f"; curated transmitters ({cur['policy']}): {cur['neurons']:,} neurons in {cur['types']:,} types changed" if cur.get("neurons") else "")
               + (f"; receptor signs on {with_data:,} modulated targets" if with_data else "")
@@ -422,8 +423,8 @@ def main(argv=None):
     same_fly = ((" --female" if args.female else "") + (f" --grow {args.grow}" if args.grow else "")
                 + (f" --grow-seed {args.grow_seed}" if args.grow and args.grow_seed != 1 else ""))
     if args.profile == "pure":
-        print("Try the game's settings: python fly_brain.py --profile game" + same_fly)
-    print("Then play: python fly_game.py" + same_fly)
+        print(f"Try the game's settings: {command('fly_brain.py')} --profile game" + same_fly)
+    print(f"Then play: {command('fly_game.py')}" + same_fly)
 
 
 def _usage_error(ap, message):
@@ -484,7 +485,7 @@ def check(conn, spec):
     if spec.split(":")[0] in ("body", "index", "hex", "regex"):
         raise SystemExit(problem)                # a number or a pattern, not a name: a name search would not help
     word = spec.split(":")[-1].split("/")[0].split(",")[0]
-    raise SystemExit(f"{problem} Search for names with: python fly_brain.py{' --female' if female else ''} --find {word}")
+    raise SystemExit(f"{problem} Search for names with: {command('fly_brain.py')}{' --female' if female else ''} --find {word}")
 
 
 def check_spec(conn, spec):

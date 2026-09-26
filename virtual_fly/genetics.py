@@ -205,8 +205,8 @@ class NeuronBridge:
     ``fetch(url, timeout) -> bytes`` can be replaced (the tests use an offline fake)."""
 
     def __init__(self, cache_dir: Path | str | None = None, fetch=None, timeout: float = 25.0):
-        from .connectome import PROJECT_DIR
-        self.cache_dir = Path(cache_dir) if cache_dir is not None else PROJECT_DIR / "data" / "neuronbridge"
+        from .connectome import DATA_DIR
+        self.cache_dir = Path(cache_dir) if cache_dir is not None else DATA_DIR / "neuronbridge"
         self.fetch = fetch or _default_fetch
         self.timeout = timeout
         self._version: str | None = None

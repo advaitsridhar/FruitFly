@@ -19,9 +19,9 @@ let toolOrder = ["lure", "hand", "sugar", "bitter", "water", "dust", "shock", "p
 const HINTS = {
   lure: "Wiggle the lure slowly beside the fly: it turns toward small moving things (a courtship-chase circuit).",
   hand: "Swoop the hand straight at the fly, fast. A slow hand doesn't scare it.",
-  sugar: "Click just in front of the fly's head to drop sugar. A hungry fly eats more eagerly.",
+  sugar: "Click just in front of the fly's head to drop sugar. A hungry fly eats more eagerly, in bouts of a few seconds.",
   bitter: "Click to drop bitter food. Try it right next to sugar.",
-  water: "Click to drop water: a thirsty fly drinks it.",
+  water: "Click to drop water: a thirsty fly tastes it, but in this model its water cells do not reach MN9, so it does not drink.",
   dust: "Click near the fly to puff dust at its antennae.",
   shock: "Click anywhere: an electric shock drives the PPL1 punishment dopamine neurons and pairs with whatever it smells now.",
   post: "Click to plant a post. The fly can see it and bump into it.",

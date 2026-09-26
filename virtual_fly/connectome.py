@@ -45,6 +45,13 @@ PROJECT_DIR = PACKAGE_DIR.parent
 # ~/.cache/virtual-fly rather than into site-packages. FLY_DATA_DIR puts the downloads anywhere else.
 INSTALLED = (PACKAGE_DIR / "data").is_dir()
 SHIPPED_DATA_DIR = PACKAGE_DIR / "data" if INSTALLED else PROJECT_DIR / "data"
+
+
+def command(script: str) -> str:
+    """How to start one of the kit's programs (``fly_brain.py``, ``fly_game.py``) the way this copy was started: the console
+    script (``fly-brain``) in an installed copy or when started as one, else ``python fly_brain.py`` from the folder."""
+    console = script.removesuffix(".py").replace("_", "-")
+    return console if INSTALLED or Path(sys.argv[0]).name == console else f"python {script}"
 DATA_DIR = Path(os.environ.get("FLY_DATA_DIR") or (Path.home() / ".cache" / "virtual-fly" if INSTALLED
                                                    else PROJECT_DIR / "data"))
 DEFAULT_DATA_FILE = DATA_DIR / "malecns-v1.0.flyb.gz"

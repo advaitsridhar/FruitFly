@@ -241,3 +241,14 @@ def test_type_graph_nodes_and_edges(conn):
     assert np.array_equal(tg.nodes_of("LC10a"), np.array(sorted([tg.index["LC10a/L"], tg.index["LC10a/R"]])))
     assert tg.nodes_of("class:nothing").size == 0
     assert tg.row_ptr[-1] == tg.col_ptr[-1] == tg.src.size
+
+
+def test_command_names_the_program_the_way_it_was_started(monkeypatch):
+    from virtual_fly import connectome
+    monkeypatch.setattr(connectome, "INSTALLED", False)
+    monkeypatch.setattr("sys.argv", ["fly_brain.py"])
+    assert connectome.command("fly_game.py") == "python fly_game.py"
+    monkeypatch.setattr("sys.argv", ["/venv/bin/fly-brain"])
+    assert connectome.command("fly_brain.py") == "fly-brain"
+    monkeypatch.setattr(connectome, "INSTALLED", True)
+    assert connectome.command("fly_game.py") == "fly-game"

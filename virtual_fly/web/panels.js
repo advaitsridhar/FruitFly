@@ -257,7 +257,8 @@ export class LabPanel {
       const r = await getJSON(`api/types?q=${encodeURIComponent(q)}&limit=40`);
       if (!r || !r.types) return;
       const seen = new Set(), opts = [];
-      for (const t of r.types) { if (!seen.has(t.type)) { seen.add(t.type); opts.push(`<option value="${esc(t.type)}">${t.n} neurons</option>`); } }
+      for (const t of r.types) { if (!seen.has(t.type)) { seen.add(t.type); const of = t.alias_of ? ` (alias of ${t.alias_of.startsWith("body:") ? "a list of neuron ids" : t.alias_of})` : "";
+        opts.push(`<option value="${esc(t.type)}">${t.n} neurons${esc(of)}</option>`); } }
       dl.innerHTML = opts.join("") + this.baseOptions;
     }, 180);
     for (const id of ["spec", "traceFrom", "traceTo"]) $(id).addEventListener("input", (e) => search(e.target.value.trim().replace(/^prefix:|\/[LRM]$/g, "")));

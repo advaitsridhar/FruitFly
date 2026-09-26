@@ -285,7 +285,10 @@ and are used by the game:
   MN9, so a thirsty fly tastes water and does not drink, and its thirst only rises (headless game,
   seed 0, thirst 1, water at the mouth, walking urge off, 8 s: MN9 0 Hz, Fudog 29 Hz, the drop
   untouched, thirst still 1.0). No drink was built in by hand: the Why panel and "What's real here?"
-  say so. The female file has no `LB3a` (section 9.2), so she tastes nothing.
+  say so. In the female fly `LB3a` is an alias for the published model's 18 water cells (section 9.2): at
+  the game's 80 Hz they reach Fudog and not MN9, so she does not drink either, although at 200 Hz they do
+  reach MN9 (above). The water rate is the kit's hand-built choice, as before; it was not raised to make
+  either fly drink.
 
 ---
 
@@ -2131,7 +2134,7 @@ something else, `flywire.ALIASES` maps the name, and the table is stored in the 
 | `LB3b`, `LB3c` (sugar) | the 20 sugar cells of the published model | FlyWire types all 122 labellar sugar and water cells as `LB3`; the published model's list is one side |
 | `LB1a`, `LB1d` | `LB1a,LB1d` | one FlyWire type |
 | `LB2a`, `LB2b` | `LB2a-b` | one FlyWire type |
-| `LB3a` (water, section 2.2) | none | FlyWire types all labellar sugar and water cells as `LB3`; the published model's 18 water cells (17 of them LB3, one LB2d) have no alias yet, so the female fly tastes no water |
+| `LB3a` (water, section 2.2) | the 18 water cells of the published model | FlyWire types all labellar sugar and water cells as `LB3`; the published model's water list (17 of them LB3, one LB2d) is the female's water population (v2.8.1, file build 6) |
 | `prefix:pC1_` | `prefix:pC1` (pC1a-e, 10 cells) | the doublesex pC1 cluster; the male's 148 `pC1_` cells include the male-specific P1 |
 | `R1-R6`, `prefix:R1-R6` | `R1-6` | the outer photoreceptors (8,452 cells), graded in the parts list |
 | `prefix:KCa'b'` | `prefix:KCa'b',prefix:KCapbp` (917 cells) | the α′/β′ Kenyon cells, one of APL's local-release groups |

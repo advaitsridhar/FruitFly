@@ -68,7 +68,8 @@ def test_backend_flag_gives_the_same_rates(capsys):
 def test_parts_list_flags(capsys):
     main(["--parts", "--stim", "PPL101:300", "--watch", "MBON11;PPL101", "--ms", "200"])
     out = capsys.readouterr().out
-    assert "parts list on: 16 modulatory neurons (dopamine, octopamine, serotonin)" in out and "graded cells" in out
+    assert "parts list on: 16 modulatory neurons (dopamine, octopamine, serotonin; 0 of them also keep" in out
+    assert "graded cells" in out
     mbon = [l for l in out.splitlines() if l.strip().startswith("MBON11")][0]
     assert float(mbon.split()[-2]) == 0.0                                            # no fast dopamine synapses
     main(["--part", "GNG232:theta=3", "--stim", "LB3b:40", "--watch", "MN9", "--ms", "300"])

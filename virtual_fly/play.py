@@ -8,7 +8,8 @@ Start the game: ``python fly_game.py`` or ``python -m virtual_fly.play``.
     --no-autopilot       start with the hand-built walking urge switched off
     --no-learning        start with mushroom-body plasticity switched off
     --no-columnar        don't drive the connectome's own T4/T5 motion-detector columns from the retina
-    --noise 2:1          background kicks per neuron per second : size in mV
+    --noise 5:15         background kicks per neuron per second : kick size (2:1 fires nothing; with --parts even
+                         2:1 runs away: docs/SCIENCE.md 3.4)
     --fast               brain time step 1 ms instead of 0.5 ms (about twice as fast; all six
                          classic experiments still pass)
     --parts              start with the genes as each neuron's parts list (the Genome card toggles it)
@@ -52,7 +53,9 @@ def _main(argv=None):
     ap.add_argument("--profile", choices=sorted(PROFILES), default="game")
     ap.add_argument("--pure", action="store_true", help="same as --profile pure")
     ap.add_argument("--fatigue", type=float, default=None, help="neuron fatigue in mV per spike (0 = off)")
-    ap.add_argument("--noise", metavar="HZ:MV", default=None, help="background kicks, e.g. 2:1.0 (0 = off)")
+    ap.add_argument("--noise", metavar="HZ:MV", default=None,
+                    help="background kicks per neuron, HZ:MV (off by default): with the parts list off 2:1 fires nothing and "
+                         "5:15 gives about 600-900 spikes/s; with --parts even 2:1 runs away (docs/SCIENCE.md 3.4)")
     ap.add_argument("--kenyon-gain", type=float, default=None)
     ap.add_argument("--no-autopilot", action="store_true", help="start with the hand-built walking urge switched off")
     ap.add_argument("--no-learning", action="store_true", help="switch mushroom-body plasticity off")
@@ -63,7 +66,7 @@ def _main(argv=None):
     ap.add_argument("--backend", choices=("auto", "numpy", "numba"), default="auto",
                     help="brain integrator: the compiled numba kernels when numba is installed (auto), or plain NumPy")
     ap.add_argument("--grow", metavar="LEVEL", default=None,
-                    help="start with a fly grown from its wiring rules: type, class or bottleneck:K (the Genome card does the same)")
+                    help="start with a fly grown from its wiring rules: type, class or bottleneck:K, K = 1 to 2048 (the Genome card does the same)")
     ap.add_argument("--grow-seed", type=int, default=1, help="which individual to grow (any whole number)")
     ap.add_argument("--parts", action="store_true",
                     help="start with the parts list on: modulators as slow tones, graded optic-lobe cells (the Genome card toggles it)")
@@ -96,7 +99,10 @@ def _main(argv=None):
     if args.kenyon_gain is not None:
         overrides["kenyon_gain"] = args.kenyon_gain
     if args.noise:
-        hz, mv = (float(x) for x in args.noise.split(":"))
+        try:
+            hz, mv = (float(x) for x in args.noise.split(":"))
+        except ValueError:
+            ap.error(f"--noise wants HZ:MV, e.g. 5:15 (got {args.noise!r})")
         overrides.update(noise_hz=hz, noise_mv=mv)
     from .parts import PartsList
     parts_list = PartsList(curated=args.curated or "modulators")
@@ -115,7 +121,8 @@ def _main(argv=None):
         brain.plasticity.enabled = False
     if brain.parts is not None:
         c = brain.parts.counts
-        print(f"Parts list: on ({c['modulatory_neurons']:,} modulatory neurons, {c['graded_neurons']:,} graded cells).", file=sys.stderr)
+        print(f"Parts list: on ({c['modulatory_neurons']:,} modulatory neurons, {c['co_release_neurons']:,} of them also keeping "
+              f"their fast synapses; {c['graded_neurons']:,} graded cells).", file=sys.stderr)
     if args.body == "physics":
         print("Body: physics (NeuroMechFly v2 legs in MuJoCo; about a tenth of real time"
               + ("; the senses see the pose averaged over a stride)." if args.stride_average else ")."), file=sys.stderr)

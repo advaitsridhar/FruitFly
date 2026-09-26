@@ -669,7 +669,7 @@ class Game:
         if kind == "grow":
             level = str(a.get("level", "type")).strip().lower()
             if not wiring.valid_level(level):
-                return {"ok": False, "error": "level must be real, type, class or bottleneck:K (K = 1 to 2048)"}
+                return {"ok": False, "error": wiring.LEVEL_ERROR}
             if self.genome["growing"]:
                 return {"ok": False, "error": "a fly is already being grown; wait for it"}
             try:
@@ -1303,7 +1303,8 @@ class Game:
             "dataset": c.dataset, "sex": c.sex,
             "readouts": self.readout_meta,
             "checks": [{"id": i, "text": t} for i, t in CHECKS                    # none this fly cannot do
-                       if (i != "court" or self.readouts["pIP10"].size) and not (c.sex == "female" and i in ("groom", "sound", "wall"))],
+                       if (i not in ("court", "genetics") or self.readouts["pIP10"].size)   # no song cells, no song to lose
+                       and not (c.sex == "female" and i in ("groom", "sound", "wall"))],
             "odours": [{"id": o.id, "name": o.name, "glomeruli": o.glomeruli, "innate": o.innate, "colour": o.colour,
                         "note": o.note} for o in ODOURS.values()],
             "scenarios": [{"id": k, "name": s.name, "description": s.description} for k, s in SCENARIOS.items()],
@@ -1334,8 +1335,11 @@ class Game:
                 "Sugar taste neurons → MN9, the proboscis motor neuron. Bitter taste keeps MN9 silent"
                 + (", even on top of sugar." if male else "; on top of sugar only with the published model's settings "
                    "(fly_brain.py --female), not the game's (MN9 7-13 Hz)."),
-                ("Water taste cells (LB3a, the type whose outputs match the published model's water cells) → Fudog (DNg67), "
-                 "not MN9: a thirsty fly tastes water but does not drink." if self.water_cells else
+                (("Water taste cells (LB3a, the type whose outputs match the published model's water cells) → Fudog (DNg67), "
+                  "not MN9 (at no rate up to 200 Hz): a thirsty fly tastes water but does not drink." if male else
+                  "Water taste cells (the published model's 18 water cells) → Fudog (DNg67); at the game's 80 Hz not MN9, "
+                  "so a thirsty fly tastes water but does not drink (at 200 Hz they do reach MN9: docs/SCIENCE.md 2.2).")
+                 if self.water_cells else
                  "Water: this fly's data name no water taste cells (FlyWire types every labellar sugar and water cell as "
                  "LB3), so water tastes of nothing here and she does not drink (docs/SCIENCE.md 9.2)."),
                 "Looming detectors (LC4, LPLC2) → giant fibre DNp01, the escape command.",

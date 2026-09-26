@@ -16,8 +16,9 @@ DNg13 lengthens contralateral ones. Steering therefore modulates an ongoing rhyt
 stepping does not turn (the drawn body turns in place).
 
 Nothing here is fitted to the kit. What stays hand-built: the decoder's weights (game.py), the mapping's
-forward term (the drawn body's), the proboscis, wings and abdomen (still drawn: the NeuroMechFly model
-has no joints there), and the escape jump (not modelled physically).
+forward term (the drawn body's), and the proboscis, wings and abdomen (still drawn: the NeuroMechFly model
+has no joints there). Not modelled: the escape jump (the giant fibre still fires; the game then reports the
+escape command).
 
 Install (the kit's other dependencies are unchanged; flygym's own requirement list pins numba 0.60 and
 pulls in Jupyter, so it goes in without its dependencies, but it does import numba, hence numba below)::
