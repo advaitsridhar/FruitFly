@@ -42,7 +42,9 @@ tools/
                        APL's and DPM's connections split by region
   vfb_overlay.json     the connector harvest: FBbt classes for the names the OBO lacks (an input of build_vfb_data.py)
 data/              the connectome (downloaded the first time; the female fly's is built there) and the small tables
-                   read by vfb.py and parts.py (fbbt_*.json.gz, vfb_receptors.json.gz, mb_roi_connectivity.json.gz)
+                   read by vfb.py and parts.py (fbbt_*.json.gz, vfb_receptors.json.gz, mb_roi_connectivity.json.gz);
+                   an installed copy downloads and builds into ~/.cache/virtual-fly instead, and FLY_DATA_DIR,
+                   when set, replaces either folder
 tests/             pytest suite on a small synthetic connectome (no download needed)
 docs/              API.md (server contract), SCIENCE.md (what was measured and why), this file
 ```
