@@ -154,8 +154,12 @@ the numbers from this kit, every neuron simulated, nothing tuned for these tests
 | Bitter taste | Scapula (bitter relay) / MN9 | 287 / 0 Hz | 222 / 0 Hz | relay fires, MN9 silent |
 | Sugar and bitter together | MN9 | 0 Hz | 0 Hz | bitter wins |
 | Something looming on the right | DNp01 giant fibre / TTMn jump motor neuron | 343 / 68 Hz | 295 / 60 Hz | 250-400 / 40-100 Hz |
-| Dust on the antennae | aDN1 / aDN2 grooming neurons | 192 / 139 Hz | 142 / 105 Hz | 100-260 / 80-200 Hz |
+| Dust on the antennae | aDN1 / aDN2 grooming neurons (`DNg62` / `DNge078`) | 192 / 139 Hz | 142 / 105 Hz | 100-260 / 80-200 Hz |
 | 1 s after bitter or dust stops | the whole brain | runaway loop | calm after bitter; a small loop after dust | calm |
+
+A readout passes when its mean over five seeds is in range, allowing max(1 Hz, 15 %) above the top
+(`docs/SCIENCE.md` section 2); `fly_brain.py` writes that margin after the range, as in `0-5(+1) Hz`,
+whenever a mean or a seed needed it.
 
 Scanning hundreds of sensory cell types on the real connectome (the experiments are in
 `docs/SCIENCE.md`) found what else the wiring supports, and what it does not:
@@ -212,7 +216,7 @@ the published model's wiring: every connection, and 0.275 mV per synapse. Each n
 or inhibitory) comes from FlyWire's current transmitter prediction, which differs from the published
 model's own table on 1.2 % of connections, mostly uncertain calls in the optic lobe; it matches the
 literature better, and the model's signs change no result (`docs/SCIENCE.md` section 9.1). The experiments and senses
-find her cells under the male names (`MN9` is FlyWire's `CB0701`, and so on). Cells she doesn't have
+find her cells under the male names (`MN9` is FlyWire's `CB0701`, and so on; `--find` marks those names as aliases). Cells she doesn't have
 come out as n/a, never as 0 Hz: she has no nerve cord, and no male-specific cells such as pIP10. Sugar
 drives her MN9 and, in the published model's profile (`fly_brain.py --female`), bitter wins over it, as
 in the paper; in the game profile MN9 still fires about 7 Hz with both (13 Hz with the parts list on),
@@ -234,7 +238,7 @@ py fly_brain.py --profile game --json out.json             # five seeds each (th
 py fly_brain.py --silence GNG087 --only bitter             # knock out the bitter relay
 py fly_brain.py --stim "prefix:JO-B:100" --record spikes.npz   # every spike, with neuPrint IDs
 py fly_game.py --pure                                      # the paper's model, seizures and all
-py fly_game.py --noise 2:1                                 # a little spontaneous activity
+py fly_game.py --noise 5:15                                # spontaneous activity (parts list off; docs/SCIENCE.md 3.4)
 ```
 
 ```python
@@ -275,11 +279,12 @@ and `dimorphism:male` / `dimorphism:dimorphic`.
 **The genome as a recipe.** The Genome card grows a new fly from this connectome's cell-type
 wiring rules (which types connect, how often, how strongly) with every neuron-to-neuron
 connection drawn afresh, then runs the eleven validated experiments on it and lists which
-reflexes survive. Nine of eleven do; a fly grown from class-level rules keeps none, and the
-bottleneck levels squeeze the type rules through a low-rank code. Change the seed for another
-individual, and "Real wiring" brings the original back. `python fly_brain.py --genome-sweep`
-prints the same table from the terminal, `--grow type` runs any experiment on a grown fly, and
-`python fly_game.py --grow type` starts the game with one. The science and the numbers are in
+reflexes survive. Nine of eleven do; a fly grown from class-level rules keeps none (only the two
+no-response controls still pass), and the bottleneck levels squeeze the type rules through a
+low-rank code. Change the seed for another individual, and "Real wiring" brings the original back.
+`python fly_brain.py --profile game --genome-sweep` prints the same table from the terminal (the
+default pure profile runs only the six classic experiments), `--grow type` runs any experiment on a
+grown fly, and `python fly_game.py --grow type` starts the game with one. The science and the numbers are in
 `docs/SCIENCE.md`, section 7.
 
 **The genes as a parts list.** The published model gives every neuron the same machine; the
@@ -296,14 +301,14 @@ it down through its Dop2R receptor. A tone acts only through receptors the kit h
 (the target's single-cell atlas cluster, or a fact from the literature such as octopamine sharpening
 the VS motion cells, of which the octopamine neurons reach one in this wiring); a target with neither
 feels none. That rule closed a leak of song past the
-silenced fruitless neurons (`python fly_brain.py --one-sign-rule` brings back the old rule, under which
+silenced fruitless neurons (`python fly_brain.py --profile game --one-sign-rule` brings back the old rule, under which
 every tone raised every target's gain; the game always uses the new one). The reflexes are re-tested on
 the switch (the eleven the Genome card lists; all 16 validated experiments pass in `fly_brain.py
---profile game --parts`, none of them fragile; `python fly_brain.py --global-apl` puts APL back to one cell releasing
+--profile game --parts`, none of them fragile; `python fly_brain.py --profile game --global-apl` puts APL back to one cell releasing
 the same everywhere). Every
 re-test runs each experiment five times on a fly with nothing learned carried over between runs, in a
 separate low-priority process so the game keeps its speed, and a reflex that passes on average but
-misses on some run gets an amber mark ("fragile"). `python fly_brain.py --parts` runs any experiment
+misses on some run gets an amber mark ("fragile"). `python fly_brain.py --profile game --parts` runs any experiment
 that way, `--part "class:Kenyon_Cell:theta=10"` overrides a type's threshold, and
 `python fly_game.py --parts` starts the game with the parts on. The parts cost about half as much
 brain time again, so under heavy stimulation the game runs at 0.8-0.9 of real time on a laptop with
@@ -321,7 +326,7 @@ adult single-cell cluster expresses a receptor. With the parts list on, the lite
 over the prediction where the parts model cares (Mi15 gains a dopamine tone, the DPM neuron is
 GABA + serotonin, "unclear" predictions with a curated transmitter get it), and the tone's sign on
 each target follows the receptors its type expresses (Gi-coupled ones lower the gain). The Genetics
-card lists where the literature and the prediction disagree. `python fly_brain.py --curated all`
+card lists where the literature and the prediction disagree. `python fly_brain.py --profile game --curated all`
 lets the literature win over confident fast predictions too (their signs flip, and types it calls
 purely modulatory lose their fast synapses), and `python fly_game.py --curated all` makes the
 Genome card's switch use that policy; section 8.1 of `docs/SCIENCE.md` has the numbers and the
