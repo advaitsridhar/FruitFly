@@ -355,7 +355,7 @@ function wireBrain() {
     pop.querySelector(".close").onclick = () => { setShown(pop, false); brain.picked = -1; };
     const r = await getJSON(`api/neuron?index=${i}`);
     if (!r || !r.ok) { pop.querySelector(".feedback").textContent = (r && r.error) || "no answer"; return; }
-    const n = r.neuron, spec = n.side ? `${n.type}/${n.side}` : n.type;
+    const n = r.neuron, spec = !n.type ? `index:${n.index}` : n.side ? `${n.type}/${n.side}` : n.type;   // an unannotated cell by itself
     const list = (rows) => rows.slice(0, 4).map((p) => `<li><b>${esc(p.type)}${p.side ? "/" + p.side : ""}</b> <span class="${p.sign > 0 ? "pos" : "neg"}">${p.sign > 0 ? "+" : "−"}</span> ${p.synapses} syn · ${p.neurons} cell${p.neurons === 1 ? "" : "s"}</li>`).join("") || "<li>none</li>";
     pop.innerHTML = `<button class="close">✕</button>
       <h5>${esc(n.type || "(unannotated)")}${n.side ? " / " + esc(n.side) : ""} <small style="color:var(--muted)">#${n.index}</small></h5>
