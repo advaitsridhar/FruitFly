@@ -130,7 +130,7 @@ on 3.13 or newer) and about 680 MB of packages; in a virtual environment made wi
 | `No module named 'numpy'` | The virtual environment isn't active in this terminal: in the `FruitFly` folder run `.venv\Scripts\activate` (macOS / Linux: `. .venv/bin/activate`), or install NumPy as in step 3 if you haven't. |
 | Download fails with a certificate error (macOS) | Run "Install Certificates.command" in your Python folder in Applications. |
 | Download blocked by a firewall | Download [the file](https://raw.githubusercontent.com/blendi-remade/fly-brain-minecraft/6cfa30175003ef25da68a237d5eda958f8047b82/src/main/resources/connectome/malecns-v1.0.flyb.gz) in your browser and put it in `data/` as it is (named `malecns-v1.0.flyb.gz`, not unpacked); the error message gives the exact path. |
-| "Could not find a free port" | `py fly_game.py --port 9000` (the message names the ports it tried; if 9000 was among them, any other number from 1024 to 65535) |
+| "Could not find a free port" | Run the same command again with `--port 9000` added (the message names the ports it tried; if 9000 was among them, any other number from 1024 to 65535) |
 | The game says it's running below real time | Your computer is simulating 176k neurons slower than real time; the fly's world slows down to keep up. First make sure numba is installed (`py -m pip install numba`; the terminal says "Brain integrator: compiled (numba)" at start-up): with it, a 4-core laptop-class machine manages about 1.5x real time with a busy brain, without it about 0.7x. Then close other programs, or start it with `py fly_game.py --fast` (a 1 ms time step, about twice as fast again; every classic experiment still passes). With `--body physics` about 0.1x is normal: the physics body (MuJoCo) sets that pace, not your computer (`docs/SCIENCE.md` section 6.7). |
 | The 3-D brain map goes dark while its yaw counter keeps ticking | Your browser took the graphics (WebGL) context away, for instance after a GPU driver reset, sleep and resume, or too many WebGL tabs (Firefox drops the least recently used one past 16). The page now asks for it back and redraws the map when it returns, and says "graphics reset, restoring…" in the map meanwhile; if it says to reload, reload the tab. A flat map with the note that WebGL is unavailable means the browser refused WebGL altogether (check its graphics settings). |
 
@@ -262,20 +262,20 @@ background re-test run on her too; `docs/SCIENCE.md` section 9.5 compares each w
 
 **In code**, start with `my_first_fly.py`: poke, wait, listen, in three lines. Then:
 
-```
-py fly_brain.py --find LC10                                # search cell types by name
-py fly_brain.py --stim "MDN:60" --watch "MDN,DNp09"        # zap a type, listen to others
-py fly_brain.py --stim "LC4/R,LPLC2/R:150"                 # no --watch: shows the most active types
-py fly_brain.py --trace LC10a/L DNa02/L                    # the strongest wiring routes, with signs
-py fly_brain.py --inputs MN9 --outputs GNG232              # strongest partners of a population
-py fly_brain.py --sweep "LB3b,LB3c:0:200:9" --watch MN9    # a dose-response curve
-py fly_brain.py --lesion Sugar --readout MN9               # which relays does sugar → MN9 need?
-py fly_brain.py --profile game --json out.json             # five seeds each (the default): mean ± sd, saved
-py fly_brain.py --silence GNG087 --only bitter             # knock out the bitter relay
-py fly_brain.py --stim "prefix:JO-B:100" --record spikes.npz   # every spike, with neuPrint IDs
-py fly_game.py --pure                                      # the paper's model, seizures and all
-py fly_game.py --noise 5:15                                # spontaneous activity (parts list off; docs/SCIENCE.md 3.4)
-```
+| Command (macOS / Linux: `python3` instead of `py`) | What it does |
+|---|---|
+| `py fly_brain.py --find LC10` | Search cell types by name |
+| `py fly_brain.py --stim "MDN:60" --watch "MDN,DNp09"` | Zap a type, listen to others |
+| `py fly_brain.py --stim "LC4/R,LPLC2/R:150"` | No --watch: shows the most active types |
+| `py fly_brain.py --trace LC10a/L DNa02/L` | The strongest wiring routes, with signs |
+| `py fly_brain.py --inputs MN9 --outputs GNG232` | Strongest partners of a population |
+| `py fly_brain.py --sweep "LB3b,LB3c:0:200:9" --watch MN9` | A dose-response curve |
+| `py fly_brain.py --lesion Sugar --readout MN9` | Which relays does sugar → MN9 need? |
+| `py fly_brain.py --profile game --json out.json` | Five seeds each (the default): mean ± sd, saved |
+| `py fly_brain.py --silence GNG087 --only bitter` | Knock out the bitter relay |
+| `py fly_brain.py --stim "prefix:JO-B:100" --record spikes.npz` | Every spike, with neuPrint IDs |
+| `py fly_game.py --pure` | The paper's model, seizures and all |
+| `py fly_game.py --noise 5:15` | Spontaneous activity (parts list off; docs/SCIENCE.md 3.4) |
 
 ```python
 from virtual_fly import load_connectome, trace

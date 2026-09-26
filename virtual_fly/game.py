@@ -634,9 +634,12 @@ class Game:
                 return {"ok": False, "error": f"'{f}' must be a finite number"}
             try:
                 a[f] = num(a[f])
+                finite = math.isfinite(a[f])
             except (TypeError, ValueError):
                 return {"ok": False, "error": f"'{f}' must be {'a whole number' if num is int else 'a number'}, not {a[f]!r}"}
-            if not math.isfinite(a[f]):
+            except OverflowError:                            # a JSON integer too big for a float
+                finite = False
+            if not finite:
                 return {"ok": False, "error": f"'{f}' must be a finite number"}
             positive = f == "secs" or (f == "r" and a.get("kind") == "post")       # a post needs a size
             if (positive and a[f] <= 0) or (f in ("hz", "factor", "r") and a[f] < 0):

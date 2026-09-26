@@ -419,6 +419,8 @@ def test_actions_refuse_unknown_types_bad_fields_and_drops_the_dish_cannot_take(
            ({"type": "stripes", "count": -float("inf")}, "'count' must be a finite number"),
            ({"type": "stripes", "count": float("nan")}, "'count' must be a finite number"),
            ({"type": "zap", "spec": "MDN", "hz": float("inf")}, "'hz' must be a finite number"),
+           ({"type": "remove", "id": 10 ** 400}, "'id' must be a finite number"),               # a JSON integer too big for a float
+           ({"type": "drop", "kind": "sugar", "x": 10 ** 400, "y": 0}, "'x' must be a finite number"),
            ({"type": "hand", "x": 1.0}, "'hand' needs 'y'"), ({"type": "drop", "kind": "sugar", "y": 0}, "'drop' needs 'x'"),
            ({"type": "drop", "x": 0, "y": 0}, "unknown drop kind None"), ({"type": "drop", "kind": "nectar", "x": 0, "y": 0}, "'nectar'"),
            ({"type": "drop", "kind": "vinegar", "x": 0, "y": 0, "food": "cake"}, "food must be"),

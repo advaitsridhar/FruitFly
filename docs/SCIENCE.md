@@ -286,7 +286,7 @@ and are used by the game:
   At 200 Hz LB3a still gives MN9 0.0 Hz (pure and game); the female's water cells give 34 / 30 Hz
   (pure / game), the published model's water-to-MN9 result at high rates. The game drives `LB3a` at
   80 Hz × thirst when thirst is above 0.2 (`WATER_GRNS`). In this wiring water reaches Fudog and not
-  MN9, so a thirsty fly tastes water and never drinks by itself, and its thirst only rises (headless
+  MN9, so a thirsty fly tastes water and never drinks by itself, and by itself its thirst only rises (headless
   game, seed 0, thirst 1, water at the mouth, walking urge off, 8 s: MN9 0 Hz, Fudog 29 Hz, the drop
   untouched, thirst still 1.0). Water alone does not reach MN9, but zapping MN9 on a water drop does
   make the fly drink (thirst 1, 1 s on the drop, then MN9 zapped at 60 Hz for 2 s, 2.5 s watched; male
