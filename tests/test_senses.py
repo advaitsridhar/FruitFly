@@ -273,6 +273,7 @@ def test_mouth_sugar_bitter_water_and_hunger():
     world.add_food("bitter", hx + 0.5, hy)
     assert mouth.rates(pose, 1.0, 1.0, 1.0) == dict(BITTER_GRNS)
     world.clear("food")
+    assert WATER_GRNS == {"LB3a": 80.0}                  # matched to the published model's water cells (SCIENCE 2.2)
     world.add_food("water", hx, hy)
     assert mouth.rates(pose, 1.0, thirst=0.1, proboscis=0.0) == {} and mouth.touching == {"water": 100}
     assert mouth.rates(pose, 1.0, thirst=0.5, proboscis=0.0) == {k: pytest.approx(0.5 * v) for k, v in WATER_GRNS.items()}

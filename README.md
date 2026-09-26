@@ -41,7 +41,7 @@ Compared with the small starter it grew from, it adds:
 | **Learning** | dopamine-gated depression of Kenyon-cell → MBON synapses, the fly's actual learning rule; pair an odour with sugar, bitter or shock and its preference changes | which synapses are plastic and which dopamine neurons gate which MBON come from the wiring; bitter → punishment dopamine is wiring; sugar → reward dopamine is injected (labelled); the rule's constants are hand-chosen |
 | **A second fly** | a scripted female to chase, tap and sing to | the chase and the song (pC1 → pIP10 → wing motor neurons) are wiring; her behaviour and the contact-to-pC1 arousal are hand-built |
 | **Wind, sound, touch** | Johnston's organ senses wind direction and sound; a clap can make the fly jump | sound → giant fibre and wind → grooming are wiring; heading upwind is hand-built |
-| **Internal state** | hunger and thirst rise with time and change what the fly does and tastes | hand-built |
+| **Internal state** | hunger and thirst rise with time and change what the fly tastes; hunger also changes what it does (thirst cannot: in this wiring water does not reach MN9, the proboscis motor neuron, so the fly never drinks) | hand-built |
 | **A better model** | short-term synaptic depression, background noise, per-population output modulation, threshold heterogeneity, checkpoints, spike recording, rate monitors, a `--fast` 1 ms step; the integrator is the starter's (identical spikes), or the same step as compiled numba kernels when numba is installed (about twice as fast, still identical spikes) | the mechanisms are documented physiology; the parameters are chosen by hand |
 | **Tools** | a pathway tracer ("how does the eye reach the steering neurons?"), lesion scans, dose-response sweeps, seeds, JSON export, scenarios (conditioning protocols, courtship, plume following, escape), a 3-D brain map, an event log, session recording | analysis, not model |
 | **Genetics** | the neurons that express *fruitless* and *doublesex* (the genes that make a male brain male) and the male-specific and dimorphic ones, as populations to silence, activate or watch; the transmitter genes behind every neuron's sign; a lookup of which real driver lines label a population and which neurons a line labels (NeuronBridge); five genetic experiments | the expression labels are the MaleCNS annotation read from the data; the lookups are Janelia's; nothing is hand-built, but only two transcription factors and the transmitter identity are known here |
@@ -118,7 +118,7 @@ on 3.13 or newer) and about 680 MB of packages; in a virtual environment made wi
 | `No module named 'numpy'` | The virtual environment isn't active in this terminal: in the `FruitFly` folder run `.venv\Scripts\activate` (macOS / Linux: `. .venv/bin/activate`), or install NumPy as in step 3 if you haven't. |
 | Download fails with a certificate error (macOS) | Run "Install Certificates.command" in your Python folder in Applications. |
 | Download blocked by a firewall | Download [the file](https://raw.githubusercontent.com/blendi-remade/fly-brain-minecraft/6cfa30175003ef25da68a237d5eda958f8047b82/src/main/resources/connectome/malecns-v1.0.flyb.gz) in your browser and put it in `data/` as it is (named `malecns-v1.0.flyb.gz`, not unpacked); the error message gives the exact path. |
-| "Could not find a free port" | `py fly_game.py --port 9000` |
+| "Could not find a free port" | `py fly_game.py --port 9000` (the message names the ports it tried; if 9000 was among them, any other number from 1024 to 65535) |
 | The game says it's running below real time | Your computer is simulating 176k neurons slower than real time; the fly's world slows down to keep up. First make sure numba is installed (`py -m pip install numba`; the terminal says "Brain integrator: compiled (numba)" at start-up): with it, a 4-core laptop-class machine manages about 1.5x real time with a busy brain, without it about 0.7x. Then close other programs, or start it with `py fly_game.py --fast` (a 1 ms time step, about twice as fast again; every classic experiment still passes). |
 | The 3-D brain map goes dark while its yaw counter keeps ticking | Your browser took the graphics (WebGL) context away, for instance after a GPU driver reset, sleep and resume, or too many WebGL tabs (Firefox drops the least recently used one past 16). The page now asks for it back and redraws the map when it returns, and says "graphics reset, restoring…" in the map meanwhile; if it says to reload, reload the tab. A flat map with the note that WebGL is unavailable means the browser refused WebGL altogether (check its graphics settings). |
 
@@ -149,7 +149,7 @@ on 3.13 or newer) and about 680 MB of packages; in a virtual environment made wi
    neurons of the odour's glomeruli.
 4. **Actions.** The program listens to descending neurons, the ~1,300 neurons that carry commands
    from the brain to the body, and turns their firing into movement: `MN9` extends the proboscis,
-   `DNp01` (the giant fibre) triggers an escape jump, `DNa02` left vs right steers, `DNp15` carries
+   a burst from `DNp01` (the giant fibre) triggers an escape jump, `DNa02` left vs right steers, `DNp15` carries
    the optomotor reflex, `MDN` walks backward, `pIP10` sings, and so on.
 5. **Learning.** Every synapse from a Kenyon cell onto a mushroom body output neuron (33,496 of them)
    weakens when the Kenyon cell was active shortly before dopamine arrived in that MBON's
@@ -221,7 +221,9 @@ wheel over the dish, the 🔍 button or `+` / `−` zoom in on the fly (the view
 
 **In the game** there is a checklist: feed it, offer bitter food, lure it, scare it, dust it, watch
 it bump a wall, drop an odour, teach it, add a female, turn on the wind, clap, spin the drum, zap
-MDN, silence MN9. The **scenarios** run whole protocols for you: appetitive conditioning (odour +
+MDN, silence MN9 (the checklist stays when you ask for a new fly). A fed fly eats in bouts of a few
+seconds: under steady sugar MN9 tires, the proboscis goes in, and it starts again only now and then
+(`docs/SCIENCE.md` 6.5). The **scenarios** run whole protocols for you: appetitive conditioning (odour +
 sugar, then a preference test), aversive conditioning (odour + shock), courtship, following a
 plume upwind, and three hand swoops. The **Neuron lab** zaps, silences or scales any cell type by
 name and adds it to the readouts; the **Pathway explorer** asks the wiring how one population
@@ -281,8 +283,10 @@ game's brain map links straight to it.
 the `/api/stream` event stream) returns the fly's position, heading, behaviour, senses, neuron
 rates and learning state, and `POST /api/action` accepts commands such as
 `{"type": "zap", "spec": "MDN", "hz": 60}`, `{"type": "drop", "kind": "vinegar", "x": 10, "y": 5, "food": "sugar"}`
-or `{"type": "stripes", "count": 16, "drum_speed": 1.5}`. `docs/API.md` has the whole contract; anything
-that can make HTTP requests (a game engine, a notebook, a robot) can drive a fly from it.
+or `{"type": "stripes", "count": 16, "drum_speed": 1.5}`; a command it cannot carry out gets
+`{"ok": false, "error": ...}` back. `docs/API.md` has the whole contract; anything that can make HTTP
+requests (a game engine, a notebook, a robot) can drive a fly from it. The server listens on this
+computer only unless you start it with `--host 0.0.0.0`, and then anyone on your network can drive the fly.
 
 **Genetics.** The Genetics card lists the neurons annotated as expressing *fruitless* (4,858) and
 *doublesex* (412), the male-specific and sexually dimorphic ones, and the transmitter genes behind

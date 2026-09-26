@@ -2,6 +2,7 @@
 Start the game: ``python fly_game.py`` or ``python -m virtual_fly.play``.
 
     --port 9000          use another port
+    --host 0.0.0.0       let other computers on your network open the game (anyone on it can drive the fly)
     --no-browser         don't open a browser tab
     --profile pure       the paper's model exactly (expect runaway loops after bitter, dust and smells)
     --no-autopilot       start with the hand-built walking urge switched off
@@ -25,6 +26,14 @@ from .game import Game
 from .server import serve
 from .settings import PROFILES, build_brain
 
+
+def port_number(text: str) -> int:
+    port = int(text)
+    if not 1 <= port <= 65535:
+        raise argparse.ArgumentTypeError(f"{port} is not a port: use 1 to 65535")
+    return port
+
+
 def main(argv=None):
     try:
         _main(argv)
@@ -35,8 +44,10 @@ def main(argv=None):
 def _main(argv=None):
     ap = argparse.ArgumentParser(description="Play with a fly driven by a whole connectome (MaleCNS v1.0; FlyWire 783 with --female).",
                                  formatter_class=argparse.RawDescriptionHelpFormatter, epilog=__doc__)
-    ap.add_argument("--port", type=int, default=8765)
-    ap.add_argument("--host", default="127.0.0.1")
+    ap.add_argument("--port", type=port_number, default=8765, help="the first port to try (1-65535; the next 19 are tried too)")
+    ap.add_argument("--host", default="127.0.0.1",
+                    help="address to listen on: 127.0.0.1 (default) is this computer only; 0.0.0.0 lets other computers "
+                         "on your network open the game and drive the fly (there is no password)")
     ap.add_argument("--no-browser", action="store_true", help="don't open a browser tab automatically")
     ap.add_argument("--profile", choices=sorted(PROFILES), default="game")
     ap.add_argument("--pure", action="store_true", help="same as --profile pure")
@@ -77,6 +88,8 @@ def _main(argv=None):
             raise SystemExit(unavailable_reason())
 
     profile = "pure" if args.pure else args.profile
+    if args.stride_average and args.body != "physics":
+        ap.error("--stride-average only applies to the physics body: add --body physics")
     overrides = {"seed": args.seed, "dt": 1.0 if args.fast else args.dt, "backend": args.backend}
     if args.fatigue is not None:
         overrides["fatigue_mv"] = args.fatigue
@@ -103,6 +116,9 @@ def _main(argv=None):
     if brain.parts is not None:
         c = brain.parts.counts
         print(f"Parts list: on ({c['modulatory_neurons']:,} modulatory neurons, {c['graded_neurons']:,} graded cells).", file=sys.stderr)
+    if args.body == "physics":
+        print("Body: physics (NeuroMechFly v2 legs in MuJoCo; about a tenth of real time"
+              + ("; the senses see the pose averaged over a stride)." if args.stride_average else ")."), file=sys.stderr)
     game = Game(brain, autopilot=not args.no_autopilot, seed=args.seed, columnar=not args.no_columnar,
                 profile_name=profile, brain_factory=lambda c, **kw: build_brain(c, profile, **{**overrides, **kw}),
                 parts_list=parts_list, brain_kwargs={k: v for k, v in overrides.items() if k != "parts"}, body=args.body, stride_average=args.stride_average)
