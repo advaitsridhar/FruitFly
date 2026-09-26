@@ -8,9 +8,10 @@ Taste: what is under the mouthparts and the forelegs -> gustatory receptor neuro
 * **Bitter** drives the labellar bitter cells ``LB1a-d``.
 * **Water** drives the labellar water cells, ``LB3a``, only when the fly is thirsty. The MaleCNS data do
   not say which cells sense water; LB3a is the type whose outputs match the published model's water cells
-  (Shiu et al. 2024, which FlyWire types as LB3 with the sugar cells), and like them at 80 Hz it drives
-  Fudog (DNg67) and not MN9, so in this wiring a thirsty fly tastes water but does not drink. ``LB2a-c``, the
-  earlier choice, are FlyWire's low-salt cells (the published model's Ir94e list). docs/SCIENCE.md 2.2.
+  (Shiu et al. 2024; FlyWire types its sugar and water cells together as LB3 and LB2d), and like them at
+  80 Hz it drives Fudog (DNg67) and not MN9, so in this wiring a thirsty fly tastes water but does not
+  drink by itself. ``LB2a-d`` were the earlier choice (``LB2a-c`` are FlyWire's low-salt cells, in the
+  published model's Ir94e list). docs/SCIENCE.md 2.2.
 * **Pheromones**: a male's foreleg tarsi carry contact chemoreceptors that detect the female's
   cuticular hydrocarbons when he taps her. Which leg GRN types carry that signal into the courtship
   circuit was measured from the wiring (see :mod:`virtual_fly.game`, ``PHEROMONE_GRNS``).

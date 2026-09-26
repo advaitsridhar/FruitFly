@@ -41,7 +41,7 @@ Compared with the small starter it grew from, it adds:
 | **Learning** | dopamine-gated depression of Kenyon-cell → MBON synapses, the fly's actual learning rule; pair an odour with sugar, bitter or shock and its preference changes | which synapses are plastic and which dopamine neurons gate which MBON come from the wiring; bitter → punishment dopamine is wiring; sugar → reward dopamine is injected (labelled); the rule's constants are hand-chosen |
 | **A second fly** | a scripted female to chase, tap and sing to | the chase and the song (pC1 → pIP10 → wing motor neurons) are wiring; her behaviour and the contact-to-pC1 arousal are hand-built |
 | **Wind, sound, touch** | Johnston's organ senses wind direction and sound; a clap can make the fly jump | sound → giant fibre and wind → grooming are wiring; heading upwind is hand-built |
-| **Internal state** | hunger and thirst rise with time and change what the fly tastes; hunger also changes what it does (thirst cannot: in this wiring water does not reach MN9, the proboscis motor neuron, so the fly never drinks) | hand-built |
+| **Internal state** | hunger and thirst rise with time and change what the fly tastes; hunger also changes what it does (thirst cannot: the fly never drinks by itself, because in this wiring water alone does not reach MN9, the proboscis motor neuron; zapping MN9 on a water drop does make it drink) | hand-built |
 | **A better model** | short-term synaptic depression, background noise, per-population output modulation, threshold heterogeneity, checkpoints, spike recording, rate monitors, a `--fast` 1 ms step; the integrator is the starter's (identical spikes), or the same step as compiled numba kernels when numba is installed (about twice as fast, still identical spikes) | the mechanisms are documented physiology; the parameters are chosen by hand |
 | **Tools** | a pathway tracer ("how does the eye reach the steering neurons?"), lesion scans, dose-response sweeps, seeds, JSON export, scenarios (conditioning protocols, courtship, plume following, escape), a 3-D brain map, an event log, session recording | analysis, not model |
 | **Genetics** | the neurons that express *fruitless* and *doublesex* (the genes that make a male brain male) and the male-specific and dimorphic ones, as populations to silence, activate or watch; the transmitter genes behind every neuron's sign; a lookup of which real driver lines label a population and which neurons a line labels (NeuronBridge); five genetic experiments | the expression labels are the MaleCNS annotation read from the data; the lookups are Janelia's; nothing is hand-built, but only two transcription factors and the transmitter identity are known here |
@@ -53,20 +53,21 @@ Everything on screen says which of the two it is; the **"What's real here?"** bu
 
 ## 2. Setup
 
-**Quick start** (macOS / Linux; on Windows use `py` instead of `python3`):
+**Quick start** (macOS / Linux; on Windows, use the commands for cmd in step 3 below and `py`
+instead of `python3`):
 
 ```
 git clone https://github.com/advaitsridhar/FruitFly.git
 cd FruitFly
-python3 -m venv .venv               # Windows: py -m venv .venv
-. .venv/bin/activate                # Windows: .venv\Scripts\activate
+python3 -m venv .venv
+. .venv/bin/activate
 python3 -m pip install numpy numba
 python3 fly_game.py
 ```
 
 The first start downloads the 23 MB connectome into `data/` and opens the game in your browser;
-later starts are instant. The two `.venv` lines give the kit its own virtual environment (current
-Linux systems refuse `pip install` outside one); in a new terminal, activate it again first.
+later starts are instant. The two `.venv` lines give the kit its own virtual environment (Debian,
+Ubuntu and Homebrew Pythons refuse `pip install` outside one); in a new terminal, activate it again first.
 Already have a clone? `git pull origin main` brings it up to date.
 
 Step by step:
@@ -77,11 +78,18 @@ Step by step:
    it from GitHub), then open a terminal in the `FruitFly` folder (Windows: click the File Explorer
    address bar, type `cmd`, press Enter).
 3. Make a virtual environment (the kit's own set of packages, in the folder `.venv`), then install
-   NumPy into it, and numba for the compiled brain integrator (optional, about twice as fast, same spikes):
+   NumPy into it, and numba for the compiled brain integrator (optional, about twice as fast, same spikes).
+   Windows (cmd):
    ```
-   py -m venv .venv                   # macOS / Linux: python3 -m venv .venv
-   .venv\Scripts\activate             # macOS / Linux: . .venv/bin/activate
-   py -m pip install numpy numba      # macOS / Linux: python3 -m pip install numpy numba
+   py -m venv .venv
+   .venv\Scripts\activate
+   py -m pip install numpy numba
+   ```
+   macOS / Linux:
+   ```
+   python3 -m venv .venv
+   . .venv/bin/activate
+   python3 -m pip install numpy numba
    ```
    In every new terminal, run the second line again (in the `FruitFly` folder) before steps 4 and 5.
    On Debian or Ubuntu, `python3 -m venv` may first need `sudo apt install python3-venv`.
@@ -117,6 +125,7 @@ on 3.13 or newer) and about 680 MB of packages; in a virtual environment made wi
 | Problem | Fix |
 |---|---|
 | `'py' is not recognized` | Python isn't on PATH: re-run the installer and tick "Add python.exe to PATH" (or use `python`). |
+| `Activate.ps1 cannot be loaded because running scripts is disabled on this system` | That terminal is PowerShell, which blocks the activation script. Use cmd as in step 2, or allow your own scripts once with `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` and activate again. |
 | `error: externally-managed-environment` | Your system's Python (Ubuntu 23.04+, Debian 12+, Homebrew) installs packages only into a virtual environment: make and activate one as in step 3 (if `python3 -m venv` says ensurepip is not available: `sudo apt install python3-venv`). |
 | `No module named 'numpy'` | The virtual environment isn't active in this terminal: in the `FruitFly` folder run `.venv\Scripts\activate` (macOS / Linux: `. .venv/bin/activate`), or install NumPy as in step 3 if you haven't. |
 | Download fails with a certificate error (macOS) | Run "Install Certificates.command" in your Python folder in Applications. |
@@ -196,8 +205,9 @@ Scanning hundreds of sensory cell types on the real connectome (the experiments 
   glomeruli activates 7-9 % of Kenyon cells, the same cells every time and different cells for
   different odours (overlap 0.00-0.02 between odours with no shared glomerulus, 0.9 across random
   seeds). Halving the Kenyon-cell connections onto the punishment-side MBONs cuts their odour response
-  (vinegar → MBON14 38 → 6 Hz in the game, the mean of five seeds), and the game's other odours hardly
-  reach MBON14 to begin with (0-2 Hz; `docs/SCIENCE.md` section 4.6). Bitter taste fires the
+  (MBON14 38 → 6 Hz for the "Smell of vinegar" test mixture, four of the game's five vinegar glomeruli,
+  and 44 → 9 Hz for the game's own vinegar; game profile, the mean of five seeds), and the game's other
+  odours hardly reach MBON14 to begin with (0-2 Hz; `docs/SCIENCE.md` section 4.6). Bitter taste fires the
   PPL1 punishment dopamine neurons (PPL101 at about 80 Hz); sugar never reaches the PAM reward neurons in
   this model, so eating sugar drives them directly (all but PAM-γ3, which sugar suppresses in real
   flies), and the game says so.
@@ -317,15 +327,15 @@ grown fly, and `python fly_game.py --grow type` starts the game with one. The sc
 
 **The genes as a parts list.** The published model gives every neuron the same machine; the
 "Parts list" switch on the Genome card gives each the one its genes make. Dopamine, octopamine and
-serotonin have no fast receptors in the fly, so their neurons stop making fast synaptic
-potentials and instead leave a *tone* on their targets that lingers for seconds and raises how
-strongly those targets respond to everything else (three gauges show the tones; a loud sound, for
-instance, raises the octopamine tone that sharpens the motion cells). The connectome's own prediction
-names 979 such neurons; with the literature's transmitters (the default, see "What the literature
-says" below) the Genome card counts 2,146, and the 1,170 of them that release a fast transmitter as
-well (1,151 are Mi15 cells) keep their fast synapses, so 976 lose them. Photoreceptors, the lamina
-cells, the medulla inputs to T4/T5, T4/T5 and the HS/VS cells do not spike in real flies, so here
-they transmit graded signals below the spike threshold. APL, the mushroom body's inhibitory
+serotonin have no fast receptors in the fly, so their neurons leave a *tone* on their targets that
+lingers for seconds and raises how strongly those targets respond to everything else (three gauges
+show the tones; a loud sound, for instance, raises the octopamine tone that sharpens the motion
+cells), and those that release no fast transmitter as well stop making fast synaptic potentials. The
+connectome's own prediction names 979 such neurons; with the literature's transmitters (the default,
+see "What the literature says" below) the Genome card counts 2,146, of which 976 lose their fast
+synapses and 1,170 (1,151 of them Mi15 cells) release a fast transmitter as well and keep them.
+Photoreceptors, the lamina cells, the medulla inputs to T4/T5, T4/T5 and the HS/VS cells do not
+spike in real flies, so here they transmit graded signals below the spike threshold. APL, the mushroom body's inhibitory
 feedback neuron, releases locally: onto the Kenyon cells and output neurons of a lobe that is
 quieter than the rest it releases less, as in the real fly (Amin et al. 2020), and dopamine turns
 it down through its Dop2R receptor. A tone acts only through receptors the kit has evidence for

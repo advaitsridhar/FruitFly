@@ -256,8 +256,10 @@ and are used by the game:
   `figures.ipynb` at the commit the kit pins) drives 18 labellar water cells, which FlyWire types as
   `LB3` (17) and `LB2d` (1), both annotated "sugar/water", and 18 Ir94e (low-salt) cells: `LB1e` (11),
   `LB2a-b` (4) and `LB2c` (3), annotated "low-salt" apart from LB1e ("bitter"). The MaleCNS splits LB3 into LB3a-d.
-  Naming every downstream partner of a population by its FlyBase class (the kit's VFB join, on both
-  flies) and comparing the two flies' synapse profiles (cosine similarity):
+  Naming each population's downstream partners by their FlyBase class (the kit's VFB join, on both
+  flies), counting only partner classes that name at most 4 cell types, and comparing the two flies'
+  synapse profiles (cosine similarity). The cut-off leaves out broad classes such as "adult gustatory
+  receptor neuron", so synapses from one taste cell onto another (GRN to GRN) do not count:
 
   | MaleCNS type | the published water cells | sugar cells | Ir94e cells |
   |---|---|---|---|
@@ -267,10 +269,12 @@ and are used by the game:
   | LB3d | 0.42 | 0.74 | 0.04 |
   | LB2a / LB2b / LB2c / LB2d | 0.09 / 0.01 / 0.06 / 0.01 | 0.00 / 0.05 / 0.01 / 0.17 | 0.23 / 0.09 / 0.02 / 0.02 |
 
-  Only 14-26 % of each population's output synapses land on partners the join can name, but the
-  water profile is distinctive: the published water cells and LB3a both send most of it to Fudog
-  (DNg67; 282 and 372 synapses), DNpe030 and the VP5+SEZ adPN. They also respond alike (game profile,
-  five seeds, 100 ms settle and 500 ms measured, Hz):
+  Only 5-26 % of each population's output synapses land on classes that count (14 % for the published
+  water cells, 23 % for LB3a), but the water profile is distinctive: the published water cells and LB3a
+  both send most of it to Fudog (DNg67; 282 and 372 synapses), DNpe030 and the VP5+SEZ adPN. With every
+  class counted, LB3a is still the best water match, by less: 0.61 against LB3b's 0.53 (GRN-to-GRN
+  synapses are then 519 of the published water cells' 1,097 named ones). The two also respond alike
+  (game profile, five seeds, 100 ms settle and 500 ms measured, Hz):
 
   | stimulus at 80 Hz | MN9 | G2N-1 | Fudog | Scapula | PPL1 |
   |---|---|---|---|---|---|
@@ -282,13 +286,16 @@ and are used by the game:
   At 200 Hz LB3a still gives MN9 0.0 Hz (pure and game); the female's water cells give 34 / 30 Hz
   (pure / game), the published model's water-to-MN9 result at high rates. The game drives `LB3a` at
   80 Hz × thirst when thirst is above 0.2 (`WATER_GRNS`). In this wiring water reaches Fudog and not
-  MN9, so a thirsty fly tastes water and does not drink, and its thirst only rises (headless game,
-  seed 0, thirst 1, water at the mouth, walking urge off, 8 s: MN9 0 Hz, Fudog 29 Hz, the drop
-  untouched, thirst still 1.0). No drink was built in by hand: the Why panel and "What's real here?"
-  say so. In the female fly `LB3a` is an alias for the published model's 18 water cells (section 9.2): at
-  the game's 80 Hz they reach Fudog and not MN9, so she does not drink either, although at 200 Hz they do
-  reach MN9 (above). The water rate is the kit's hand-built choice, as before; it was not raised to make
-  either fly drink.
+  MN9, so a thirsty fly tastes water and never drinks by itself, and its thirst only rises (headless
+  game, seed 0, thirst 1, water at the mouth, walking urge off, 8 s: MN9 0 Hz, Fudog 29 Hz, the drop
+  untouched, thirst still 1.0). Water alone does not reach MN9, but zapping MN9 on a water drop does
+  make the fly drink (thirst 1, 1 s on the drop, then MN9 zapped at 60 Hz for 2 s, 2.5 s watched; male
+  seeds 0 and 1, female seed 0: feeding in 85-87 of 100 ticks, 21-22 of the drop's 100 units drunk,
+  thirst 1.0 → 0.79; without the zap MN9 stays at 0 Hz and nothing is drunk). No drink was built in by
+  hand: the Why panel and "What's real here?" say so. In the female fly `LB3a` is an alias for the
+  published model's 18 water cells (section 9.2): at the game's 80 Hz they reach Fudog and not MN9, so
+  she does not drink by herself either, although at 200 Hz they do reach MN9 (above). The water rate is
+  the kit's hand-built choice, as before; it was not raised to make either fly drink.
 
 ---
 
@@ -741,7 +748,9 @@ PPL1-paired types of section 4.4 scaled by 0.5 or 0; unpaired odours the game's 
 (`ORN_DM2,ORN_DM3,ORN_VM2,ORN_DC2,ORN_VA6`), yeast (`ORN_DM5,ORN_VC1,ORN_VA1v,ORN_DL1,ORN_VM5d`)
 and MIX2 of section 4.3, each at 80 Hz, none sharing a glomerulus with MIX; `experiments.run_experiment`,
 mean of seeds 0-4 (range over the seeds in brackets). Scaling every Kenyon cell's connections instead
-gives the same MIX numbers.
+gives the same MIX numbers. The game's own vinegar is MIX plus a fifth glomerulus, VA2
+(`ORN_DM1,ORN_DM4,ORN_VM7d,ORN_DP1m,ORN_VA2` at 80 Hz, 600 ms with 100 ms settle, parts list off): with
+every Kenyon cell's connections onto the 21 types halved, MBON14 goes from 43.7 (42-45.5) to 8.9 (8-9.5) Hz.
 
 | MBON | MIX before → ×0.5 → ×0 | banana / yeast / MIX2, before → ×0.5 |
 |---|---|---|
@@ -1040,10 +1049,12 @@ and `DNb03` with `DNa02` silent. This is the pathway the game uses (section 5.7)
   activation threshold (von Reyn et al. 2014). The model's cells do not: leg proprioception, which
   fires while the fly walks, makes the two fire together now and then. Up to v2.8.0 a jump started on
   2 spikes in one 25 ms tick, so a fly walking in an empty dish jumped about once a minute with nothing
-  in sight. In 30 min of walking (ten 180 s runs: seeds 3-7 with this rule, and v2.8.0 runs with the
-  jump switched off) the pair never gave more than 4 spikes in two ticks, while a clap peaks at 5-9
-  and a fast looming hand at 14-30. Headless game, game profile, drawn body, walking urge on, seeds
-  0-2, load 1-2 on 4 cores:
+  in sight. In 30 min of walking (ten 180 s runs: five under this rule, on seeds 3-7; five under
+  v2.8.0's, on seeds 0 and 1 as shipped and three more on seed 0 with the jump switched off, one of
+  them also without the self-motion wind and one without columnar vision) the pair never gave more
+  than 4 spikes in two ticks, while a clap peaks at 5-9 and a fast looming hand at 14-30. So the rule's
+  margin over walking is one spike: an unprovoked jump is rare, not impossible. Headless game, game
+  profile, drawn body, walking urge on, seeds 0-2, load 1-2 on 4 cores:
 
   | | 2 spikes in one tick (v2.8.0) | 5 over two ticks (v2.8.1) |
   |---|---|---|
@@ -1217,11 +1228,14 @@ the profile's fatigue (0.05 mV per spike, fading over 2 s; section 1.5) tires it
 When the feed drive falls below half its threshold (MN9 about 7.5 Hz) the proboscis goes in, and the
 throat's sugar cells (`PhG1a-c`), which the mouth drives only while the proboscis is out
 (`senses/taste.py`), stop. Labellar and leg sugar alone then give the tired MN9 0-7 Hz, under the
-15 Hz a bout needs to start. So the first bout lasts 2.0-2.8 s and the fly stands on the drop; on two
-seeds of three it started again 3-6 s later, for 0.1-1.6 s at a time (hunger 0.70 → 0.41-0.45 in
-25 s). With fatigue off (`--fatigue 0`), seed 0 eats in one bout of 7.1 s until the drop is gone (MN9
-41-69 Hz, hunger → 0.23). While the fly tastes sugar and does not eat, the Why panel says "tastes
-sugar, but MN9 fires too little to feed".
+15 Hz a bout needs to start. So the first bout lasts 2.0-2.8 s. Between bouts the fly does not stand
+on the drop: it wanders on and around it, and within the 25 s it leaves it for good on every seed.
+Seeds 1 and 2 walk off after about 13 s and then stand 3-4 mm from its centre; seed 0 steps off
+after 4 s, returns, and at 5 s makes an escape jump that ends 29 mm away. On seeds 1 and 2 it started
+eating again 3-6 s after the first bout, for 0.1-1.6 s at a time (hunger 0.70 → 0.41-0.45 in 25 s;
+seed 0, which ate once, 0.63). With fatigue off (`--fatigue 0`), seed 0 eats in one bout of 7.1 s
+until the drop is gone (MN9 41-69 Hz, hunger → 0.23). While the fly tastes sugar and does not eat,
+the Why panel says "tastes sugar, but MN9 fires too little to feed".
 
 ---
 
@@ -1310,15 +1324,15 @@ mean in brackets):
 |---|---|---|---|
 | speed at forward drive 0.3 / 0.6 / 1.0 | 4.2 / 8.4 / 13.9 mm/s (chosen) | 4.1 / 8.9 / 14.9 mm/s (measured) | same body |
 | turn rate at full steering, same drives | 264 / 228 / 180 deg/s | 28 / 86 / 174 deg/s | same body |
-| lure 20 mm at 70 deg left, walking urge on: heading change | 97, 79, 253, 94, 257 deg (seeds 2 and 4 jump and circle) | 102, 103, 105, 94, 94 deg (99) | 99, 90, 113, 101, 126 deg (106) |
-| same, right | -94, -102, -89, -100, +82 deg (seed 4 jumps) | -87, -106, -100, -90, -125 deg (-102) | -62, -79, -118, -85, -113 deg (-92) |
+| lure 20 mm at 70 deg left, walking urge on: heading change | 97, 79, 253, 94, 257 deg (seeds 2 and 4 jump and circle; v2.8.0 jump rule) | 102, 103, 105, 94, 94 deg (99) | 99, 90, 113, 101, 126 deg (106) |
+| same, right | -94, -102, -89, -100, +82 deg (seed 4 jumps; v2.8.0 jump rule) | -87, -106, -100, -90, -125 deg (-102) | -62, -79, -118, -85, -113 deg (-92) |
 | faces the lure (within 15 deg) | 10 of 10 runs, at 0.95-1.33 s | 8 of 10, at 1.65-2.55 s | 6 of 10, at 1.83-2.83 s |
 | lure 15 mm left, walking urge off | turns 62-73 deg in place (66), faces it at 0.48-0.8 s | turns 0.4 deg (-0.5 to 2.2); lure still 69-71 deg off | turns 0.3 deg (-0.4 to 1.2) |
 | MDN at 60 Hz: distance backward | 18.4, 19.7, 18.6, 17.9, 19.7 mm (18.8) | 20.6, 19.5, 21.6, 21.0, 19.5 mm (20.4); heading drifts 3-10 deg | 19.9, 19.2, 20.1, 19.2, 21.4 mm (20.0); heading drifts 2-9 deg |
 | MDN at 60 Hz: HS / brain while backing | 0-0.6 Hz / 26-30k events/s | 57-84 Hz / 68-103k events/s | 0-0.4 Hz / 27-31k events/s |
 | 10 s in a quiet arena, walking urge on: HS | 5.5, 10.1, 7.9, 72.6, 108.2 Hz | 24.8, 13.7, 14.4, 18.5, 19.0 Hz | 57.7, 11.6, 8.8, 6.9, 9.0 Hz |
 | same: brain | 25.9k, 30.4k, 24.9k, 78.0k, 72.3k events/s | 56.2k, 46.7k, 43.1k, 40.5k, 58.8k | 56.8k, 38.7k, 27.1k, 45.5k, 48.4k |
-| same: a high state (> 60k events/s held ≥ 1 s) | seeds 3 and 4, from 3.9 and 6.2 s, with 7 and 21 escape ticks | seeds 0 and 2, from 8.9 s, around the first wall touch (8.9-9.5 s) | seeds 0 and 3, from 8.1 and 8.6 s |
+| same: a high state (> 60k events/s held ≥ 1 s) | seeds 3 and 4, from 3.9 and 6.2 s, with 7 and 21 escape ticks (v2.8.0 jump rule) | seeds 0 and 2, from 8.9 s, around the first wall touch (8.9-9.5 s) | seeds 0 and 3, from 8.1 and 8.6 s |
 | same: backing up with no wall touch in the last 1.5 s | none | none | seed 4, 21 ticks from 3.8 s |
 | real-time factor | 0.90-1.23 | 0.086-0.113 (MuJoCo alone 0.095-0.130) | 0.089-0.116 (MuJoCo alone 0.098-0.132) |
 | peak memory | 876 MB | 1.32-1.35 GB | same |
@@ -2022,7 +2036,8 @@ The published model (Shiu et al. 2024) ran on FlyWire, the whole brain of an adu
 `virtual_fly/flywire.py` builds it on first use from two public files, each pinned to one commit and
 checked by SHA-256: the connectivity table the published model itself uses (`Connectivity_783.parquet`,
 philshiu/Drosophila_brain_model) and FlyWire's neuron annotations (`Supplemental_file1_neuron_annotations.tsv`,
-flyconnectome/flywire_annotations). Neither is redistributed; the built file is about 45 MB. Reading
+flyconnectome/flywire_annotations). Neither is redistributed; the built file is about 45 MB, in `data/`
+in a checkout, in `~/.cache/virtual-fly` in an installed copy, or in `FLY_DATA_DIR` when that is set. Reading
 the parquet file needs `pyarrow` (`pip install -e ".[female]"`).
 
 * **The published model's wiring.** The female file keeps every connection (15,091,983 pairs,
@@ -2131,10 +2146,10 @@ something else, `flywire.ALIASES` maps the name, and the table is stored in the 
 | `MN9` | `CB0701` | FBbt_00111298, whose VFB synonyms include both names; it is the published model's MN9 cell |
 | `GNG232` (G2N-1) | `CB0616` | FBbt_00051850 (VFB synonyms G2N-1, GNG232, CB0616); it is the published model's G2N-1 |
 | `GNG087` | `CB0219` | FBbt_20004033 (VFB synonyms GNG087, CB0219) |
-| `LB3b`, `LB3c` (sugar) | the 20 sugar cells of the published model | FlyWire types all 122 labellar sugar and water cells as `LB3`; the published model's list is one side |
+| `LB3b`, `LB3c` (sugar) | the 20 sugar cells of the published model | FlyWire types its labellar sugar and water cells as `LB3` (122) and `LB2d` (7), without splitting them by taste; the published model's list is 20 of the LB3 cells, on one side |
 | `LB1a`, `LB1d` | `LB1a,LB1d` | one FlyWire type |
 | `LB2a`, `LB2b` | `LB2a-b` | one FlyWire type |
-| `LB3a` (water, section 2.2) | the 18 water cells of the published model | FlyWire types all labellar sugar and water cells as `LB3`; the published model's water list (17 of them LB3, one LB2d) is the female's water population (v2.8.1, file build 6) |
+| `LB3a` (water, section 2.2) | the 18 water cells of the published model | FlyWire types its labellar sugar and water cells as `LB3` (122) and `LB2d` (7), without splitting them by taste; the published model's water list (17 of them LB3, one LB2d) is the female's water population (v2.8.1, file build 6) |
 | `prefix:pC1_` | `prefix:pC1` (pC1a-e, 10 cells) | the doublesex pC1 cluster; the male's 148 `pC1_` cells include the male-specific P1 |
 | `R1-R6`, `prefix:R1-R6` | `R1-6` | the outer photoreceptors (8,452 cells), graded in the parts list |
 | `prefix:KCa'b'` | `prefix:KCa'b',prefix:KCapbp` (917 cells) | the α′/β′ Kenyon cells, one of APL's local-release groups |
@@ -2170,7 +2185,7 @@ validated results, so on the female they are a comparison, not a test:
 | wide-field motion (game) | HS / DNp15 / DNa02 R / DNa02 L | 442 / 180 / 158 / 0 | 348 / 162 / 87 / 44 | ... / 0-20 |
 | courtship command (game) | DNp13 | 31.5 | 0.0 | 5-90 |
 | sugar, fru silenced (game) | MN9 | 34.5 | 80.8 | 15-60 |
-| head bristles at 100 Hz, 200 ms (game; the game's touch) | MDN / aDN1 / aDN2 | 64.8 / 114.5 / 50.5 | **0.0** / 86.0 / 15.5 | not an experiment |
+| head bristles at 100 Hz, 100 ms settle + 200 ms measured (game) | MDN / aDN1 / aDN2 | 64.8 / 114.5 / 50.5 | **0.0** / 86.0 / 15.5 | not an experiment |
 
 The published model's headline results come out on the female: sugar drives MN9, bitter keeps
 it silent, and bitter wins over sugar (pure profile). The antennal grooming route works too with the
@@ -2179,10 +2194,17 @@ at 34 Hz. The kit's "dust" stimulus drives both antennae, and in FlyWire the two
 side alone: aDN1 22 Hz on one side; both: 6 Hz).
 
 Her head bristles (`BM_InOm`, the game's touch at a wall or a post) reach the grooming neuron aDN1 but
-not MDN, on every seed. The male's strongest routes to MDN run through the ascending neurons AN09B009
-and AN17A026 (1,337 and 54 synapses); in her file the best one, through CB0191, carries 0.4-0.6 % of
-MDN's input. So at a wall she grooms instead of backing up, and the game hides the "bump a wall"
-checklist item for her, as it hides "dust it" and "clap"; its "What's real here?" says why.
+not MDN, on every seed. The table's row stimulates them for 300 ms and measures the last 200; the
+game's touch fires them for 200 ms, and measured over those 200 ms from the onset MDN / aDN1 / aDN2
+give 71.0 / 129.5 / 63.5 Hz in the male and 0.0 / 84.0 / 15.0 in her. The male's strongest routes to
+MDN run through the ascending neurons AN09B009 and AN17A026, hers through CB0191
+(`fly_brain.py --trace BM_InOm MDN`, each hop as synapses and as a share of the target's input). The
+last hop is weak in both flies: 0.5-0.9 % of MDN's input on the male's two best routes, 0.4-0.6 % on
+hers. They differ at the first hop: the male's bristles give AN09B009 1,337 synapses (6.9 % of its
+input), hers give CB0191 35-38 (2.1-2.6 %). So at a wall she grooms instead of backing up. The game
+shows her 12 of its 17 checklist items. It hides "bump a wall", "dust it" and "clap", and also "add a
+female" and the fruitless experiment, because she has no song cells (pIP10); its "What's real here?"
+says why.
 
 Most of the differences are not yet sex differences. The two datasets were reconstructed and their
 synapses detected differently: the median neuron has 200 input synapses in FlyWire, all
