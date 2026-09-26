@@ -10,7 +10,8 @@ Named model profiles: which optional mechanisms are switched on, and why.
            modulators (their spikes gate plasticity, their fast synapses are muted), Kenyon-cell
            input gain raised so that the odour code is sparse *and* odour-specific once the
            antennal lobe is calm, and mushroom-body plasticity. Background noise is available
-           (``--noise 2:1``) but off by default.
+           (``--noise HZ:MV``) but off by default; with the parts list off, 2:1 fires nothing and 5:15
+           gives about 600-900 spikes/s, while with it on 2:1 already runs away (docs/SCIENCE.md 3.4).
 ``brakes`` an experimental profile: short-term synaptic depression instead of silencing. It keeps
            the brain from seizing (every "after the stimulus" test is calm) but weakens strong
            sensory drive: only 6 of the 12 classic readouts stay in their published range (MN9 10 Hz,

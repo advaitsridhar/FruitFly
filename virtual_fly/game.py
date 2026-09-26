@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from .body import FlyBody, JUMP_TIME
+from .body import FlyBody, JUMP_TIME, WALK_SPEED
 from .brain import FlyBrain
 from .plasticity import APPROACH_NTS, AVOID_NTS
 from . import genetics
@@ -40,11 +40,13 @@ from .experiments import survival as survival_report
 from .scenarios import SCENARIOS, ScenarioRunner
 from .senses.mechano import Antennae, Bristles
 from .senses.olfaction import ODOURS, Nose
-from .senses.taste import Forelegs, Mouth
+from .senses.taste import WATER_GRNS, Forelegs, Mouth
 from .senses.vision import Retina
 from .world import ARENA_R, FLY_HALF, World, wrap
 
 TICK_MS = 25.0          # brain time simulated per world update
+GF_BURST = 5            # live giant-fibre spikes over two ticks that start an escape jump (hand-built, see choose_mode)
+STILL_TICKS = 8         # a walk still for this many ticks (0.2 s) is shown as resting
 
 # ----------------------------------------------------------------------------------------------
 # Readouts: neurons we listen to (rates in Hz each tick). Sent to the browser as the panel layout.
@@ -98,7 +100,7 @@ BASELINE_SILENCED = "class:ALLN"
 # DNp13) is wiring. See docs/SCIENCE.md.
 PHEROMONE_GRNS = {"LgLG1a,LgLG1b": 60.0}
 COURTSHIP_SPEC, COURTSHIP_HZ, COURTSHIP_SECS = "prefix:pC1_", 60.0, 2.5
-# A sound (a clap) vibrates the antennae: Johnston's organ A/B neurons. Through the wiring they reach
+# A sound (a clap) vibrates the antennae: Johnston's organ B neurons. Through the wiring they reach
 # the giant fibre, so a loud sound can make the fly jump (as real flies do).
 SOUND_SPEC, SOUND_HZ = "prefix:JO-B", 100.0        # JO-B: the louder-sound channel; JO-A+B together reach the GF less
 
@@ -125,9 +127,28 @@ ZAP_PRESETS = [
     ("pIP10", 60, "pIP10: song"),
     ("prefix:PPL1", 80, "PPL1: punishment dopamine (pairs with what it smells now)"),
     ("prefix:PAM", 60, "PAM: reward dopamine"),
-    ("prefix:JO-A,prefix:JO-B", 100, "Johnston's organ: a loud sound (reaches the giant fibre)"),
+    ("prefix:JO-A,prefix:JO-B", 100, "Johnston's organ A+B: all its sound neurons (the clap drives B alone, which reaches the giant fibre more)"),
     ("T4a/R,T5a/R", 60, "T4a/T5a right: front-to-back motion on the right eye (optomotor)"),
 ]
+
+# The action types the API takes (docs/API.md), each with the numbers and switches it reads: {field: (int, float or
+# bool, required)}. Game.action converts the numbers and checks that a switch is a JSON true or false before the
+# action is queued, so a bad or missing field gets {"ok": false, "error": ...}.
+ACTIONS = {
+    "hand": {"x": (float, True), "y": (float, True)}, "hand_off": {}, "tool": {},
+    "drop": {"x": (float, True), "y": (float, True), "r": (float, False)}, "remove": {"id": (int, True)},
+    "dust": {"x": (float, False), "y": (float, False)}, "shock": {"secs": (float, False)}, "sound": {"secs": (float, False)},
+    "stripes": {"count": (int, False), "drum_speed": (float, False)}, "zap": {"hz": (float, False), "secs": (float, False)},
+    "silence": {}, "unsilence": {}, "modulate": {"factor": (float, False)}, "watch": {}, "unwatch": {}, "grow": {},
+    "parts": {}, "clear": {}, "reset": {}, "calm": {}, "autopilot": {"on": (bool, False)}, "pause": {"on": (bool, False)},
+    "speed": {"value": (float, False)}, "wind": {"angle": (float, False), "speed": (float, False)},
+    "female": {"x": (float, False), "y": (float, False), "on": (bool, False)},
+    "learning": {"on": (bool, False), "forget": (bool, False)}, "scenario": {},
+    "record": {"on": (bool, False), "spikes": (bool, False)}, "state": {"hunger": (float, False), "thirst": (float, False)},
+    "place_fly": {"x": (float, True), "y": (float, True), "h": (float, False)},
+}
+# the tools the page offers (and "none", which scenarios use): the "tool" action takes these and the odour ids
+TOOLS = ("lure", "hand", "sugar", "bitter", "water", "dust", "shock", "post", "none")
 
 CHECKS = [
     ("feed", "Feed it: drop sugar in its path → MN9 fires, the proboscis comes out"),
@@ -157,8 +178,10 @@ def n01(r: float, top: float) -> float:
 @dataclass
 class InternalState:
     """Hand-built drives. Hunger rises with time and falls when the fly eats; it sharpens the sugar
-    sense (as dopamine/NPF do in real flies) and makes the fly explore more. Thirst likewise for
-    water. Arousal rises with courtship activity."""
+    sense (as dopamine/NPF do in real flies) and makes the fly explore more. Thirst sets how strongly
+    the water cells fire and falls as it drinks, but in this wiring the fly never drinks by itself: water
+    alone does not reach MN9 (senses/taste.py; zapping MN9 on a water drop does make it drink). Arousal
+    rises with courtship activity."""
     hunger: float = 0.7
     thirst: float = 0.3
     arousal: float = 0.0
@@ -291,6 +314,9 @@ class Game:
         self.columnar_on = self.retina.columnar is not None
         self.nose = Nose(self.world)
         self.mouth = Mouth(self.world)
+        # in the female file LB3a is an alias for the published model's 18 water cells (FlyWire's types do not split
+        # sugar from water)
+        self.water_cells = int(sum(self.conn.select(s).size for s in WATER_GRNS))
         self.forelegs = Forelegs(self.world, PHEROMONE_GRNS)
         self.antennae = Antennae(self.world)
         self.bristles = Bristles(self.world)
@@ -327,7 +353,9 @@ class Game:
         self.record_spikes = False
         self.learning_on = brain.plasticity is not None
         self.lock = threading.RLock()
+        self.stop_loop = threading.Event()               # set: loop() returns after the tick it is in
         self.subscribers: list[queue.Queue] = []
+        self.done: set[str] = set()                      # the checklist: kept when the player asks for a new fly
         self.reset_world(first=True)
 
     # ------------------------------------------------------------------ world
@@ -353,16 +381,18 @@ class Game:
         self.since_input = 0.0
         self.calms = 0
         self.message, self.message_left = "", 0.0
-        self.done: set[str] = set()
         self.hz_shown = {k: 0.0 for k in self.readouts}
         self.t = 0.0
         self.senses_now: dict = {}
         self.driver = ""
         self.gf_cooldown = 0.0
+        self.gf_prev = 0                   # live giant-fibre spikes in the last tick (a jump needs a burst)
+        self.still_ticks = STILL_TICKS     # ticks the body has not moved (a new fly starts at rest)
         self.turn_command = 0.0            # last tick's commanded yaw (efference copy for the eyes)
         self.court_left = 0.0              # seconds of pC1 drive left after tapping the female
         self.sound_left = 0.0
         self.bitter_t = 0.0
+        self.sugar_t = 0.0                 # how long sugar has been at the mouth
         self.eating = 0.0
         self.drinking = 0.0
         self.song_side = 1.0
@@ -587,9 +617,56 @@ class Game:
     # ------------------------------------------------------------------ input from the browser
     def action(self, a: dict) -> dict:
         kind = a.get("type")
+        fields = ACTIONS.get(kind) if isinstance(kind, str) else None
+        if fields is None:
+            return {"ok": False, "error": "the action needs a 'type'" if kind is None else f"unknown action type {kind!r}"}
+        for f, (num, required) in fields.items():            # checked here, so a bad field is refused, not queued
+            if a.get(f) is None:
+                if required:
+                    return {"ok": False, "error": f"'{kind}' needs '{f}' (a number)"}
+                a.pop(f, None)                               # null: the default
+                continue
+            if num is bool:                                  # a switch: true or false, not "false" (which bool() reads as on)
+                if not isinstance(a[f], bool):
+                    return {"ok": False, "error": f"'{f}' must be true or false, not {a[f]!r}"}
+                continue
+            if isinstance(a[f], float) and not math.isfinite(a[f]):   # before int(), which cannot take Infinity (or 1e400)
+                return {"ok": False, "error": f"'{f}' must be a finite number"}
+            try:
+                a[f] = num(a[f])
+                finite = math.isfinite(a[f])
+            except (TypeError, ValueError):
+                return {"ok": False, "error": f"'{f}' must be {'a whole number' if num is int else 'a number'}, not {a[f]!r}"}
+            except OverflowError:                            # a JSON integer too big for a float
+                finite = False
+            if not finite:
+                return {"ok": False, "error": f"'{f}' must be a finite number"}
+            positive = f == "secs" or (f == "r" and a.get("kind") == "post")       # a post needs a size
+            if (positive and a[f] <= 0) or (f in ("hz", "factor", "r") and a[f] < 0):
+                return {"ok": False, "error": f"'{f}' must be {'more than 0' if positive else '0 or more'}"}
         if kind == "hand":                                   # pointer moves: just remember it
-            self.world.hand = (float(a["x"]), float(a["y"]))
+            self.world.hand = (a["x"], a["y"])
             return {"ok": True}
+        if kind == "tool":
+            if a.get("tool") is None:
+                a.pop("tool", None)                          # null: the default (the lure)
+            elif not isinstance(a["tool"], str) or (a["tool"] not in TOOLS and a["tool"] not in ODOURS):
+                return {"ok": False, "error": f"unknown tool {a['tool']!r}: {', '.join(TOOLS)} or an odour ({', '.join(ODOURS)})"}
+        if kind == "drop":
+            what = a.get("kind")
+            if not isinstance(what, str) or (what not in ("sugar", "bitter", "water", "post") and what not in ODOURS):
+                return {"ok": False, "error": f"unknown drop kind {what!r}: sugar, bitter, water, post or an odour "
+                                              f"({', '.join(ODOURS)})"}
+            if what in ODOURS and a.get("food") not in (None, "", "sugar", "bitter", "water"):
+                return {"ok": False, "error": f"an odour's food must be sugar, bitter or water, not {a['food']!r}"}
+            margin = a.get("r", 4.0) + 1.0 if what == "post" else 2.0     # as World.add_food, add_odour, add_obstacle
+            if not self.world.inside(a["x"], a["y"], margin):
+                self.say(f"Too close to the wall: drop it at least {margin:g} mm inside the dish.", 2.5)
+                return {"ok": False, "error": f"({a['x']:g}, {a['y']:g}) is outside the dish or within {margin:g} mm of its wall"}
+        if kind == "remove" and not any(o.id == a["id"] for o in (*self.world.food, *self.world.obstacles, *self.world.odours)):
+            return {"ok": False, "error": f"nothing in the dish has id {a['id']}"}
+        if kind == "clear" and a.get("what", "all") not in ("all", "food", "odours", "obstacles"):
+            return {"ok": False, "error": "'what' must be all, food, odours or obstacles"}
         if kind == "hand_off":
             self.world.hand = None
             return {"ok": True}
@@ -613,16 +690,18 @@ class Game:
             a["key"] = key
         if kind == "unwatch" and a.get("key") not in self.custom_readouts:
             return {"ok": False, "error": f"'{a.get('key')}' is not a custom watch."}
+        if kind == "scenario" and a.get("id") is not None and not isinstance(a["id"], str):
+            return {"ok": False, "error": f"'id' must be a scenario id ({', '.join(SCENARIOS)}), not {a['id']!r}"}
         if kind == "scenario" and a.get("id") and a["id"] not in SCENARIOS:
             return {"ok": False, "error": f"unknown scenario {a['id']}"}
         if kind == "grow":
             level = str(a.get("level", "type")).strip().lower()
             if not wiring.valid_level(level):
-                return {"ok": False, "error": "level must be real, type, class or bottleneck:K (K = 1 to 2048)"}
+                return {"ok": False, "error": wiring.LEVEL_ERROR}
             if self.genome["growing"]:
                 return {"ok": False, "error": "a fly is already being grown; wait for it"}
             try:
-                a["level"], a["seed"] = level, int(a.get("seed", 1))
+                a["level"], a["seed"] = level, 1 if a.get("seed") is None else int(a["seed"])    # null: the default
             except (TypeError, ValueError):
                 return {"ok": False, "error": "seed must be a whole number"}
             self.genome.update(growing={"level": level, "seed": a["seed"], "t0": time.time()}, error=None)   # claimed now, one at a time
@@ -635,8 +714,6 @@ class Game:
                 return {"ok": False, "error": f"the parts list is already {'on' if a['on'] else 'off'}"}
             self.genome.update(growing={"level": self.genome["level"], "seed": self.genome["seed"], "reason": "parts",
                                         "parts": a["on"], "t0": time.time()}, error=None)                 # claimed now
-        if kind == "_swap_brain":
-            return {"ok": False, "error": "internal"}
         self.actions.put(a)
         return {"ok": True, **({"n": a["n"]} if "n" in a else {})}
 
@@ -677,7 +754,7 @@ class Game:
                 self.say("Dust on the antennae!", 1.5)
         elif kind == "sound":
             self.sound_left = float(a.get("secs", 0.3))
-            self.events.add(self.t, "world", "a loud sound (Johnston's organ A/B neurons)")
+            self.events.add(self.t, "world", "a loud sound (Johnston's organ B neurons)")
             self.say("Clap! Johnston's organ hears it.", 1.5)
         elif kind == "shock":
             self.shock_left = float(a.get("secs", 1.0))
@@ -878,18 +955,25 @@ class Game:
 
     # ------------------------------------------------------------------ behaviour selection (hand-built)
     def choose_mode(self, m: dict, gf_spikes: int) -> str:
+        burst, self.gf_prev = gf_spikes + self.gf_prev, gf_spikes
         if self.body.pose.jump is not None:
             return "escape"
-        # the giant fibre must fire at least twice in this tick (>= 40 Hz across the pair): a lone spike
-        # from a weak, indirect route (e.g. local motion through T4/T5 -> LPLC2) is not an attack
-        if gf_spikes >= 2 and self.body.jump_lock <= 0 and self.gf_cooldown <= 0:
+        # the giant fibre must fire a burst: >= GF_BURST live spikes over this tick and the last (50 Hz per cell over
+        # 50 ms). Walking alone (leg proprioception) makes the pair fire together now and then, at most 4 spikes over
+        # two ticks in 30 min of it; a clap gives 5-9, a fast looming hand 14-30, a zap as many as its rate
+        # (docs/SCIENCE.md 5.7)
+        if burst >= GF_BURST and self.body.jump_lock <= 0 and self.gf_cooldown <= 0:
             away = self.world.hand if (self.world.hand is not None and self.world.tool == "hand") else None
             self.body.start_jump(away)
             self.gf_cooldown = 1.0
             if "loom" in self.senses_now:
                 self.done.add("escape")
-            self.say("Giant fibre fired: escape jump!", 1.5)
-            self.events.add(self.t, "behaviour", "escape jump (giant fibre DNp01 spiked)")
+            if self.body_kind == "physics":                # NeuroMechFly has no jump model
+                self.say("Giant fibre fired: the escape command (the physics body cannot jump)", 1.5)
+                self.events.add(self.t, "behaviour", "escape command (giant fibre DNp01 burst; the physics body has no jump)")
+            else:
+                self.say("Giant fibre fired: escape jump!", 1.5)
+                self.events.add(self.t, "behaviour", "escape jump (giant fibre DNp01 burst)")
             return "escape"
         # strongest command wins (a hand-built stand-in for the nerve cord's own arbitration).
         # A behaviour starts above its threshold and continues until its drive falls to half of it.
@@ -972,7 +1056,7 @@ class Game:
         why = []
         wander_yaw = 0.0
         if mode == "escape":
-            why.append("brain: giant fibre DNp01 spiked")
+            why.append("brain: giant fibre DNp01 burst")
         elif mode == "backward":
             why.append("brain: MDN (moonwalker) neurons")
         elif mode == "feed":
@@ -1023,6 +1107,17 @@ class Game:
             drive["abdomen"] = 1.0 if (m["court"] > 0.5 and d < 6.0) else 0.0
         self.body.move(dt, mode, drive, wander_yaw)
         self.turn_command = wander_yaw if mode in ("walk", "court") else 0.0   # voluntary part only
+        # nothing moves the legs: say "resting", not "walking". The drawn body is judged by how it moves; the physics body
+        # by what it is told to do (its stepping drive, as a speed against the same 0.05 mm/s), since MuJoCo's thorax
+        # jitters faster than that while the fly stands. Only once it has stayed still for STILL_TICKS, so that a
+        # one-tick lull does not blink 'resting'
+        if self.body_kind == "physics":
+            still = max(abs(d) for d in self.body.drive_lr) * WALK_SPEED < 0.05
+        else:
+            still = abs(self.body.pose.v) < 0.05 and abs(self.body.pose.w) < 0.05
+        self.still_ticks = self.still_ticks + 1 if still else 0
+        if mode == "walk" and self.still_ticks >= STILL_TICKS:
+            mode = self.body.pose.mode = "idle"
         self.mode = mode
         # eating, drinking, grooming bookkeeping
         self.eating = self.drinking = 0.0
@@ -1040,7 +1135,7 @@ class Game:
                         f.amount -= 10.0 * dt
                         self.drinking = 1.0
             self.world.food = [f for f in self.world.food if f.amount > 3]
-        if mode == "groom":
+        if mode == "groom" and "dust" in self.senses_now:     # the "Dust it" item: grooming at a wall bump does not count
             self.done.add("groom")
         if mode == "escape" and "sound" in self.senses_now and "loom" not in self.senses_now:
             self.done.add("sound")
@@ -1072,6 +1167,19 @@ class Game:
         self.world.step(dt, (self.body.pose.x, self.body.pose.y), fly_singing=m["song"], courted=courting > 0)
         # events for salient sense changes
         self._sense_events()
+        # sugar at the mouth for a while, yet MN9 itself quiet, with no bitter and nothing silenced: the bout has ended
+        self.sugar_t = self.sugar_t + dt if "taste_sugar" in self.senses_now else 0.0
+        if self.sugar_t > 1.0 and mode != "feed" and "taste_bitter" not in self.senses_now and not self.user_silenced \
+                and self.hz_shown["MN9"] < 15:
+            why.append("tastes sugar, but MN9 fires too little to feed: under steady sugar it tires within seconds, "
+                       "so feeding comes in bouts")
+        if "taste_water" in self.senses_now and mode != "feed":   # water never reaches MN9 here: say so, add no drive
+            why.append("touches water, but this fly's data name no water cells" if not self.water_cells else
+                       "touches water, but is not thirsty" if self.state.thirst <= 0.2 else
+                       "tastes water (LB3a), but in this wiring the water cells do not reach MN9: it does not drink"
+                       if getattr(self.real_conn, "sex", "male") != "female" else      # as her What's real says
+                       "tastes water (the published model's water cells), but at the game's rates they do not reach MN9: "
+                       "it does not drink")
         self.driver = "  +  ".join(why)
         if not self.driver:
             self.driver = ("nothing: the brain is quiet" if not spikes.size else
@@ -1177,7 +1285,8 @@ class Game:
             self.subscribers.remove(q)
 
     def loop(self):
-        while True:
+        """Tick in real time (scaled by ``speed``) until :attr:`stop_loop` is set (server.serve sets it after Ctrl+C)."""
+        while not self.stop_loop.is_set():
             t0 = time.perf_counter()
             if self.paused:
                 self._apply_actions()
@@ -1235,10 +1344,12 @@ class Game:
             "dataset": c.dataset, "sex": c.sex,
             "readouts": self.readout_meta,
             "checks": [{"id": i, "text": t} for i, t in CHECKS                    # none this fly cannot do
-                       if (i != "court" or self.readouts["pIP10"].size) and not (c.sex == "female" and i in ("groom", "sound"))],
+                       if (i not in ("court", "genetics") or self.readouts["pIP10"].size)   # no song cells, no song to lose
+                       and not (c.sex == "female" and i in ("groom", "sound", "wall"))],
             "odours": [{"id": o.id, "name": o.name, "glomeruli": o.glomeruli, "innate": o.innate, "colour": o.colour,
                         "note": o.note} for o in ODOURS.values()],
-            "scenarios": [{"id": k, "name": s.name, "description": s.description} for k, s in SCENARIOS.items()],
+            "scenarios": [{"id": k, "name": s.name, "description": s.female if c.sex == "female" and s.female else s.description}
+                          for k, s in SCENARIOS.items()],
             "retina": self.retina.layout(),
             "profile": self.profile_name,
             "genetics": self.genetics,
@@ -1249,6 +1360,7 @@ class Game:
             "settings": self.brain.settings(),
             "decoder": self.decoder.dn_targets,
             "columnar_vision": self.columnar_on,
+            "body": self.body_kind, "stride_average": bool(getattr(self.body, "stride_average", False)),
             "whats_real": self.whats_real(),
         }, separators=(",", ":")).encode()
 
@@ -1265,15 +1377,24 @@ class Game:
                 "Sugar taste neurons → MN9, the proboscis motor neuron. Bitter taste keeps MN9 silent"
                 + (", even on top of sugar." if male else "; on top of sugar only with the published model's settings "
                    "(fly_brain.py --female), not the game's (MN9 7-13 Hz)."),
+                (("Water taste cells (LB3a, the type whose outputs match the published model's water cells) → Fudog (DNg67), "
+                  "not MN9 (at no rate up to 200 Hz): a thirsty fly tastes water but does not drink." if male else
+                  "Water taste cells (the published model's 18 water cells) → Fudog (DNg67); at the game's 80 Hz not MN9, "
+                  "so a thirsty fly tastes water but does not drink (at 200 Hz they do reach MN9: docs/SCIENCE.md 2.2).")
+                 if self.water_cells else
+                 "Water: this fly's data name no water taste cells (FlyWire types its labellar sugar and water cells as "
+                 "LB3 (122) and LB2d (7), without splitting them by taste), so water tastes of nothing here and she does "
+                 "not drink (docs/SCIENCE.md 9.2)."),
                 "Looming detectors (LC4, LPLC2) → giant fibre DNp01, the escape command.",
                 "A small moving object seen on one side (LC10a, a courtship-chase cell type) → DNa02 on that same side → a turn toward it.",
-                "Head bristles → MDN, the 'moonwalker' backward-walking neurons."
-                + (" Antennal sensors (Johnston's organ) → aDN1/aDN2 grooming neurons." if male else ""),
+                ("Head bristles → MDN, the 'moonwalker' backward-walking neurons. Antennal sensors (Johnston's organ) → "
+                 "aDN1/aDN2 grooming neurons." if male else "In this female brain the head bristles reach the grooming neuron "
+                 "aDN1 (86 Hz) and not MDN (0 Hz): at a wall she grooms instead of backing up (docs/SCIENCE.md 9.4)."),
                 "Odour receptor neurons → projection neurons → a sparse, odour-specific Kenyon-cell code → mushroom body output neurons.",
                 *(["Bitter taste → PPL1 dopamine neurons (the punishment signal for learning)."] if male else []),
                 "Which Kenyon-cell synapses are plastic and which dopamine neurons gate each MBON: read from the wiring (DAN→MBON synapses).",
                 *(["pC1 courtship neurons → pIP10 → wing motor neurons (song), and → DNp13; a female seen as a small moving object → LC10a → DNa02 (the chase)."] if male else []),
-                ("A loud sound → Johnston's organ A/B neurons → the giant fibre (a startle jump), and wind on the antennae → grooming and backing neurons."
+                ("A loud sound → Johnston's organ B neurons → the giant fibre (a startle jump), and wind on the antennae → grooming and backing neurons."
                  if male else "In this female brain Johnston's organ reaches the giant fibre and the grooming neurons only weakly (5-9 Hz): "
                  "a clap does not startle her and dust does not make her groom (docs/SCIENCE.md 9.4)."),
                 "Wide-field motion → T4/T5 (" + ("driven column by column from the retina" if self.columnar_on else
@@ -1291,10 +1412,12 @@ class Game:
             "hand_built": [
                 "The retina (which facet sees what) and the feature computations that turn retinal images into LC4/LPLC2/LC10a/T4/T5 rates.",
                 "How smells, wind, touch and dust become firing rates, and which sensory types they drive.",
-                ("How descending-neuron firing becomes movement: the decoder's weights, the jump and what wins when commands compete. "
+                ("How descending-neuron firing becomes movement: the decoder's weights, what wins when commands compete, and that "
+                 "a giant-fibre burst (5 spikes in 50 ms, not one) is the escape command. "
                  "Speeds and turn rates come from leg physics (NeuroMechFly v2 in MuJoCo; its stepping rhythm, recorded steps and "
                  "left/right drive are flygym's)." if getattr(self, "body_kind", "drawn") == "physics" else
-                 "How descending-neuron firing becomes movement: speeds, turn rates, the jump, and what wins when commands compete."),
+                 "How descending-neuron firing becomes movement: speeds, turn rates, the jump (it needs a giant-fibre burst, "
+                 "5 spikes in 50 ms, not one), and what wins when commands compete."),
                 "The walking urge, hunger and thirst, odour-guided steering (innate valence + the learned KC→MBON bias), the female's behaviour.",
                 "Sugar reward → PAM dopamine except PAM-γ3 (the wiring's taste-to-PAM routes give the best-connected PAM-α1 cells about a third of the drive they need; SCIENCE.md 4.5); the 'shock' tool → PPL1.",
                 ("Courtship arousal: tapping the female fires the tarsal taste neurons (wiring), but their route to pC1 is ~8x too weak in this model, so contact also drives pC1 directly."
@@ -1309,5 +1432,7 @@ class Game:
                 "Real neuron shapes and individual properties, hormones, electrical synapses, most neuromodulation, development.",
                 "Genes beyond two transcription factors' expression labels, the transmitter each neuron makes and (with the parts list on) the aminergic receptors its cell type expresses where an adult scRNA-seq cluster exists. Still no ion-channel differences, no peptide signalling (the ontology only names the peptidergic types), no development from the genome.",
                 "Absolute firing rates shouldn't be trusted, only which neurons respond. Nothing here is conscious.",
+                *(["The escape jump with the physics body: the giant fibre fires, but the fly stays on its feet (NeuroMechFly "
+                   "has no jump model)."] if getattr(self, "body_kind", "drawn") == "physics" else []),
             ],
         }

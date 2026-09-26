@@ -7,7 +7,9 @@ import { $, el, esc } from "./util.js";
 const KEY = "vf.layout.v1";
 const DRAG_START = 6;                 // px of movement before a press becomes a drag
 const FLOAT_W = 400;                  // a floating card's width unless it was resized
-const HEADER = 54;                    // floating cards stay below the header, whose buttons and menus must stay reachable
+// floating cards stay below the header, whose buttons and menus must stay reachable (4 px under it; on a narrow
+// screen the header wraps to two lines)
+const headerBottom = () => ((document.querySelector("header") || {}).offsetHeight || 50) + 4;
 const Z0 = 30;                        // floating cards stack from here; header menus sit at 1000, overlays at 2000 (style.css)
 
 function titleOf(card) {
@@ -45,7 +47,7 @@ export class PanelManager {
       if (saved.floating && typeof saved.floating === "object" && !Array.isArray(saved.floating)) {
         for (const [id, p] of Object.entries(saved.floating)) {
           if (!this.byId[id] || !p || typeof p !== "object" || Array.isArray(p)) continue;
-          const q = { x: num(p.x) ?? 8, y: num(p.y) ?? HEADER, w: clamp(num(p.w) ?? FLOAT_W, 260, Math.max(260, Math.min(900, window.innerWidth - 16))) };
+          const q = { x: num(p.x) ?? 8, y: num(p.y) ?? headerBottom(), w: clamp(num(p.w) ?? FLOAT_W, 260, Math.max(260, Math.min(900, window.innerWidth - 16))) };
           if (num(p.h) > 0) q.h = Math.min(p.h, window.innerHeight);
           this.state.floating[id] = q;
         }
@@ -66,10 +68,12 @@ export class PanelManager {
     this.buildMenu();
     button.setAttribute("aria-haspopup", "true"); button.setAttribute("aria-controls", menu.id); button.setAttribute("aria-expanded", "false");
     menu.setAttribute("role", "group"); menu.setAttribute("aria-label", "Panels");
+    menu.tabIndex = -1;                                 // a press on a row's text keeps the focus in the menu (not on the page)
     button.onclick = (e) => { e.stopPropagation(); this.refreshMenu(); menu.hidden ? this.openMenu() : this.closeMenu(); };
-    document.addEventListener("click", (e) => { if (!menu.hidden && !e.target.closest(".menuwrap")) this.closeMenu(); });
+    // (a ▲ ▼ press rebuilds the rows: its click arrives from a button that has left the page)
+    document.addEventListener("click", (e) => { if (!menu.hidden && e.target.isConnected && !e.target.closest(".menuwrap")) this.closeMenu(); });
     window.addEventListener("keydown", (e) => { if (e.key === "Escape" && !menu.hidden) this.closeMenu(true); });
-    menu.addEventListener("focusout", (e) => { if (!e.relatedTarget || !e.relatedTarget.closest(".menuwrap")) this.closeMenu(); });
+    menu.addEventListener("focusout", (e) => { if (!this.rebuilding && (!e.relatedTarget || !e.relatedTarget.closest(".menuwrap"))) this.closeMenu(); });
     button.parentElement.addEventListener("keydown", (e) => {   // arrow keys walk the rows, as in a menu (from the button too)
       if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(e.key)) return;
       if (menu.hidden) { if (e.key === "ArrowDown") this.openMenu(); else return; }
@@ -141,7 +145,7 @@ export class PanelManager {
     }
     // a popped-out card lands over the right edge of the dish, clear of the sidebar and never on the header
     const st = ($("stage") || this.aside).getBoundingClientRect(), w0 = floatWidth();
-    const p = pos || this.state.floating[card.id] || { x: Math.max(8, st.right - w0 - 16), y: Math.max(HEADER, Math.min(r.top, st.bottom - 200)), w: w0 };
+    const p = pos || this.state.floating[card.id] || { x: Math.max(8, st.right - w0 - 16), y: Math.max(headerBottom(), Math.min(r.top, st.bottom - 200)), w: w0 };
     this.state.floating[card.id] = p;
     card.style.left = `${p.x}px`; card.style.top = `${p.y}px`;
     card.style.width = `${p.w || floatWidth()}px`;
@@ -202,7 +206,8 @@ export class PanelManager {
       const p = this.state.floating[card.id]; if (!p) continue;
       const w = card.offsetWidth || p.w || FLOAT_W, h = card.offsetHeight || p.h || 120;
       p.x = clamp(p.x, 8, Math.max(8, window.innerWidth - Math.min(w, window.innerWidth - 16) - 8));
-      p.y = clamp(p.y, HEADER, Math.max(HEADER, window.innerHeight - Math.min(h, 60) - 8));
+      const hb = headerBottom();
+      p.y = clamp(p.y, hb, Math.max(hb, window.innerHeight - Math.min(h, 60) - 8));
       card.style.left = `${p.x}px`; card.style.top = `${p.y}px`;
       card.style.maxHeight = `${Math.max(60, window.innerHeight - p.y - 8)}px`;
     }
@@ -222,7 +227,7 @@ export class PanelManager {
   buildMenu() {
     const m = this.menu; m.innerHTML = "";
     const side = el("label", "", `<input type="checkbox" id="sidebarToggle"> side panels <span class="float" title="keyboard: H" aria-hidden="true">H</span>`);
-    side.querySelector("input").onchange = (e) => { this.setSidebar(e.target.checked); e.target.blur(); };
+    side.querySelector("input").onchange = (e) => this.setSidebar(e.target.checked);
     m.appendChild(side);
     m.appendChild(el("div", "sep"));
     this.menuRows = {};
@@ -233,7 +238,7 @@ export class PanelManager {
       lab.querySelector("input").onchange = (e) => {
         this.hide(card, !e.target.checked);
         if (e.target.checked && !this.isFloating(card)) this.setSidebar(true);
-        this.save(); e.target.blur();                    // the focus must not stay on the checkbox: it would swallow the shortcuts
+        this.save();                                     // the menu stays open for the next tick (closing it takes the focus off)
       };
       const up = el("button", "mv", "▲"); up.type = "button"; up.title = "Move up"; up.setAttribute("aria-label", `Move ${card.dataset.title} up`);
       const dn = el("button", "mv", "▼"); dn.type = "button"; dn.title = "Move down"; dn.setAttribute("aria-label", `Move ${card.dataset.title} down`);
@@ -259,7 +264,7 @@ export class PanelManager {
     if (dir < 0) this.aside.insertBefore(card, docked[j]); else this.aside.insertBefore(docked[j], card);
     this.save();
     const focused = document.activeElement && document.activeElement.classList.contains("mv") ? (dir < 0 ? "▲" : "▼") : null;
-    this.buildMenu();                                   // the rows follow the new order
+    this.rebuilding = true; this.buildMenu(); this.rebuilding = false;   // the rows follow the new order (the menu stays open)
     if (focused) { const b = [...this.menuRows[card.id].querySelectorAll(".mv")].find((x) => x.textContent === focused); if (b) b.focus(); }
   }
   refreshMenu() {
@@ -306,7 +311,7 @@ export class PanelManager {
     // "over the sidebar" means over the part of it that is on screen (in the single-column layout the
     // sidebar runs on below the window)
     const a = this.aside.getBoundingClientRect();
-    const top = Math.max(a.top, HEADER), bottom = Math.min(a.bottom, window.innerHeight);
+    const top = Math.max(a.top, headerBottom()), bottom = Math.min(a.bottom, window.innerHeight);
     const overSidebar = this.state.sidebar && e.clientX >= a.left - 24 && e.clientX <= a.right + 24 && e.clientY >= top - 24 && e.clientY <= bottom + 24;
     if (overSidebar) {
       if (this.isFloating(d.card)) this.dock(d.card, false);
@@ -331,7 +336,7 @@ export class PanelManager {
       if (before) this.aside.insertBefore(card, before); else this.aside.appendChild(card);
     }
     // auto-scroll near the edges: the sidebar when it scrolls, else the page (single-column layout)
-    const top = Math.max(a.top, HEADER), bottom = Math.min(a.bottom, window.innerHeight);
+    const top = Math.max(a.top, headerBottom()), bottom = Math.min(a.bottom, window.innerHeight);
     const dy = y < top + 40 ? -10 : y > bottom - 40 ? 10 : 0;
     if (dy) { if (this.aside.scrollHeight > this.aside.clientHeight + 1) this.aside.scrollTop += dy; else window.scrollBy(0, dy); }
   }

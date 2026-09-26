@@ -47,9 +47,9 @@ from pathlib import Path
 
 import numpy as np
 
-from .connectome import PROJECT_DIR
+from .connectome import SHIPPED_DATA_DIR
 
-DATA_DIR = PROJECT_DIR / "data"
+DATA_DIR = SHIPPED_DATA_DIR             # data/ in a source checkout, virtual_fly/data when installed
 MAP_FILE = DATA_DIR / "fbbt_map.json.gz"
 TREE_FILE = DATA_DIR / "fbbt_tree.json.gz"
 RX_FILE = DATA_DIR / "vfb_receptors.json.gz"

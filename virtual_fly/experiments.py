@@ -222,15 +222,28 @@ class ExperimentResult:
         return bool(self.ok) and any(r.seeds_out for r in self.readouts)
 
     def to_dict(self) -> dict:
-        return {"name": self.name, "ok": self.ok, "after_spikes_per_s": self.after_sps, "after": self.after_note,
+        # after_spikes_per_s is the old name of after_events_per_s, kept for old readers: with the parts list on it
+        # counts the graded cells' release quanta too (after_graded_per_seed has them per seed)
+        return {"name": self.name, "ok": self.ok, "fragile": self.fragile, "after_events_per_s": self.after_sps,
+                "after_spikes_per_s": self.after_sps, "after": self.after_note,
                 "wall_s": round(self.wall_s, 2), "seeds": self.seeds,
                 "readouts": [r.__dict__ for r in self.readouts], "silenced": list(self.silenced),
                 "missing": list(self.missing), "after_per_seed": list(self.after_per_seed),
                 "after_graded_per_seed": list(self.after_graded_per_seed)}
 
 
+def margin(hi: float) -> float:
+    """How far above the top of its range a rate still passes: max(1 Hz, 15 %) (docs/SCIENCE.md section 2)."""
+    return max(1.0, 0.15 * hi)
+
+
 def in_range(hz: float, lo: float, hi: float) -> bool:
-    return lo - 1e-9 <= hz <= hi + max(1.0, 0.15 * hi)
+    return lo - 1e-9 <= hz <= hi + margin(hi)
+
+
+def in_margin(r: ReadoutResult) -> bool:
+    """The readout's mean, or one of its seeds, is above the top of the range but passes through the margin."""
+    return r.ok is not None and any(v > r.hi and in_range(v, r.lo, r.hi) for v in (r.hz, *r.per_seed))
 
 
 def after_note(sps: float) -> str:
@@ -354,7 +367,8 @@ def format_result(res: ExperimentResult) -> str:
         flag = "ok" if r.ok else "<-- not the usual result"
         if r.ok and r.seeds_out:
             flag = f"ok on the mean, but {r.seeds_out} of {len(r.per_seed)} seeds outside"
-        lines.append(f" {res.name if k == 0 else '':34} {r.label:32} {r.hz:6.1f}{sd:6} Hz  {r.lo:g}-{r.hi:g} Hz  {flag}")
+        extra = f"(+{margin(r.hi):g})" if in_margin(r) else ""     # the range with the margin a pass used
+        lines.append(f" {res.name if k == 0 else '':34} {r.label:32} {r.hz:6.1f}{sd:6} Hz  {r.lo:g}-{r.hi:g}{extra} Hz  {flag}")
     if res.silenced and not res.na:
         lines.append(f" {'':34} (output blocked in {', '.join(res.silenced)})")
     if res.missing:

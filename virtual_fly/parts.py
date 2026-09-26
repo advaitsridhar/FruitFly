@@ -65,7 +65,7 @@ from dataclasses import dataclass, field, replace
 import numpy as np
 
 from .brain import THETA
-from .connectome import PROJECT_DIR, Connectome
+from .connectome import SHIPPED_DATA_DIR, Connectome
 
 # ------------------------------------------------------------------ the tables
 @dataclass(frozen=True)
@@ -223,7 +223,7 @@ BIG_THRESHOLD = 1e9        # graded cells never cross it
 
 
 # ------------------------------------------------------------------ the compiled parts of one connectome
-REGION_FILE = PROJECT_DIR / "data" / "mb_roi_connectivity.json.gz"
+REGION_FILE = SHIPPED_DATA_DIR / "mb_roi_connectivity.json.gz"
 _REGIONS: dict = {"table": None, "loaded": False}
 REGION_LABELS = {"CA": "calyx", "PED": "pedunculus", "gL": "γ lobe", "aL": "α lobe", "a'L": "α′ lobe",
                  "bL": "β lobe", "b'L": "β′ lobe"}

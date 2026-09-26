@@ -17,7 +17,7 @@ Levels, from the most to the least specific genome::
     real                the connectome itself (nothing grown)
     type                rules per (cell type, side) pair: ~1.5 M pairs for 11,691 types
     bottleneck:K        the type rules approximated at rank K (each group gets a K-number code;
-                        a connection rule is the product of two codes), K = 8 ... 512
+                        a connection rule is the product of two codes), K = 1 ... 2048 (see MAX_RANK)
     class               rules per (class, side) pair only: a few hundred groups
 
 Everything is deterministic given a seed: two flies grown with the same rules and seed are
@@ -32,7 +32,14 @@ import numpy as np
 
 from .connectome import Connectome
 
-MIN_SYN, MAX_SYN = 5, 65535        # the data keeps connections with >= 5 synapses
+MIN_SYN, MAX_SYN = 5, 65535        # the male file keeps connections with >= 5 synapses, the female file all of
+                                   # them: a grown fly's floor is its source's own smallest count (Rules.min_syn)
+# The largest bottleneck rank. At about K = 110 the male's codes (2 x 23,078 groups x K numbers) already hold as
+# many numbers as his whole rule table (5.1 M), so a larger K no longer squeezes anything; and the randomized SVD
+# keeps several (groups x (K + 12)) matrices in memory: K = 2049 took 12 minutes and 2.5 GB, and K = 999,999
+# (clamped to the 23,077 groups) passed 7.5 GB.
+MAX_RANK = 2048
+LEVEL_ERROR = f"level must be real, type, class or bottleneck:K (K = 1 to {MAX_RANK})"
 
 
 @dataclass
@@ -51,6 +58,7 @@ class Rules:
     n_edges_total: int
     n_syn_total: int
     rank: int | None = None
+    min_syn: int = MIN_SYN          # the source's smallest synapse count: no grown connection has fewer
     notes: dict = field(default_factory=dict)
 
     @property
@@ -103,7 +111,8 @@ def learn_rules(conn: Connectome, by: str = "type") -> Rules:
     return Rules(level=by, groups=groups.tolist(), group_of=group_of, order=order.astype(np.int64), bounds=bounds.astype(np.int64),
                  pair_pre=(uniq // groups.size).astype(np.int32), pair_post=(uniq % groups.size).astype(np.int32),
                  pair_edges=counts.astype(np.int64), pair_mu=mu.astype(np.float32), pair_sigma=np.sqrt(var).astype(np.float32),
-                 n_edges_total=int(conn.n_edges), n_syn_total=int(conn.n_syn.sum()))
+                 n_edges_total=int(conn.n_edges), n_syn_total=int(conn.n_syn.sum()),
+                 min_syn=int(conn.n_syn.min()) if conn.n_edges else MIN_SYN)
 
 
 # ---------------------------------------------------------------- the bottleneck
@@ -174,7 +183,7 @@ def bottleneck(rules: Rules, rank: int, seed: int = 0) -> Rules:
     # per presynaptic group: synapse-count shape (a group-level parameter, kept outside the codes)
     g_s1 = np.bincount(rules.pair_pre, weights=rules.pair_mu * rules.pair_edges, minlength=n)
     g_w = np.bincount(rules.pair_pre, weights=rules.pair_edges.astype(np.float64), minlength=n)
-    g_mu = np.where(g_w > 0, g_s1 / np.maximum(g_w, 1e-9), np.log(MIN_SYN)).astype(np.float32)
+    g_mu = np.where(g_w > 0, g_s1 / np.maximum(g_w, 1e-9), np.log(rules.min_syn)).astype(np.float32)
     g_s2 = np.bincount(rules.pair_pre, weights=(rules.pair_sigma ** 2 + rules.pair_mu ** 2) * rules.pair_edges, minlength=n)
     g_sigma = np.sqrt(np.maximum(0.0, np.where(g_w > 0, g_s2 / np.maximum(g_w, 1e-9), 0.0) - g_mu ** 2)).astype(np.float32)
     # reconstruct blockwise; find the threshold that keeps the original number of connected pairs
@@ -206,7 +215,7 @@ def bottleneck(rules: Rules, rank: int, seed: int = 0) -> Rules:
         edges = np.minimum(edges, cap)
     out = Rules(level=f"bottleneck:{rank}", groups=rules.groups, group_of=rules.group_of, order=rules.order, bounds=rules.bounds,
                 pair_pre=pre, pair_post=post, pair_edges=edges, pair_mu=g_mu[pre], pair_sigma=g_sigma[pre],
-                n_edges_total=rules.n_edges_total, n_syn_total=rules.n_syn_total, rank=rank,
+                n_edges_total=rules.n_edges_total, n_syn_total=rules.n_syn_total, rank=rank, min_syn=rules.min_syn,
                 notes={"threshold": round(tau, 4), "pairs_kept": int(pre.size), "singular_values": [round(float(s), 1) for s in S[:8]]})
     return out
 
@@ -258,14 +267,14 @@ def grow(conn: Connectome, rules: Rules, seed: int = 0) -> Connectome:
     keep = pre != post                                    # no neuron connects to itself
     pre, post, pair = pre[keep], post[keep], pair[keep]
     syn = np.exp(rng.normal(rules.pair_mu[pair].astype(np.float64), rules.pair_sigma[pair].astype(np.float64)))
-    syn = np.clip(np.rint(syn), MIN_SYN, MAX_SYN)
+    syn = np.clip(np.rint(syn), rules.min_syn, MAX_SYN)
     # merge duplicate (pre, post) draws by adding their synapses, then sort into CSR order
     key = pre * n + post
     uniq, inv = np.unique(key, return_inverse=True)
     syn_u = np.bincount(inv, weights=syn, minlength=uniq.size)
     pre_u = (uniq // n).astype(np.int32)
     post_u = (uniq % n).astype(np.int32)
-    n_syn = np.clip(syn_u, MIN_SYN, MAX_SYN).astype(np.uint16)
+    n_syn = np.clip(syn_u, rules.min_syn, MAX_SYN).astype(np.uint16)
     row_ptr = np.zeros(n + 1, dtype=np.int64)
     np.add.at(row_ptr, pre_u + 1, 1)
     row_ptr = np.cumsum(row_ptr)
@@ -289,17 +298,20 @@ def valid_level(level: str) -> bool:
         return True
     if level.startswith("bottleneck:"):
         try:
-            return 1 <= int(level.split(":", 1)[1]) <= 2048
+            return 1 <= int(level.split(":", 1)[1]) <= MAX_RANK
         except ValueError:
             return False
     return False
 
 
 def grow_level(conn: Connectome, level: str, seed: int = 0, rules_cache: dict | None = None) -> tuple[Connectome, Rules]:
-    """``level`` is ``type``, ``class`` or ``bottleneck:K`` (``real`` returns the connectome itself)."""
+    """``level`` is ``type``, ``class`` or ``bottleneck:K`` (``real`` returns the connectome itself); anything else,
+    such as ``bottleneck:0`` or ``bottleneck:abc``, raises ValueError."""
     level = level.strip().lower()
     if level in ("real", "none", ""):
         return conn, None
+    if not valid_level(level):
+        raise ValueError(LEVEL_ERROR)
     cache = rules_cache if rules_cache is not None else {}
     if level == "type" or level.startswith("bottleneck"):
         base = cache.get("type")
@@ -307,16 +319,14 @@ def grow_level(conn: Connectome, level: str, seed: int = 0, rules_cache: dict | 
             base = cache["type"] = learn_rules(conn, "type")
         rules = base
         if level.startswith("bottleneck"):
-            rank = int(level.split(":")[1]) if ":" in level else 64
+            rank = int(level.split(":")[1])
             rules = cache.get(f"bottleneck:{rank}")
             if rules is None:
                 rules = cache[f"bottleneck:{rank}"] = bottleneck(base, rank, seed=0)
-    elif level == "class":
+    else:                                         # "class"
         rules = cache.get("class")
         if rules is None:
             rules = cache["class"] = learn_rules(conn, "class")
-    else:
-        raise ValueError("level must be real, type, class or bottleneck:K")
     return grow(conn, rules, seed), rules
 
 

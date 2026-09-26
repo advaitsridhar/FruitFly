@@ -25,6 +25,19 @@ def test_in_range_and_after_note():
     assert "small loop" in after_note(5000) and "RUNAWAY" in after_note(60000)
 
 
+def test_a_pass_through_the_margin_shows_it():
+    from virtual_fly.experiments import ExperimentResult, ReadoutResult, in_margin, margin
+    assert margin(5) == 1.0 and margin(100) == 15.0
+    mean = ReadoutResult("MN9", "MN9", 5.8, 1.6, 0, 5, True, [4.0, 4.0, 6.0, 8.0, 7.0], seeds_out=2)   # 6 Hz: in via the margin
+    seed = ReadoutResult("MN9", "MN9", 4.4, 1.0, 0, 5, True, [4.0, 5.5, 3.7], seeds_out=0)
+    plain = ReadoutResult("MN9", "MN9", 4.0, 0.5, 0, 5, True, [3.5, 4.5], seeds_out=0)
+    assert in_margin(mean) and in_margin(seed) and not in_margin(plain)
+    text = format_result(ExperimentResult("x", [mean, seed, plain], 0.0, "", 0.1, [0]))
+    lines = text.splitlines()
+    assert "0-5(+1) Hz  ok on the mean, but 2 of 5 seeds outside" in lines[0] and "0-5(+1) Hz  ok" in lines[1]
+    assert "0-5 Hz  ok" in lines[2]
+
+
 def test_run_experiment_readouts_and_flags(brain):
     res = run_experiment(brain, SUGAR_EXP, seeds=(0, 1))
     assert res.name == "Synthetic sugar" and res.seeds == [0, 1] and res.ok and res.wall_s >= 0
@@ -156,6 +169,7 @@ def test_fragile_readouts_and_the_survival_rows(brain):
     shaky = ReadoutResult("b", "MN9", 21.0, 1.0, 20, 40, True, [22.0, 19.0, 22.0], seeds_out=1)
     res = ExperimentResult("x", [steady, shaky], 0.0, "calm", 0.1, [0, 1, 2])
     assert res.ok and res.fragile and "ok on the mean, but 1 of 3 seeds outside" in format_result(res)
+    assert res.to_dict()["fragile"] is True and not ExperimentResult("y", [steady], 0.0, "calm", 0.1, [0, 1]).to_dict()["fragile"]
     assert not ExperimentResult("y", [steady], 0.0, "calm", 0.1, [0, 1]).fragile
     rows = E.survival(brain, [SUGAR_EXP, LOOM_EXP], seeds=(0, 1))
     assert [r["seeds"] for r in rows] == [2, 2] and all(r["ok"] and r["fragile"] is False for r in rows)
@@ -170,7 +184,8 @@ def test_the_after_line_splits_graded_quanta_and_tallies_every_seed(conn):
     text = format_result(res)
     assert "60,000 events/s (40,000 spikes + 20,000 graded quanta)  RUNAWAY LOOP (see README, 'Honest limitations')" in text
     assert "per seed: 500, 60.0k, 2.5k (1 calm, 1 a small loop keeps firing, 1 RUNAWAY LOOP; the worst is shown)" in text
-    assert res.to_dict()["after_graded_per_seed"] == [0.0, 20000.0, 0.0]
+    d = res.to_dict()
+    assert d["after_graded_per_seed"] == [0.0, 20000.0, 0.0] and d["after_events_per_s"] == d["after_spikes_per_s"] == 60000.0
     # measured: one graded share per seed, never more than all the events
     parts = FlyBrain(conn, seed=0, parts=True)
     clear, n = parts.clear_stimuli, {"calls": 0}

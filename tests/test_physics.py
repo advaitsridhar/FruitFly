@@ -2,9 +2,12 @@
 only where flygym is installed (it is an optional dependency)."""
 
 import math
+import random
+import types
 
 import pytest
 
+from virtual_fly import physics
 from virtual_fly.physics import available, descending_drive
 
 
@@ -28,12 +31,26 @@ def test_drive_mapping():
         assert descending_drive(mode, drive(forward=1.0, yaw=1.0)) == (0.0, 0.0)
 
 
-needs_flygym = pytest.mark.skipif(not available(), reason="flygym / MuJoCo not installed (optional)")
+def test_unavailable_body_names_what_failed(monkeypatch):
+    from virtual_fly import play
+    from virtual_fly.world import World
+    monkeypatch.setattr(physics, "_IMPORT_ERROR", ModuleNotFoundError("No module named 'numba'"))
+    monkeypatch.setattr(physics, "sys", types.SimpleNamespace(version_info=(3, 11, 9)))
+    reason = physics.unavailable_reason()
+    assert "Python 3.10-3.12" in reason and "numba &&" in reason and "No module named 'numba'" in reason
+    with pytest.raises(RuntimeError, match="No module named 'numba'"):
+        physics.make_body("physics", World(seed=1), random.Random(0))
+    with pytest.raises(SystemExit, match="No module named 'numba'"):         # before any data is loaded
+        play.main(["--body", "physics", "--no-browser"])
+    monkeypatch.setattr(physics, "sys", types.SimpleNamespace(version_info=(3, 13, 1)))
+    assert "this is Python 3.13" in physics.unavailable_reason()
+
+
+needs_flygym = pytest.mark.skipif(not available(), reason=f"physics body unavailable (optional): {physics._IMPORT_ERROR!r}")
 
 
 @needs_flygym
 def test_physics_body_walks_and_stands():
-    import random
     from virtual_fly.physics import PhysicsBody
     from virtual_fly.world import World
     body = PhysicsBody(World(seed=1), random.Random(0))

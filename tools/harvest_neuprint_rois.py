@@ -28,7 +28,9 @@ import gzip
 import json
 import os
 import sys
+from pathlib import Path
 
+HERE = Path(__file__).resolve().parent
 SERVER = "neuprint.janelia.org"
 CELLS = ("APL", "DPM")
 
@@ -87,7 +89,7 @@ def summary(table: dict) -> str:
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("--out", default="data/mb_roi_connectivity.json.gz")
+    ap.add_argument("--out", default=str(HERE.parent / "data" / "mb_roi_connectivity.json.gz"))
     ap.add_argument("--dataset", default=None, help="neuPrint dataset (default: male-cns:v1.0, else the newest male-cns)")
     args = ap.parse_args(argv)
     token = os.environ.get("NEUPRINT_APPLICATION_CREDENTIALS", "").strip()

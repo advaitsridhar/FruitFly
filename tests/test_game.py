@@ -3,13 +3,15 @@
 import base64
 import json
 import math
+import random
 import time
 
 import numpy as np
 import pytest
 
-from virtual_fly.body import JUMP_TIME
-from virtual_fly.game import (CHECKS, HIDDEN_READOUTS, READOUTS, TICK_MS, EventLog, Game, InternalState, MotorDecoder)
+from virtual_fly.body import JUMP_TIME, FlyBody
+from virtual_fly.game import (ACTIONS, CHECKS, GF_BURST, HIDDEN_READOUTS, READOUTS, STILL_TICKS, TICK_MS, EventLog, Game,
+                               InternalState, MotorDecoder)
 from virtual_fly.scenarios import SCENARIOS
 from virtual_fly.settings import build_brain
 
@@ -18,7 +20,7 @@ STATE_KEYS = {"seq", "t", "rtf", "speed", "fly", "world", "autopilot", "paused",
               "done", "state", "learning", "events", "event_seq", "scenario", "recording", "genome", "graded_eps"}
 LAYOUT_KEYS = {"n", "w", "h", "d", "x", "y", "z", "region", "regions", "arena_r", "fly_half", "tick_ms", "presets",
                "types", "edges", "synapses", "dataset", "sex", "readouts", "checks", "odours", "scenarios", "retina", "profile", "settings",
-               "decoder", "columnar_vision", "whats_real", "genetics", "genome", "parts", "vfb"}
+               "decoder", "columnar_vision", "whats_real", "genetics", "genome", "parts", "vfb", "body", "stride_average"}
 FLY_KEYS = {"x", "y", "h", "v", "w", "mode", "prob", "legs", "groom", "wingL", "wingR", "abdomen", "jump", "hx", "hy", "dist"}
 
 
@@ -57,6 +59,7 @@ def test_layout_matches_the_documented_schema(game, conn):
     assert {o["id"] for o in lay["odours"]} == {"vinegar", "banana", "geosmin", "yeast"}
     assert {s["id"] for s in lay["scenarios"]} == set(SCENARIOS)
     assert lay["settings"]["silenced"] == ["class:ALLN", "class:DAN"] and lay["columnar_vision"] is True
+    assert lay["body"] == "drawn" and lay["stride_average"] is False
     assert set(lay["whats_real"]) == {"wiring", "hand_built", "not_modelled"}
     assert lay["presets"][0]["spec"] == "MDN" and lay["retina"]["L"]["n_az"] == game.retina.eyes["L"].n_az
     dec = lay["decoder"]
@@ -71,7 +74,7 @@ def test_tick_publishes_a_documented_state(game, conn):
     state = ticks(game, 1)
     assert set(state) == STATE_KEYS and json.loads(game.state_json) == state
     assert state["seq"] == 1 and state["t"] == pytest.approx(TICK_MS / 1000) and game.seq == 1
-    assert set(state["fly"]) == FLY_KEYS and state["mode"] == "walk" and state["fly"]["mode"] == "walk"
+    assert set(state["fly"]) == FLY_KEYS and state["mode"] == "idle" and state["fly"]["mode"] == "idle"   # resting
     assert set(state["world"]) == {"food", "obstacles", "odours", "puffs", "wind", "stripes", "female", "hand", "tool"}
     assert state["world"]["stripes"] == {"count": 0, "phase": 0.0, "drum_speed": 0.0}
     assert set(state["hz"]) == set(game.readouts) and all(v == 0 for v in state["hz"].values())
@@ -145,15 +148,144 @@ def test_dust_makes_the_fly_groom(game):
     assert "dust" not in far.senses_now                                        # too far from the fly
 
 
-def test_giant_fibre_spike_triggers_an_escape_jump(game):
+def test_giant_fibre_burst_triggers_an_escape_jump(game):
     game.action({"type": "zap", "spec": "DNp01", "hz": 150, "secs": 0.2})
     state = ticks(game, 2)
     assert state["mode"] == "escape" and state["fly"]["jump"] is not None and game.body.pose.jump is not None
     assert "giant fibre" in state["driver"] and any("escape jump" in e["text"] for e in game.events.items)
+    assert state["msg"] == "Giant fibre fired: escape jump!"
     assert "escape" not in state["done"]                                       # no looming was seen
     assert state["fly"]["wingL"] > 0.3 and state["fly"]["wingR"] > 0.3 and game.gf_cooldown > 0
     state = ticks(game, int(JUMP_TIME / (TICK_MS / 1000)) + 2)
     assert state["fly"]["jump"] is None and game.body.pose.jump is None
+
+
+def test_the_physics_body_says_it_cannot_jump(game):
+    game.body_kind = "physics"                                               # (flygym is optional: only the words here)
+    m = dict(forward=0.0, yaw=0.0, backward=0.0, halt=0.0, feed=0.0, groom=0.0, song=0.0, court=0.0)
+    assert game.choose_mode(m, GF_BURST) == "escape"
+    assert game.message == "Giant fibre fired: the escape command (the physics body cannot jump)"
+    assert game.events.items[-1]["text"].startswith("escape command") and "jump model" in game.whats_real()["not_modelled"][-1]
+
+
+def test_grooming_without_dust_does_not_tick_the_dust_item(game):
+    game.action({"type": "zap", "spec": "DNg62,DNge078", "hz": 200, "secs": 1.0})   # the grooming neurons, no dust
+    state = ticks(game, 30)
+    assert state["mode"] == "groom" and "groom" not in state["done"] and "dust" not in state["senses"]
+
+
+def test_a_fly_that_walks_nowhere_is_resting(game):
+    state = ticks(game, 5)
+    assert state["mode"] == state["fly"]["mode"] == "idle" and state["fly"]["v"] == 0
+    game.action({"type": "autopilot", "on": True})                            # the walking urge starts it walking
+    state = ticks(game, 10)
+    assert state["mode"] == state["fly"]["mode"] == "walk" and state["fly"]["v"] > 1
+
+
+def test_a_walking_fly_reads_resting_only_once_it_has_stayed_still(game, monkeypatch):
+    """The physics body's measured speed dips near zero for a tick or two within a stride: the mode chip must not
+    blink 'resting' then. Only STILL_TICKS (0.2 s) of stillness make a walk 'resting'; a new fly starts at rest."""
+    game.action({"type": "autopilot", "on": True})
+    game.wander.update(walking=True, left=99.0)                              # the walking urge, throughout
+    move = game.body.move
+    script = [5.0] * 4 + [0.0] * 3 + [5.0] * 2 + [0.0] * (STILL_TICKS + 2)    # walk, a 3-tick dip, walk, stop
+
+    def measured(*a, **k):
+        move(*a, **k)
+        game.body.pose.v, game.body.pose.w = script[len(modes)], 0.0
+    monkeypatch.setattr(game.body, "move", measured)
+    modes = []
+    for _ in script:
+        state = ticks(game, 1)
+        modes.append(state["mode"])
+        assert state["fly"]["mode"] == state["mode"]
+    assert modes[:9 + STILL_TICKS - 1] == ["walk"] * (9 + STILL_TICKS - 1) and modes[9 + STILL_TICKS - 1:] == ["idle"] * 3
+    monkeypatch.setattr(game.body, "move", move)
+    game.action({"type": "autopilot", "on": True})
+    ticks(game, 5)
+    assert game.still_ticks == 0                                              # walking again
+    game.action({"type": "autopilot", "on": False})
+    game.action({"type": "reset"})                                            # New fly: the count starts over, at rest
+    assert ticks(game, 1)["mode"] == "idle" and game.still_ticks >= STILL_TICKS
+
+
+def test_the_physics_body_rests_by_its_stepping_drive_not_its_jittering_thorax(game):
+    """MuJoCo's thorax jitters faster than 0.05 mm/s while the physics fly stands, and its measured speed can dip to
+    nothing within a stride: a physics walk reads 'resting' when its stepping drive stops, whatever the thorax does."""
+    from virtual_fly.physics import descending_drive
+    noise = random.Random(3)
+
+    class Jittery(FlyBody):                              # the physics body's interface, with a noisy measured pose
+        kind = "physics"
+
+        def move(self, dt, mode, drive, wander_yaw=0.0):
+            self.drive_lr = descending_drive(mode, drive, wander_yaw)
+            super().move(dt, mode, drive, wander_yaw)
+            self.pose.v, self.pose.w = noise.gauss(0, 0.3), noise.gauss(0, 0.2)   # what the thorax reads, standing or not
+    game.body, game.body_kind = Jittery(game.world, game.rng), "physics"
+    assert [ticks(game, 1)["mode"] for _ in range(40)] == ["idle"] * 40                  # standing (walking urge off)
+    game.action({"type": "autopilot", "on": True})
+    game.wander.update(walking=True, left=99.0)
+    assert [ticks(game, 1)["mode"] for _ in range(40)] == ["walk"] * 40                  # walking: no 'resting' blinks
+    game.wander.update(walking=False, left=99.0)                                         # the urge pauses
+    modes = [ticks(game, 1)["mode"] for _ in range(STILL_TICKS + 2)]
+    assert modes == ["walk"] * (STILL_TICKS - 1) + ["idle"] * 3 and game.body.drive_lr == (0.0, 0.0)
+    game.body_kind = "drawn"                             # the same jitter judged by the measured pose: never resting
+    assert [ticks(game, 1)["mode"] for _ in range(40)].count("idle") == 0
+
+
+def test_the_why_panel_says_when_a_feeding_bout_has_ended(conn):
+    game = Game(build_brain(conn, "game", seed=0, fatigue_mv=0.6), autopilot=False, seed=1)   # MN9 tires fast
+    hx, hy = head_xy(game)
+    game.action({"type": "drop", "kind": "sugar", "x": hx, "y": hy})
+    modes = [ticks(game, 1)["mode"] for _ in range(160)]
+    state = game.state_dict
+    assert "feed" in modes and state["mode"] != "feed" and state["senses"].get("taste_sugar")
+    assert "tastes sugar, but MN9 fires too little to feed" in state["driver"]
+
+
+def test_water_is_tasted_but_not_drunk(game):
+    hx, hy = head_xy(game)
+    game.action({"type": "state", "thirst": 1.0})
+    game.action({"type": "drop", "kind": "water", "x": hx, "y": hy})
+    state = ticks(game, 10)
+    assert state["senses"].get("taste_water") and "name no water cells" in state["driver"]   # no LB3a in this file
+    game.water_cells = 17                                                     # as in the MaleCNS: LB3a
+    state = ticks(game, 1)
+    assert "do not reach MN9: it does not drink" in state["driver"] and state["world"]["food"][0]["amount"] == 100
+    assert "tastes water (LB3a)" in state["driver"]
+    game.action({"type": "state", "thirst": 0.1})
+    assert "not thirsty" in ticks(game, 1)["driver"]
+
+
+def test_the_female_tastes_water_with_the_published_models_cells(game, monkeypatch):
+    # she has no LB3a type (FlyWire's LB3 and LB2d do not split sugar from water; her LB3a is an alias): her Why line
+    # names her cells as her What's real does
+    monkeypatch.setattr(game.real_conn, "sex", "female")
+    hx, hy = head_xy(game)
+    game.action({"type": "state", "thirst": 1.0})
+    game.action({"type": "drop", "kind": "water", "x": hx, "y": hy})
+    game.water_cells = 18
+    driver = ticks(game, 10)["driver"]
+    assert "tastes water (the published model's water cells), but at the game's rates they do not reach MN9" in driver
+    assert "LB3a" not in driver
+    whats_real = " ".join(game.whats_real()["wiring"])
+    assert "the published model's 18 water cells" in whats_real and "LB3a" not in whats_real
+
+
+def test_female_checklist_and_whats_real_follow_her_wiring(game, monkeypatch):
+    monkeypatch.setattr(game.conn, "sex", "female")
+    lay = json.loads(game._make_layout())
+    ids = {c["id"] for c in lay["checks"]}
+    assert "feed" in ids and not ids & {"groom", "sound", "wall"}             # her head bristles do not reach MDN
+    assert any("she grooms instead of backing up" in w for w in lay["whats_real"]["wiring"])
+    # the courtship scenario in her own words, as her What's real has them: contact drives pC1 (hand-built), no song
+    court = {s["id"]: s["description"] for s in lay["scenarios"]}["courtship"]
+    assert "does not sing" in court and "sings (pIP10" not in court and "no pIP10 and no nerve cord" in court
+    assert "no tarsal taste neurons" in court and any("no tarsal taste neurons" in h for h in lay["whats_real"]["hand_built"])
+    monkeypatch.setattr(game.conn, "sex", "male")
+    court = {s["id"]: s["description"] for s in json.loads(game._make_layout())["scenarios"]}["courtship"]
+    assert "sings (pIP10, one wing out)" in court
 
 
 def test_lure_on_the_left_turns_the_fly_left(game):
@@ -266,8 +398,137 @@ def test_world_actions(game):
     assert state["speed"] == 3.0 and state["autopilot"] and abs(state["fly"]["x"] - 5.0) < 1
     assert "autopilot" in state["driver"] or state["fly"]["v"] != 0 or state["mode"] == "walk"
     game.action({"type": "pause", "on": True})
-    game.action({"type": "bogus"})                                             # unknown types are ignored
+    assert game.action({"type": "bogus"}) == {"ok": False, "error": "unknown action type 'bogus'"}   # refused
     assert ticks(game, 1)["paused"]
+
+
+def test_actions_refuse_unknown_types_bad_fields_and_drops_the_dish_cannot_take(game):
+    """docs/API.md: {"ok": false, "error": ...} for an unknown or missing type, a bad or missing field, and a drop
+    the dish refuses. Nothing is queued then, and valid actions get the same replies as before."""
+    bad = [({}, "needs a 'type'"), ({"type": 5}, "unknown action type 5"), ({"type": "Zap", "spec": "MDN"}, "unknown action type 'Zap'"),
+           ({"type": "_swap_brain"}, "unknown action type"), ({"type": "remove"}, "'remove' needs 'id'"),
+           ({"type": "remove", "id": 99999}, "nothing in the dish has id 99999"), ({"type": "place_fly"}, "'place_fly' needs 'x'"),
+           ({"type": "speed", "value": "abc"}, "'value' must be a number"), ({"type": "speed", "value": float("nan")}, "finite"),
+           ({"type": "zap", "spec": "MDN", "hz": "fast"}, "'hz' must be a number"), ({"type": "zap", "spec": "MDN", "hz": -50}, "0 or more"),
+           ({"type": "zap", "spec": "MDN", "secs": 0}, "'secs' must be more than 0"),
+           ({"type": "modulate", "spec": "MN9", "factor": "x"}, "'factor' must be a number"),
+           ({"type": "modulate", "spec": "MN9", "factor": -1}, "'factor' must be 0 or more"),
+           ({"type": "shock", "secs": "long"}, "'secs' must be a number"), ({"type": "wind", "angle": "x", "speed": 5}, "'angle'"),
+           ({"type": "stripes", "count": "many"}, "'count' must be a whole number"), ({"type": "state", "hunger": "full"}, "'hunger'"),
+           ({"type": "remove", "id": float("inf")}, "'id' must be a finite number"),          # JSON's Infinity, or 1e400
+           ({"type": "stripes", "count": -float("inf")}, "'count' must be a finite number"),
+           ({"type": "stripes", "count": float("nan")}, "'count' must be a finite number"),
+           ({"type": "zap", "spec": "MDN", "hz": float("inf")}, "'hz' must be a finite number"),
+           ({"type": "remove", "id": 10 ** 400}, "'id' must be a finite number"),               # a JSON integer too big for a float
+           ({"type": "drop", "kind": "sugar", "x": 10 ** 400, "y": 0}, "'x' must be a finite number"),
+           ({"type": "hand", "x": 1.0}, "'hand' needs 'y'"), ({"type": "drop", "kind": "sugar", "y": 0}, "'drop' needs 'x'"),
+           ({"type": "drop", "x": 0, "y": 0}, "unknown drop kind None"), ({"type": "drop", "kind": "nectar", "x": 0, "y": 0}, "'nectar'"),
+           ({"type": "drop", "kind": "vinegar", "x": 0, "y": 0, "food": "cake"}, "food must be"),
+           ({"type": "clear", "what": "everything"}, "'what' must be")]
+    for a, err in bad:
+        reply = game.action(dict(a))
+        assert reply["ok"] is False and err in reply["error"], (a, reply)
+    assert game.actions.empty()
+    # the dish keeps drops 2 mm from its wall (a post: its radius + 1 mm); the page ignores replies, so a toast says why
+    for kind, x in (("sugar", 48.5), ("water", 80.0), ("vinegar", 49.0), ("post", 46.0)):
+        reply = game.action({"type": "drop", "kind": kind, "x": x, "y": 0.0})
+        assert reply["ok"] is False and "wall" in reply["error"] and game.message.startswith("Too close to the wall")
+    assert game.action({"type": "drop", "kind": "sugar", "x": 47.9, "y": 0.0}) == {"ok": True}
+    assert game.action({"type": "drop", "kind": "post", "x": 44.9, "y": 0.0}) == {"ok": True}
+    # a malformed zap no longer cancels a running one, nor a bad angle a good wind speed
+    assert game.action({"type": "zap", "spec": "MDN", "hz": 80}) == {"ok": True, "n": 4}
+    ticks(game, 1)
+    assert game.action({"type": "zap", "spec": "MDN", "hz": "fast"})["ok"] is False
+    assert game.action({"type": "wind", "angle": "x", "speed": 5})["ok"] is False
+    state = ticks(game, 1)
+    assert game.zaps[0][:2] == ["MDN", 80.0] and state["world"]["wind"]["speed"] == 0.0
+    assert len(state["world"]["food"]) == 1 and len(state["world"]["obstacles"]) == 1
+    # numbers sent as text and nulls (the default) are taken as before
+    assert game.action({"type": "stripes", "count": None, "drum_speed": "1.5"}) == {"ok": True}
+    assert game.action({"type": "remove", "id": str(game.world.food[0].id)}) == {"ok": True}
+    state = ticks(game, 1)
+    assert state["world"]["food"] == [] and state["world"]["stripes"]["drum_speed"] == 1.5
+    assert set(ACTIONS) == {"hand", "hand_off", "tool", "drop", "remove", "dust", "shock", "sound", "stripes", "zap", "silence",
+                            "unsilence", "modulate", "watch", "unwatch", "grow", "parts", "clear", "reset", "calm", "autopilot",
+                            "pause", "speed", "wind", "female", "learning", "scenario", "record", "state", "place_fly"}
+
+
+def test_every_action_the_page_sends_is_known():
+    import re
+    from pathlib import Path
+    import virtual_fly
+    js = "".join(p.read_text(encoding="utf-8") for p in (Path(virtual_fly.__file__).parent / "web").glob("*.js"))
+    sent = set(re.findall(r'type: *"([a-z_]+)"', js))
+    assert len(sent) > 20 and sent <= set(ACTIONS)
+
+
+# One valid call of every action docs/API.md lists (fields as its table gives them), and the README's examples:
+# each gets the reply it always got.
+DOCUMENTED = [
+    ({"type": "hand", "x": 1.0, "y": 2.0}, {"ok": True}), ({"type": "hand_off"}, {"ok": True}),
+    *(({"type": "tool", "tool": t}, {"ok": True}) for t in ("lure", "hand", "sugar", "bitter", "water", "dust", "shock",
+                                                            "post", "vinegar", "none")),
+    ({"type": "drop", "kind": "sugar", "x": 10, "y": 0}, {"ok": True}), ({"type": "drop", "kind": "post", "x": 0, "y": -20}, {"ok": True}),
+    ({"type": "drop", "kind": "post", "x": 0, "y": 20, "r": 3}, {"ok": True}),
+    ({"type": "drop", "kind": "vinegar", "x": 10, "y": 5, "food": "sugar"}, {"ok": True}),              # the README's
+    ({"type": "remove"}, {"ok": True}), ({"type": "dust", "x": 0, "y": 0}, {"ok": True}), ({"type": "shock"}, {"ok": True}),
+    ({"type": "sound", "secs": 0.3}, {"ok": True}), ({"type": "stripes", "count": 16, "drum_speed": 1.5}, {"ok": True}),
+    ({"type": "zap", "spec": "MDN", "hz": 60}, None), ({"type": "zap", "spec": "MDN", "hz": 30, "secs": 2}, None),
+    ({"type": "silence", "spec": "MN9"}, None), ({"type": "unsilence", "spec": "MN9"}, {"ok": True}),
+    ({"type": "unsilence"}, {"ok": True}), ({"type": "modulate", "spec": "MN9", "factor": 2}, None),
+    ({"type": "watch", "spec": "DNa02", "key": "mine"}, None), ({"type": "unwatch", "key": "mine"}, {"ok": True}),
+    ({"type": "clear", "what": "food"}, {"ok": True}), ({"type": "clear"}, {"ok": True}), ({"type": "reset"}, {"ok": True}),
+    ({"type": "calm"}, {"ok": True}), ({"type": "autopilot", "on": True}, {"ok": True}), ({"type": "autopilot", "on": False}, {"ok": True}),
+    ({"type": "pause", "on": True}, {"ok": True}), ({"type": "pause", "on": False}, {"ok": True}), ({"type": "speed", "value": 1}, {"ok": True}),
+    ({"type": "wind", "angle": 1.0, "speed": 12}, {"ok": True}), ({"type": "female", "on": True}, {"ok": True}),
+    ({"type": "female", "on": False, "x": 10, "y": 10}, {"ok": True}), ({"type": "learning", "on": False}, {"ok": True}),
+    ({"type": "learning", "on": True, "forget": True}, {"ok": True}), ({"type": "scenario", "id": "escape"}, {"ok": True}),
+    ({"type": "scenario"}, {"ok": True}), ({"type": "record", "on": True, "spikes": True}, {"ok": True}),
+    ({"type": "record", "on": False}, {"ok": True}), ({"type": "state", "hunger": 0.5, "thirst": 0.9}, {"ok": True}),
+    ({"type": "place_fly", "x": 5, "y": 5, "h": 1.57}, {"ok": True}),
+    ({"type": "grow", "level": "type", "seed": 3}, {"ok": True}),                     # last: it starts growing a fly
+]
+
+
+def test_every_documented_action_gets_its_reply(game, monkeypatch):
+    import re
+    from pathlib import Path
+    api = (Path(__file__).resolve().parent.parent / "docs" / "API.md").read_text(encoding="utf-8")
+    table = api[api.index("## Actions"):api.index("## Queries")]
+    documented = {t for row in re.findall(r"(?m)^\| (`[a-z_]+`(?: / `[a-z_]+`)?) \|", table) for t in re.findall(r"`([a-z_]+)`", row)}
+    assert documented == set(ACTIONS) and {a["type"] for a, _ in DOCUMENTED} == documented - {"parts"}   # parts: test_parts_list_toggle_...
+    monkeypatch.setattr(game, "_start_grow", lambda level, seed: None)                # the reply only: grow no fly here
+    for a, reply in DOCUMENTED:
+        if a["type"] == "remove":                                                     # what is in the dish now
+            a = {**a, "id": game.world.food[0].id}
+        got = game.action(dict(a))
+        assert got == (reply or {"ok": True, "n": game.conn.select(a["spec"]).size}), (a, got)   # None: a population's size
+        ticks(game, 1)
+    assert game.genome["growing"]["seed"] == 3
+
+
+def test_switches_tools_scenarios_posts_and_seeds_are_checked(game):
+    """A switch must be JSON true or false ("false" used to switch the walking urge on), a tool one the page offers,
+    a scenario id text, and a post needs a size; a grow seed of null is the default."""
+    bad = [({"type": "autopilot", "on": "false"}, "'on' must be true or false, not 'false'"),
+           ({"type": "pause", "on": 1}, "'on' must be true or false"), ({"type": "female", "on": "yes"}, "'on'"),
+           ({"type": "learning", "forget": "no"}, "'forget' must be true or false"), ({"type": "learning", "on": 0}, "'on'"),
+           ({"type": "record", "on": True, "spikes": "yes"}, "'spikes' must be true or false"), ({"type": "record", "on": "off"}, "'on'"),
+           ({"type": "tool", "tool": 42}, "unknown tool 42: lure, hand"), ({"type": "tool", "tool": "axe"}, "or an odour (vinegar"),
+           ({"type": "scenario", "id": {"a": 1}}, "'id' must be a scenario id (appetitive"), ({"type": "scenario", "id": 5}, "not 5"),
+           ({"type": "scenario", "id": "nope"}, "unknown scenario nope"),
+           ({"type": "drop", "kind": "post", "x": 0, "y": 20, "r": 0}, "'r' must be more than 0"),
+           ({"type": "drop", "kind": "post", "x": 0, "y": 20, "r": -1}, "'r' must be more than 0")]
+    for a, err in bad:
+        reply = game.action(dict(a))
+        assert reply["ok"] is False and err in reply["error"], (a, reply)
+    assert game.actions.empty()
+    state = ticks(game, 1)
+    assert not state["autopilot"] and state["world"]["tool"] == "lure" and state["world"]["obstacles"] == []
+    # null is the default: the lure, and the first grown individual
+    assert game.action({"type": "tool", "tool": None}) == {"ok": True}
+    assert ticks(game, 1)["world"]["tool"] == "lure"
+    assert game.action({"type": "grow", "level": "type", "seed": None}) == {"ok": True} and game.genome["growing"]["seed"] == 1
 
 
 def test_reset_calm_and_learning_actions(game):
@@ -277,9 +538,11 @@ def test_reset_calm_and_learning_actions(game):
     game.action({"type": "drop", "kind": "sugar", "x": hx, "y": hy})
     ticks(game, 5)
     assert game.world.food and game.brain.t > 0
+    game.done.add("genome")
     game.action({"type": "reset"})
     state = ticks(game, 1)
-    assert state["world"]["food"] == [] and state["done"] == [] and state["t"] == pytest.approx(0.025)
+    assert state["world"]["food"] == [] and state["t"] == pytest.approx(0.025)
+    assert "genome" in state["done"]                                           # the checklist is kept
     assert any(e["text"].startswith("New fly, fresh brain") for e in game.events.items)
     assert np.allclose(pl.scale, 0.5, atol=1e-3)                               # learned synapses are kept
     game.action({"type": "learning", "forget": True})
@@ -361,6 +624,24 @@ def test_scenario_runner_advances_steps(game):
     assert game.state.hunger == 1.0 and "preference_index" in sc["measure"]
 
 
+def test_conditioning_scenarios_log_each_period_s_preference(game):
+    game.action({"type": "scenario", "id": "appetitive"})
+    ticks(game, 2)
+    game.scenario.store.update(near_a=6.5, near_b=0.0)                  # as if it had spent 6.5 s near vinegar
+    ticks(game, 1)
+    game.scenario._next()                                                # the baseline ends
+    texts = [e["text"] for e in game.events.items]
+    assert "Baseline: preference index +1.00 (vinegar 6.5 s, banana 0 s)" in texts and texts[-1].startswith("Training:")
+    ticks(game, 1)
+    game.scenario._next()
+    ticks(game, 1)
+    game.scenario._next()                                                # the test ends, then "Done" runs
+    texts = [e["text"] for e in game.events.items]
+    assert sum(t.startswith("Test: preference index") for t in texts) == 1 and game.scenario.current is None
+    assert any(t.startswith("Training: preference index") for t in texts)
+    assert any(t.startswith("appetitive conditioning finished") for t in texts)
+
+
 def test_choose_mode_arbitration(game):
     m = dict(forward=0.0, yaw=0.0, backward=0.0, halt=0.0, feed=0.0, groom=0.0, song=0.0, court=0.0)
     assert game.choose_mode(m, 0) == "walk"
@@ -371,9 +652,13 @@ def test_choose_mode_arbitration(game):
     assert game.choose_mode({**m, "groom": 0.2}, 0) == "groom"                           # hysteresis: keeps going
     game.mode = "idle"
     assert game.choose_mode({**m, "song": 0.5}, 0) == "court" and game.choose_mode({**m, "court": 0.5}, 0) == "court"
-    assert game.choose_mode(m, 1) == "walk" and game.body.pose.jump is None       # a lone GF spike is ignored
-    assert game.choose_mode(m, 3) == "escape" and game.body.pose.jump is not None and game.gf_cooldown == 1.0
+    assert game.choose_mode(m, 1) == "walk" and game.body.pose.jump is None       # a lone GF spike is ignored ...
+    assert game.choose_mode(m, 3) == "walk" and game.body.pose.jump is None       # ... and so are 4 over two ticks
+    assert game.choose_mode(m, 0) == "walk" and game.choose_mode(m, 4) == "walk"  # a burst counts two ticks in a row
+    assert game.choose_mode(m, 1) == "escape" and game.body.pose.jump is not None and game.gf_cooldown == 1.0   # 4 + 1
     assert game.choose_mode(m, 0) == "escape"                                            # still in the air
+    game.body.pose.jump, game.body.jump_lock, game.gf_cooldown = None, 0.0, 0.0
+    assert game.choose_mode(m, GF_BURST) == "escape"                                     # a burst within one tick
 
 
 def test_odour_steering_uses_innate_valence_and_learned_bias(game):

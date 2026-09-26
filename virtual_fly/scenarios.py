@@ -28,6 +28,7 @@ class Scenario:
     name: str
     description: str
     steps: list[Step] = field(default_factory=list)
+    female: str = ""                     # the description for the female fly, where hers differs
 
 
 def _place_two_odours(game, a="vinegar", b="banana", with_food=None, on="a"):
@@ -49,6 +50,7 @@ def _preference(game, a="vinegar", b="banana"):
     da = math.hypot(p.x - srcs[a].x, p.y - srcs[a].y)
     db = math.hypot(p.x - srcs[b].x, p.y - srcs[b].y)
     st = game.scenario.store
+    st["pair"] = (a, b)
     st["near_a"] = st.get("near_a", 0.0) + (1.0 if da < 14 else 0.0) * 0.025
     st["near_b"] = st.get("near_b", 0.0) + (1.0 if db < 14 else 0.0) * 0.025
     tot = st["near_a"] + st["near_b"]
@@ -101,7 +103,7 @@ _add(Scenario(
         Step("Test: no more shocks. Does it now avoid banana?", 40.0,
              lambda g: (_reset_store(g), _place_two_odours(g, "banana", "yeast"), g.scenario.store.pop("shock_odour", None)),
              lambda g: _preference(g, "banana", "yeast")),
-        Step("Done. Compare the baseline and test preference indices.", 0.0,
+        Step("Done. Compare the baseline and test preference indices in the event log.", 0.0,
              lambda g: g.events.add(g.t, "scenario", f"aversive conditioning finished: test preference {_preference(g, 'banana', 'yeast').get('preference_index', 0):+.2f}")),
     ]))
 
@@ -115,7 +117,10 @@ _add(Scenario(
              lambda g: {"pC1_hz": round(g.hz_shown.get("pC1", 0), 1), "song": round(g.decoder.m["song"], 2),
                         "female_receptive": round(g.world.female.receptive, 2) if g.world.female else 0}),
         Step("Done.", 0.0, lambda g: g.events.add(g.t, "scenario", "courtship scenario finished")),
-    ]))
+    ],
+    female="A second female enters the dish. The fly sees her as a small moving object (LC10a → DNa02, chase); touching "
+           "her drives the fly's pC1 neurons directly (hand-built: this brain has no tarsal taste neurons). The fly does "
+           "not sing: this female brain has no pIP10 and no nerve cord."))
 
 _add(Scenario(
     "plume", "Following a plume upwind",
@@ -179,7 +184,14 @@ class ScenarioRunner:
         self.saved_tool = None
 
     def _next(self):
+        if self.current is not None and self.step_i >= 0 and self.current.steps[self.step_i].measure is not None \
+                and "preference_index" in self.measure:          # log each period's preference before the next wipes it
+            m, (a, b) = self.measure, self.store.get("pair", ("A", "B"))
+            label = self.current.steps[self.step_i].caption.split(":")[0]
+            self.game.events.add(self.game.t, "scenario", f"{label}: preference index {m['preference_index']:+.2f} "
+                                 f"({a} {m['near_a_s']:g} s, {b} {m['near_b_s']:g} s)")
         self.step_i += 1
+        self.measure = {}
         if self.current is None or self.step_i >= len(self.current.steps):
             if self.current is not None:
                 self.game.events.add(self.game.t, "scenario", f"scenario finished: {self.current.name}")

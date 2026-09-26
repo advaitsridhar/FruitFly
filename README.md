@@ -41,41 +41,58 @@ Compared with the small starter it grew from, it adds:
 | **Learning** | dopamine-gated depression of Kenyon-cell → MBON synapses, the fly's actual learning rule; pair an odour with sugar, bitter or shock and its preference changes | which synapses are plastic and which dopamine neurons gate which MBON come from the wiring; bitter → punishment dopamine is wiring; sugar → reward dopamine is injected (labelled); the rule's constants are hand-chosen |
 | **A second fly** | a scripted female to chase, tap and sing to | the chase and the song (pC1 → pIP10 → wing motor neurons) are wiring; her behaviour and the contact-to-pC1 arousal are hand-built |
 | **Wind, sound, touch** | Johnston's organ senses wind direction and sound; a clap can make the fly jump | sound → giant fibre and wind → grooming are wiring; heading upwind is hand-built |
-| **Internal state** | hunger and thirst rise with time and change what the fly does and tastes | hand-built |
+| **Internal state** | hunger and thirst rise with time and change what the fly tastes; hunger also changes what it does (thirst cannot: the fly never drinks by itself, because in this wiring water alone does not reach MN9, the proboscis motor neuron; zapping MN9 on a water drop does make it drink) | hand-built |
 | **A better model** | short-term synaptic depression, background noise, per-population output modulation, threshold heterogeneity, checkpoints, spike recording, rate monitors, a `--fast` 1 ms step; the integrator is the starter's (identical spikes), or the same step as compiled numba kernels when numba is installed (about twice as fast, still identical spikes) | the mechanisms are documented physiology; the parameters are chosen by hand |
 | **Tools** | a pathway tracer ("how does the eye reach the steering neurons?"), lesion scans, dose-response sweeps, seeds, JSON export, scenarios (conditioning protocols, courtship, plume following, escape), a 3-D brain map, an event log, session recording | analysis, not model |
 | **Genetics** | the neurons that express *fruitless* and *doublesex* (the genes that make a male brain male) and the male-specific and dimorphic ones, as populations to silence, activate or watch; the transmitter genes behind every neuron's sign; a lookup of which real driver lines label a population and which neurons a line labels (NeuronBridge); five genetic experiments | the expression labels are the MaleCNS annotation read from the data; the lookups are Janelia's; nothing is hand-built, but only two transcription factors and the transmitter identity are known here |
 | **The genome as a recipe** | grow a new fly from the connectome's cell-type wiring rules alone (same neurons, new wiring) and see which reflexes survive; a bottleneck dial squeezes the rules; seeds are individuals | the rules are learned from the data; growth is random within them; 9 of 11 validated reflexes survive type-level rules, none survive class-level rules |
 | **What the literature says** | every cell type joined to its class in the FlyBase anatomy ontology (Virtual Fly Brain): `fbbt:lobula columnar neuron` or `fbbt:dopaminergic neuron` as populations, an ontology search in the Neuron lab, a neuron's popover says what its type is (definition, lineage, peptides, curated transmitter, a VFB link); with the parts list on, the literature's transmitter wins over the prediction for the modulators and the tone's sign on each target follows the receptors its type expresses in the adult scRNA-seq atlases | the join is by name (offline, checked against VFB's own MaleCNS names); the transmitters are the ontology's curated assertions; the receptor fractions are Fly Cell Atlas and other atlases as VFB serves them; the rule that turns receptors into a sign is the kit's |
-| **The genes as a parts list** | a switch that gives each neuron the machine its genes make: the 979 dopamine, octopamine and serotonin neurons lose their fast synapses and leave slow tones on their targets instead (all their receptors are slow), and 43,000 optic-lobe cells that do not spike in real flies release transmitter in proportion to their depolarisation; three tone gauges; a per-type table for thresholds | which neurons make which transmitter is the data; that these three act slowly and that those cell types are graded is the literature (cited in `parts.py`); the strength and time constant of each tone are chosen by hand; all 16 validated experiments pass |
+| **The genes as a parts list** | a switch that gives each neuron the machine its genes make: the dopamine, octopamine and serotonin neurons leave slow tones on their targets (all their receptors are slow; 2,146 neurons with the literature's transmitters, the default, of which 976 lose their fast synapses and 1,170, mostly the Mi15 cells, also release a fast transmitter and keep them; the connectome's own prediction names 979), and 43,000 optic-lobe cells that do not spike in real flies release transmitter in proportion to their depolarisation; three tone gauges; a per-type table for thresholds | which neurons make which transmitter is the data; that these three act slowly and that those cell types are graded is the literature (cited in `parts.py`); the strength and time constant of each tone are chosen by hand; all 16 validated experiments pass |
 
 Everything on screen says which of the two it is; the **"What's real here?"** button lists it all.
 
 ## 2. Setup
 
-**Quick start** (macOS / Linux; on Windows use `py` instead of `python3`):
+**Quick start** (macOS / Linux; on Windows, use the commands for cmd in step 3 below and `py`
+instead of `python3`):
 
 ```
 git clone https://github.com/advaitsridhar/FruitFly.git
 cd FruitFly
+python3 -m venv .venv
+. .venv/bin/activate
 python3 -m pip install numpy numba
 python3 fly_game.py
 ```
 
 The first start downloads the 23 MB connectome into `data/` and opens the game in your browser;
-later starts are instant. Already have a clone? `git pull origin main` brings it up to date.
+later starts are instant. The two `.venv` lines give the kit its own virtual environment (Debian,
+Ubuntu and Homebrew Pythons refuse `pip install` outside one); in a new terminal, activate it again first.
+Already have a clone? `git pull origin main` brings it up to date.
 
 Step by step:
 
-1. Install **Python 3.10 or newer** from [python.org](https://www.python.org/downloads/). On Windows,
-   tick **"Add python.exe to PATH"** in the installer.
+1. Install **Python 3.10 or newer** from [python.org](https://www.python.org/downloads/) (3.10-3.12
+   if you want the optional physics body). On Windows, tick **"Add python.exe to PATH"** in the installer.
 2. Get the code: `git clone https://github.com/advaitsridhar/FruitFly.git` (or download and unzip
    it from GitHub), then open a terminal in the `FruitFly` folder (Windows: click the File Explorer
    address bar, type `cmd`, press Enter).
-3. Install NumPy, and numba for the compiled brain integrator (optional, about twice as fast, same spikes):
+3. Make a virtual environment (the kit's own set of packages, in the folder `.venv`), then install
+   NumPy into it, and numba for the compiled brain integrator (optional, about twice as fast, same spikes).
+   Windows (cmd):
    ```
-   py -m pip install numpy numba      # macOS / Linux: python3 -m pip install numpy numba
+   py -m venv .venv
+   .venv\Scripts\activate
+   py -m pip install numpy numba
    ```
+   macOS / Linux:
+   ```
+   python3 -m venv .venv
+   . .venv/bin/activate
+   python3 -m pip install numpy numba
+   ```
+   In every new terminal, run the second line again (in the `FruitFly` folder) before steps 4 and 5.
+   On Debian or Ubuntu, `python3 -m venv` may first need `sudo apt install python3-venv`.
 4. Check the brain works (downloads the data the first time, then runs the validated experiments):
    ```
    py fly_brain.py --profile game
@@ -87,20 +104,34 @@ Step by step:
    Your browser opens the game. Keep the terminal window open; press `Ctrl+C` in it to quit.
 
 On macOS or Linux, use `python3` instead of `py`. To install the package with its console scripts
-and the test tools: `pip install -e ".[dev]"` then `fly-game`, `fly-brain`, `pytest`.
+and the test tools (in the virtual environment): `py -m pip install -e ".[dev]"` then `fly-game`,
+`fly-brain`, `pytest`. A plain `pip install .` (or `pip install git+https://github.com/advaitsridhar/FruitFly.git`,
+without a clone) works too: that copy carries the four small data files inside the package and
+downloads the connectome to `~/.cache/virtual-fly` instead of `data/`. `FLY_DATA_DIR` sets another folder
+for everything the kit downloads or builds, in an installed copy and in a checkout alike (a checkout then
+downloads into that folder rather than using `data/`).
 
 **The female fly** needs one more package, `py -m pip install pyarrow`, and the first `--female` run
-downloads about 130 MB (FlyWire's connectivity table and annotations) and builds a 45 MB file in `data/`.
+downloads about 130 MB (FlyWire's connectivity table and annotations) and builds a 45 MB file: in `data/`
+in a checkout, in `~/.cache/virtual-fly` in an installed copy, or in `FLY_DATA_DIR` when that is set.
+
+**The physics body** (`--body physics`, optional) needs Python 3.10-3.12 (flygym 1.2.1 does not install
+on 3.13 or newer) and about 680 MB of packages; in a virtual environment made with such a Python:
+`py -m pip install -e ".[physics]"`, then `py -m pip install --no-deps flygym==1.2.1`
+(docs/SCIENCE.md section 6.7).
 
 **If something goes wrong**
 
 | Problem | Fix |
 |---|---|
 | `'py' is not recognized` | Python isn't on PATH: re-run the installer and tick "Add python.exe to PATH" (or use `python`). |
+| `Activate.ps1 cannot be loaded because running scripts is disabled on this system` | That terminal is PowerShell, which blocks the activation script. Use cmd as in step 2, or allow your own scripts once with `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` and activate again. |
+| `error: externally-managed-environment` | Your system's Python (Ubuntu 23.04+, Debian 12+, Homebrew) installs packages only into a virtual environment: make and activate one as in step 3 (if `python3 -m venv` says ensurepip is not available: `sudo apt install python3-venv`). |
+| `No module named 'numpy'` | The virtual environment isn't active in this terminal: in the `FruitFly` folder run `.venv\Scripts\activate` (macOS / Linux: `. .venv/bin/activate`), or install NumPy as in step 3 if you haven't. |
 | Download fails with a certificate error (macOS) | Run "Install Certificates.command" in your Python folder in Applications. |
-| Download blocked by a firewall | Download [the file](https://raw.githubusercontent.com/blendi-remade/fly-brain-minecraft/6cfa30175003ef25da68a237d5eda958f8047b82/src/main/resources/connectome/malecns-v1.0.flyb.gz) in your browser and put it in `data/`. |
-| "Could not find a free port" | `py fly_game.py --port 9000` |
-| The game says it's running below real time | Your computer is simulating 176k neurons slower than real time; the fly's world slows down to keep up. First make sure numba is installed (`py -m pip install numba`; the terminal says "Brain integrator: compiled (numba)" at start-up): with it, a 4-core laptop-class machine manages about 1.5x real time with a busy brain, without it about 0.7x. Then close other programs, or start it with `py fly_game.py --fast` (a 1 ms time step, about twice as fast again; every classic experiment still passes). |
+| Download blocked by a firewall | Download [the file](https://raw.githubusercontent.com/blendi-remade/fly-brain-minecraft/6cfa30175003ef25da68a237d5eda958f8047b82/src/main/resources/connectome/malecns-v1.0.flyb.gz) in your browser and put it in `data/` as it is (named `malecns-v1.0.flyb.gz`, not unpacked); the error message gives the exact path. |
+| "Could not find a free port" | Run the same command again with `--port 9000` added (the message names the ports it tried; if 9000 was among them, any other number from 1024 to 65535) |
+| The game says it's running below real time | Your computer is simulating 176k neurons slower than real time; the fly's world slows down to keep up. First make sure numba is installed (`py -m pip install numba`; the terminal says "Brain integrator: compiled (numba)" at start-up): with it, a 4-core laptop-class machine manages about 1.5x real time with a busy brain, without it about 0.7x. Then close other programs, or start it with `py fly_game.py --fast` (a 1 ms time step, about twice as fast again; every classic experiment still passes). With `--body physics` about 0.1x is normal: the physics body (MuJoCo) sets that pace, not your computer (`docs/SCIENCE.md` section 6.7). |
 | The 3-D brain map goes dark while its yaw counter keeps ticking | Your browser took the graphics (WebGL) context away, for instance after a GPU driver reset, sleep and resume, or too many WebGL tabs (Firefox drops the least recently used one past 16). The page now asks for it back and redraws the map when it returns, and says "graphics reset, restoring…" in the map meanwhile; if it says to reload, reload the tab. A flat map with the note that WebGL is unavailable means the browser refused WebGL altogether (check its graphics settings). |
 
 ## 3. How it works (the whole idea)
@@ -130,13 +161,14 @@ downloads about 130 MB (FlyWire's connectivity table and annotations) and builds
    neurons of the odour's glomeruli.
 4. **Actions.** The program listens to descending neurons, the ~1,300 neurons that carry commands
    from the brain to the body, and turns their firing into movement: `MN9` extends the proboscis,
-   `DNp01` (the giant fibre) triggers an escape jump, `DNa02` left vs right steers, `DNp15` carries
+   a burst from `DNp01` (the giant fibre) triggers an escape jump, `DNa02` left vs right steers, `DNp15` carries
    the optomotor reflex, `MDN` walks backward, `pIP10` sings, and so on.
-5. **Learning.** Every synapse from a Kenyon cell onto a mushroom body output neuron (33,496 of them)
-   weakens when the Kenyon cell was active shortly before dopamine arrived in that MBON's
-   compartment. Punishment dopamine (PPL1) waters the approach-promoting MBONs, reward dopamine
-   (PAM) the avoidance-promoting ones, so odour + punishment makes the fly avoid the odour and
-   odour + reward makes it approach. Which dopamine neurons gate which MBON is read from the wiring.
+5. **Learning.** Every connection from a Kenyon cell onto a mushroom body output neuron (33,496 of
+   them, carrying 402,850 synapses; one learned weight each) weakens when the Kenyon cell was active
+   shortly before dopamine arrived in that MBON's compartment. Punishment dopamine (PPL1) waters the
+   approach-promoting MBONs, reward dopamine (PAM) the avoidance-promoting ones, so odour + punishment
+   makes the fly avoid the odour and odour + reward makes it approach. Which dopamine neurons gate
+   which MBON is read from the wiring.
 
 With no input, the brain is completely silent: every spike you see traces back to something the fly
 sensed, something you zapped, or the faint background noise if you switch it on.
@@ -154,8 +186,12 @@ the numbers from this kit, every neuron simulated, nothing tuned for these tests
 | Bitter taste | Scapula (bitter relay) / MN9 | 287 / 0 Hz | 222 / 0 Hz | relay fires, MN9 silent |
 | Sugar and bitter together | MN9 | 0 Hz | 0 Hz | bitter wins |
 | Something looming on the right | DNp01 giant fibre / TTMn jump motor neuron | 343 / 68 Hz | 295 / 60 Hz | 250-400 / 40-100 Hz |
-| Dust on the antennae | aDN1 / aDN2 grooming neurons | 192 / 139 Hz | 142 / 105 Hz | 100-260 / 80-200 Hz |
+| Dust on the antennae | aDN1 / aDN2 grooming neurons (`DNg62` / `DNge078`) | 192 / 139 Hz | 142 / 105 Hz | 100-260 / 80-200 Hz |
 | 1 s after bitter or dust stops | the whole brain | runaway loop | calm after bitter; a small loop after dust | calm |
+
+A readout passes when its mean over five seeds is in range, allowing max(1 Hz, 15 %) above the top
+(`docs/SCIENCE.md` section 2); `fly_brain.py` writes that margin after the range, as in `0-5(+1) Hz`,
+whenever a mean or a seed needed it.
 
 Scanning hundreds of sensory cell types on the real connectome (the experiments are in
 `docs/SCIENCE.md`) found what else the wiring supports, and what it does not:
@@ -168,8 +204,10 @@ Scanning hundreds of sensory cell types on the real connectome (the experiments 
 - **Smell and learning.** Once the antennal lobe is calm, an odour that excites four or five
   glomeruli activates 7-9 % of Kenyon cells, the same cells every time and different cells for
   different odours (overlap 0.00-0.02 between odours with no shared glomerulus, 0.9 across random
-  seeds). Halving the Kenyon-cell synapses onto the punishment-side MBONs cuts their odour response
-  (MBON11 31 → 14 Hz, MBON14 26 → 3 Hz) without touching an unpaired odour. Bitter taste fires the
+  seeds). Halving the Kenyon-cell connections onto the punishment-side MBONs cuts their odour response
+  (MBON14 38 → 6 Hz for the "Smell of vinegar" test mixture, four of the game's five vinegar glomeruli,
+  and 44 → 9 Hz for the game's own vinegar; game profile, the mean of five seeds), and the game's other
+  odours hardly reach MBON14 to begin with (0-2 Hz; `docs/SCIENCE.md` section 4.6). Bitter taste fires the
   PPL1 punishment dopamine neurons (PPL101 at about 80 Hz); sugar never reaches the PAM reward neurons in
   this model, so eating sugar drives them directly (all but PAM-γ3, which sugar suppresses in real
   flies), and the game says so.
@@ -198,7 +236,9 @@ wheel over the dish, the 🔍 button or `+` / `−` zoom in on the fly (the view
 
 **In the game** there is a checklist: feed it, offer bitter food, lure it, scare it, dust it, watch
 it bump a wall, drop an odour, teach it, add a female, turn on the wind, clap, spin the drum, zap
-MDN, silence MN9. The **scenarios** run whole protocols for you: appetitive conditioning (odour +
+MDN, silence MN9 (the checklist stays when you ask for a new fly). A fed fly eats in bouts of a few
+seconds: under steady sugar MN9 tires, the proboscis goes in, and it starts again only now and then
+(`docs/SCIENCE.md` 6.5). The **scenarios** run whole protocols for you: appetitive conditioning (odour +
 sugar, then a preference test), aversive conditioning (odour + shock), courtship, following a
 plume upwind, and three hand swoops. The **Neuron lab** zaps, silences or scales any cell type by
 name and adds it to the readouts; the **Pathway explorer** asks the wiring how one population
@@ -212,7 +252,7 @@ the published model's wiring: every connection, and 0.275 mV per synapse. Each n
 or inhibitory) comes from FlyWire's current transmitter prediction, which differs from the published
 model's own table on 1.2 % of connections, mostly uncertain calls in the optic lobe; it matches the
 literature better, and the model's signs change no result (`docs/SCIENCE.md` section 9.1). The experiments and senses
-find her cells under the male names (`MN9` is FlyWire's `CB0701`, and so on). Cells she doesn't have
+find her cells under the male names (`MN9` is FlyWire's `CB0701`, and so on; `--find` marks those names as aliases). Cells she doesn't have
 come out as n/a, never as 0 Hz: she has no nerve cord, and no male-specific cells such as pIP10. Sugar
 drives her MN9 and, in the published model's profile (`fly_brain.py --female`), bitter wins over it, as
 in the paper; in the game profile MN9 still fires about 7 Hz with both (13 Hz with the parts list on),
@@ -222,20 +262,20 @@ background re-test run on her too; `docs/SCIENCE.md` section 9.5 compares each w
 
 **In code**, start with `my_first_fly.py`: poke, wait, listen, in three lines. Then:
 
-```
-py fly_brain.py --find LC10                                # search cell types by name
-py fly_brain.py --stim "MDN:60" --watch "MDN,DNp09"        # zap a type, listen to others
-py fly_brain.py --stim "LC4/R,LPLC2/R:150"                 # no --watch: shows the most active types
-py fly_brain.py --trace LC10a/L DNa02/L                    # the strongest wiring routes, with signs
-py fly_brain.py --inputs MN9 --outputs GNG232              # strongest partners of a population
-py fly_brain.py --sweep "LB3b,LB3c:0:200:9" --watch MN9    # a dose-response curve
-py fly_brain.py --lesion Sugar --readout MN9               # which relays does sugar → MN9 need?
-py fly_brain.py --profile game --json out.json             # five seeds each (the default): mean ± sd, saved
-py fly_brain.py --silence GNG087 --only bitter             # knock out the bitter relay
-py fly_brain.py --stim "prefix:JO-B:100" --record spikes.npz   # every spike, with neuPrint IDs
-py fly_game.py --pure                                      # the paper's model, seizures and all
-py fly_game.py --noise 2:1                                 # a little spontaneous activity
-```
+| Command (macOS / Linux: `python3` instead of `py`) | What it does |
+|---|---|
+| `py fly_brain.py --find LC10` | Search cell types by name |
+| `py fly_brain.py --stim "MDN:60" --watch "MDN,DNp09"` | Zap a type, listen to others |
+| `py fly_brain.py --stim "LC4/R,LPLC2/R:150"` | No --watch: shows the most active types |
+| `py fly_brain.py --trace LC10a/L DNa02/L` | The strongest wiring routes, with signs |
+| `py fly_brain.py --inputs MN9 --outputs GNG232` | Strongest partners of a population |
+| `py fly_brain.py --sweep "LB3b,LB3c:0:200:9" --watch MN9` | A dose-response curve |
+| `py fly_brain.py --lesion Sugar --readout MN9` | Which relays does sugar → MN9 need? |
+| `py fly_brain.py --profile game --json out.json` | Five seeds each (the default): mean ± sd, saved |
+| `py fly_brain.py --silence GNG087 --only bitter` | Knock out the bitter relay |
+| `py fly_brain.py --stim "prefix:JO-B:100" --record spikes.npz` | Every spike, with neuPrint IDs |
+| `py fly_game.py --pure` | The paper's model, seizures and all |
+| `py fly_game.py --noise 5:15` | Spontaneous activity (parts list off; docs/SCIENCE.md 3.4) |
 
 ```python
 from virtual_fly import load_connectome, trace
@@ -258,8 +298,10 @@ game's brain map links straight to it.
 the `/api/stream` event stream) returns the fly's position, heading, behaviour, senses, neuron
 rates and learning state, and `POST /api/action` accepts commands such as
 `{"type": "zap", "spec": "MDN", "hz": 60}`, `{"type": "drop", "kind": "vinegar", "x": 10, "y": 5, "food": "sugar"}`
-or `{"type": "stripes", "count": 16, "drum_speed": 1.5}`. `docs/API.md` has the whole contract; anything
-that can make HTTP requests (a game engine, a notebook, a robot) can drive a fly from it.
+or `{"type": "stripes", "count": 16, "drum_speed": 1.5}`; a command it cannot carry out gets
+`{"ok": false, "error": ...}` back. `docs/API.md` has the whole contract; anything that can make HTTP
+requests (a game engine, a notebook, a robot) can drive a fly from it. The server listens on this
+computer only unless you start it with `--host 0.0.0.0`, and then anyone on your network can drive the fly.
 
 **Genetics.** The Genetics card lists the neurons annotated as expressing *fruitless* (4,858) and
 *doublesex* (412), the male-specific and sexually dimorphic ones, and the transmitter genes behind
@@ -275,35 +317,39 @@ and `dimorphism:male` / `dimorphism:dimorphic`.
 **The genome as a recipe.** The Genome card grows a new fly from this connectome's cell-type
 wiring rules (which types connect, how often, how strongly) with every neuron-to-neuron
 connection drawn afresh, then runs the eleven validated experiments on it and lists which
-reflexes survive. Nine of eleven do; a fly grown from class-level rules keeps none, and the
-bottleneck levels squeeze the type rules through a low-rank code. Change the seed for another
-individual, and "Real wiring" brings the original back. `python fly_brain.py --genome-sweep`
-prints the same table from the terminal, `--grow type` runs any experiment on a grown fly, and
-`python fly_game.py --grow type` starts the game with one. The science and the numbers are in
+reflexes survive. Nine of eleven do; a fly grown from class-level rules keeps none (only the two
+no-response controls still pass), and the bottleneck levels squeeze the type rules through a
+low-rank code. Change the seed for another individual, and "Real wiring" brings the original back.
+`python fly_brain.py --profile game --genome-sweep` prints the same table from the terminal (the
+default pure profile runs only the six classic experiments), `--grow type` runs any experiment on a
+grown fly, and `python fly_game.py --grow type` starts the game with one. The science and the numbers are in
 `docs/SCIENCE.md`, section 7.
 
 **The genes as a parts list.** The published model gives every neuron the same machine; the
 "Parts list" switch on the Genome card gives each the one its genes make. Dopamine, octopamine and
-serotonin have no fast receptors in the fly, so their 979 neurons stop making fast synaptic
-potentials and instead leave a *tone* on their targets that lingers for seconds and raises how
-strongly those targets respond to everything else (three gauges show the tones; a loud sound, for
-instance, raises the octopamine tone that sharpens the motion cells). Photoreceptors, the lamina
-cells, the medulla inputs to T4/T5, T4/T5 and the HS/VS cells do not spike in real flies, so here
-they transmit graded signals below the spike threshold. APL, the mushroom body's inhibitory
+serotonin have no fast receptors in the fly, so their neurons leave a *tone* on their targets that
+lingers for seconds and raises how strongly those targets respond to everything else (three gauges
+show the tones; a loud sound, for instance, raises the octopamine tone that sharpens the motion
+cells), and those that release no fast transmitter as well stop making fast synaptic potentials. The
+connectome's own prediction names 979 such neurons; with the literature's transmitters (the default,
+see "What the literature says" below) the Genome card counts 2,146, of which 976 lose their fast
+synapses and 1,170 (1,151 of them Mi15 cells) release a fast transmitter as well and keep them.
+Photoreceptors, the lamina cells, the medulla inputs to T4/T5, T4/T5 and the HS/VS cells do not
+spike in real flies, so here they transmit graded signals below the spike threshold. APL, the mushroom body's inhibitory
 feedback neuron, releases locally: onto the Kenyon cells and output neurons of a lobe that is
 quieter than the rest it releases less, as in the real fly (Amin et al. 2020), and dopamine turns
 it down through its Dop2R receptor. A tone acts only through receptors the kit has evidence for
 (the target's single-cell atlas cluster, or a fact from the literature such as octopamine sharpening
 the VS motion cells, of which the octopamine neurons reach one in this wiring); a target with neither
 feels none. That rule closed a leak of song past the
-silenced fruitless neurons (`python fly_brain.py --one-sign-rule` brings back the old rule, under which
+silenced fruitless neurons (`python fly_brain.py --profile game --one-sign-rule` brings back the old rule, under which
 every tone raised every target's gain; the game always uses the new one). The reflexes are re-tested on
 the switch (the eleven the Genome card lists; all 16 validated experiments pass in `fly_brain.py
---profile game --parts`, none of them fragile; `python fly_brain.py --global-apl` puts APL back to one cell releasing
+--profile game --parts`, none of them fragile; `python fly_brain.py --profile game --global-apl` puts APL back to one cell releasing
 the same everywhere). Every
 re-test runs each experiment five times on a fly with nothing learned carried over between runs, in a
 separate low-priority process so the game keeps its speed, and a reflex that passes on average but
-misses on some run gets an amber mark ("fragile"). `python fly_brain.py --parts` runs any experiment
+misses on some run gets an amber mark ("fragile"). `python fly_brain.py --profile game --parts` runs any experiment
 that way, `--part "class:Kenyon_Cell:theta=10"` overrides a type's threshold, and
 `python fly_game.py --parts` starts the game with the parts on. The parts cost about half as much
 brain time again, so under heavy stimulation the game runs at 0.8-0.9 of real time on a laptop with
@@ -321,7 +367,7 @@ adult single-cell cluster expresses a receptor. With the parts list on, the lite
 over the prediction where the parts model cares (Mi15 gains a dopamine tone, the DPM neuron is
 GABA + serotonin, "unclear" predictions with a curated transmitter get it), and the tone's sign on
 each target follows the receptors its type expresses (Gi-coupled ones lower the gain). The Genetics
-card lists where the literature and the prediction disagree. `python fly_brain.py --curated all`
+card lists where the literature and the prediction disagree. `python fly_brain.py --profile game --curated all`
 lets the literature win over confident fast predictions too (their signs flip, and types it calls
 purely modulatory lose their fast synapses), and `python fly_game.py --curated all` makes the
 Genome card's switch use that policy; section 8.1 of `docs/SCIENCE.md` has the numbers and the
@@ -363,9 +409,9 @@ These are the things the critics point at, so it's worth knowing them:
 - **The odour code is odd in places.** Kenyon-cell subtypes are recruited unlike real flies (γ-main
   cells hardly at all), single glomeruli barely reach the mushroom body, and an odour leaves the
   central-complex heading circuit ringing for a second or two after it stops.
-- **The body is a drawing** unless you ask for the optional physics body (`--body physics`: NeuroMechFly v2
-  legs in MuJoCo, about a tenth of real time; docs/SCIENCE.md section 6.7). The drawn body's speeds and
-  turn rates are chosen by hand.
+- **The body is a drawing** unless you ask for the optional physics body (`--body physics`, Python 3.10-3.12
+  only: NeuroMechFly v2 legs in MuJoCo, about a tenth of real time; docs/SCIENCE.md section 6.7). The drawn
+  body's speeds and turn rates are chosen by hand.
   The decoder's weights are hand-chosen too, but it measures and shows which motor pools each
   descending neuron reaches in the wiring.
 - **No hormones, no electrical synapses, no development,** one fly's brain, one seed unless you ask

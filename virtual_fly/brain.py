@@ -14,7 +14,9 @@ in :mod:`virtual_fly.settings`:
 * **Spike-frequency adaptation** ("fatigue"): every spike raises that neuron's threshold a little,
   fading over a couple of seconds.
 * **Background noise**: a weak Poisson bombardment of every neuron, standing in for the
-  spontaneous activity real neurons have. With it, the fly is never completely silent.
+  spontaneous activity real neurons have. A kick goes into the synaptic input, so a 1 mV kick lifts
+  the membrane by at most 0.16 mV: 2 kicks/s of 1 mV fire nothing, 5 of 15 mV about 600-900 spikes/s,
+  and with the parts list on 2 of 1 mV already run away (docs/SCIENCE.md 3.4).
 * **Output modulation**: scale (or zero) the output of any population. Zero = silencing, like
   expressing tetanus toxin in a real fly; 1.5 = the population's synapses are stronger, which is
   how the game models hunger sharpening the sugar sense (dopamine/NPF do this in real flies).

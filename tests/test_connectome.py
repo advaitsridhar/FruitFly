@@ -1,6 +1,7 @@
 """Connectome loading, population specs, partner summaries and the cell-type graph."""
 
 import gzip
+import threading
 
 import numpy as np
 import pytest
@@ -88,6 +89,15 @@ def test_select_body_and_index(conn):
     assert conn.select(f"index:{i}").tolist() == [i]
     assert conn.select(f"body:{conn.body_id[i]}").tolist() == [i]
     assert conn.select("body:1").size == 0
+    for spec, message in (("body:abc", "body: needs a neuron's id"), ("body:", "body: needs"), ("body:12.5", "body: needs"),
+                          ("index:x", "index: needs a neuron's number"), ("hex:12", "hex: needs two medulla column numbers"),
+                          ("hex:1:2:3", "hex: needs"), (f"index:{conn.n}", f"out of range: this fly's neurons are numbered 0 to {conn.n - 1:,}"),
+                          ("index:-1", "out of range")):                  # not int()'s words, nor numpy's wrap-around
+        with pytest.raises(ValueError, match=message):
+            conn.select(spec)
+    with pytest.raises(ValueError, match="not a regular expression"):   # re.error becomes a ValueError too
+        conn.select("regex:[")
+    assert conn.count("regex:[") == 0
 
 
 def test_select_accepts_arrays_and_iterables(conn):
@@ -138,6 +148,45 @@ def test_find_types_and_type_counts(conn):
     assert "" not in counts
     assert sum(counts.values()) == int((conn.types != "").sum()) == conn.n - 20
     assert counts["KCg-m"] == 40 and counts["MN9"] == 2
+
+
+def test_find_types_lists_the_aliases(conn):
+    c = conn.rewired(conn.row_ptr, conn.post_idx, conn.n_syn, label="aliased")
+    c.aliases = {"MN9x": "MN9", "prefix:MN9y": "MN9", "MN9": "GNG232", "NOPEx": "NOPE"}
+    assert c.find_types("mn9") == [("MN9", 2), ("MN9x", 2)]       # a real type wins; spec aliases and empty ones are left out
+    assert c.find_types("9x") == [("MN9x", 2)] and conn.find_types("mn9") == [("MN9", 2)]
+
+
+def test_an_alias_resolves_in_two_threads_at_once(conn, monkeypatch):
+    """The game's HTTP threads resolve aliases (find_types, for /api/types) while its loop does: an alias one thread is
+    resolving is no loop for another, and a selection worked out while the loop guard refused an alias is not kept."""
+    c = conn.rewired(conn.row_ptr, conn.post_idx, conn.n_syn, label="aliased")
+    c.aliases, c._cache = {"MN9x": "prefix:MN9"}, {}
+    inside, carry_on, match = threading.Event(), threading.Event(), c._match
+
+    def slow(part):                                  # the game loop's thread stops halfway through resolving MN9x
+        if part == "prefix:MN9" and threading.current_thread().name == "loop":
+            inside.set()
+            carry_on.wait(10)
+        return match(part)
+    monkeypatch.setattr(c, "_match", slow)
+    got = {}
+    loop = threading.Thread(target=lambda: got.update(loop=c.select("MN9x").size), name="loop")
+    loop.start()
+    assert inside.wait(10)
+    assert c.find_types("mn9x") == [("MN9x", 2)] and c.select("MN9x").size == 2     # an HTTP thread, meanwhile
+    carry_on.set()
+    loop.join(10)
+    assert got == {"loop": 2} and c._cache["MN9x"].size == 2
+    guard = c._guard()                               # this thread halfway through MN9x: the guard refuses it again ...
+    guard.terms.add("MN9x")
+    c._cache.clear()
+    try:
+        assert c.select("MN9x").size == 0 and c.select("MN9x,MN9").size == 2
+    finally:
+        guard.terms.discard("MN9x")
+    assert "MN9x" not in c._cache and "MN9x,MN9" not in c._cache        # ... and what it gave then was not kept
+    assert c.select("MN9x").size == 2 and c._cache["MN9x"].size == 2
 
 
 def test_describe_and_info(conn):
@@ -225,3 +274,74 @@ def test_type_graph_nodes_and_edges(conn):
     assert np.array_equal(tg.nodes_of("LC10a"), np.array(sorted([tg.index["LC10a/L"], tg.index["LC10a/R"]])))
     assert tg.nodes_of("class:nothing").size == 0
     assert tg.row_ptr[-1] == tg.col_ptr[-1] == tg.src.size
+
+
+def test_command_names_the_program_the_way_it_was_started(monkeypatch):
+    from virtual_fly import connectome
+    monkeypatch.setattr(connectome, "INSTALLED", False)
+    monkeypatch.setattr("sys.argv", ["fly_brain.py"])
+    monkeypatch.setattr("sys.platform", "linux")
+    assert connectome.command("fly_game.py") == "python3 fly_game.py"             # what the README has you type
+    monkeypatch.setattr("sys.platform", "darwin")
+    assert connectome.command("fly_brain.py") == "python3 fly_brain.py"
+    monkeypatch.setattr("sys.platform", "win32")
+    assert connectome.command("fly_game.py") == "py fly_game.py"
+    # an editable install started as either console script names the other one's console script too
+    monkeypatch.setattr("sys.argv", ["/venv/bin/fly-brain"])
+    assert connectome.command("fly_brain.py") == "fly-brain" and connectome.command("fly_game.py") == "fly-game"
+    monkeypatch.setattr("sys.argv", ["/venv/Scripts/fly-game.exe"])                # Windows' launcher
+    assert connectome.command("fly_brain.py") == "fly-brain"
+    monkeypatch.setattr("sys.argv", ["fly_game.py"])
+    monkeypatch.setattr(connectome, "INSTALLED", True)
+    assert connectome.command("fly_game.py") == "fly-game"
+
+
+# ------------------------------------------------------------------ a file that cannot be read
+def _flyb_variants(synthetic_path, tmp_path):
+    """(file, what the message says is wrong with it) for the ways a connectome file goes bad."""
+    good = synthetic_path.read_bytes()
+    cut = tmp_path / "cut.flyb.gz"
+    cut.write_bytes(good[:len(good) // 2])                                        # a copy cut short
+    html = tmp_path / "page.flyb.gz"
+    html.write_bytes(b"<html>blocked by a firewall</html>")                      # a proxy's page saved as the file
+    unpacked = tmp_path / "unpacked.flyb.gz"
+    unpacked.write_bytes(gzip.decompress(good))                                  # unpacked, but still named .gz
+    other = tmp_path / "other.flyb.gz"
+    other.write_bytes(gzip.compress(b"hello, not a fly"))
+    return [(cut, "it is cut short"), (html, "it is not gzipped"), (unpacked, "it is not gzipped"),
+            (other, "it is not a FLYB connectome file")]
+
+
+def test_a_damaged_file_is_one_line_that_says_what_to_do(synthetic_path, tmp_path, monkeypatch):
+    import virtual_fly.connectome as C
+    for path, why in _flyb_variants(synthetic_path, tmp_path):
+        with pytest.raises(SystemExit) as e:                                      # given explicitly
+            load_connectome(path, quiet=True)
+        assert str(e.value) == f"The connectome file {path} can't be read ({why}): give an intact .flyb.gz file."
+        monkeypatch.setenv("FLY_DATA_FILE", str(path))                           # named by FLY_DATA_FILE
+        monkeypatch.setattr(C, "DATA_FILE", path)
+        with pytest.raises(SystemExit) as e:
+            load_connectome(quiet=True)
+        assert f"{path} (FLY_DATA_FILE) can't be read ({why}). Point FLY_DATA_FILE at an intact" in str(e.value)
+        assert "\n" not in str(e.value)
+    monkeypatch.setattr(C, "DATA_FILE", tmp_path / "missing.flyb.gz")
+    monkeypatch.setenv("FLY_DATA_FILE", str(tmp_path / "missing.flyb.gz"))
+    with pytest.raises(SystemExit, match="There is no connectome file at .*missing.flyb.gz .FLY_DATA_FILE names it"):
+        load_connectome(quiet=True)
+
+
+def test_a_damaged_female_file_says_delete_it_and_run_again(synthetic_path, tmp_path, monkeypatch):
+    from virtual_fly import flywire
+    monkeypatch.setattr(flywire, "SOURCE_DIR", tmp_path / "flywire-src")
+    build = flywire.BUILD
+    for path, why in _flyb_variants(synthetic_path, tmp_path):
+        # a gzipped header is read (and taken as new enough here), so loading the file finds the damage; a file that
+        # is not gzipped fails on its header, before anything is rebuilt
+        monkeypatch.setattr(flywire, "BUILD", 0 if why in ("it is cut short", "it is not a FLYB connectome file") else build)
+        monkeypatch.setattr(flywire, "FEMALE_FILE", path)
+        monkeypatch.setattr(flywire, "build_female", lambda quiet=False: pytest.fail("rebuilt over a damaged file"))
+        with pytest.raises(SystemExit) as e:
+            load_connectome(female=True, quiet=True)
+        assert str(e.value) == (f"The female fly's file {path} is damaged ({why}). Delete it and run again: it is rebuilt "
+                                f"from FlyWire's files in {tmp_path / 'flywire-src'} (downloaded again if they are gone).")
+        assert path.exists()                                                      # nothing is deleted for you

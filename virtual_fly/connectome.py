@@ -26,8 +26,11 @@ import os
 import re
 import struct
 import sys
+import tempfile
+import threading
 import time
 import urllib.request
+import zlib
 from pathlib import Path
 from typing import Iterable
 
@@ -39,13 +42,32 @@ import numpy as np
 
 PACKAGE_DIR = Path(__file__).resolve().parent
 PROJECT_DIR = PACKAGE_DIR.parent
-DEFAULT_DATA_FILE = PROJECT_DIR / "data" / "malecns-v1.0.flyb.gz"
+# A source checkout (run from its folder, or installed with `pip install -e .`) keeps all its data in data/. An
+# installed copy (`pip install .`, or from git) has no data/ folder: the four small files that come with the code
+# travel inside the package (virtual_fly/data, see pyproject.toml), and what the kit downloads goes to
+# ~/.cache/virtual-fly rather than into site-packages. FLY_DATA_DIR puts the downloads anywhere else.
+INSTALLED = (PACKAGE_DIR / "data").is_dir()
+SHIPPED_DATA_DIR = PACKAGE_DIR / "data" if INSTALLED else PROJECT_DIR / "data"
+
+
+def command(script: str) -> str:
+    """How to start one of the kit's programs (``fly_brain.py``, ``fly_game.py``) the way this copy was started: the console
+    script (``fly-game``) in an installed copy or when this process is one of the two console scripts (an editable install),
+    else ``python3 fly_game.py`` from the folder (``py fly_game.py`` on Windows), as the README spells it."""
+    console = script.removesuffix(".py").replace("_", "-")
+    if INSTALLED or Path(sys.argv[0]).stem in ("fly-brain", "fly-game"):
+        return console
+    return f"{'py' if sys.platform == 'win32' else 'python3'} {script}"
+DATA_DIR = Path(os.environ.get("FLY_DATA_DIR") or (Path.home() / ".cache" / "virtual-fly" if INSTALLED
+                                                   else PROJECT_DIR / "data")).expanduser()
+DEFAULT_DATA_FILE = DATA_DIR / "malecns-v1.0.flyb.gz"
 # FLY_DATA_FILE points the whole kit at another connectome file (no download, no checksum)
-DATA_FILE = Path(os.environ.get("FLY_DATA_FILE", DEFAULT_DATA_FILE))
+DATA_FILE = Path(os.environ.get("FLY_DATA_FILE", DEFAULT_DATA_FILE)).expanduser()
 # Pinned to one commit so the file can never change under you.
 DATA_URL = ("https://raw.githubusercontent.com/blendi-remade/fly-brain-minecraft/"
             "6cfa30175003ef25da68a237d5eda958f8047b82/src/main/resources/connectome/malecns-v1.0.flyb.gz")
 DATA_SHA256 = "e33df182bed7a6f3ea279daf4790a82b05706d3d41e819a6a80c0473e8c559f3"
+DATA_BYTES = 22_964_094
 
 
 def _sha256(path: Path) -> str:
@@ -56,18 +78,39 @@ def _sha256(path: Path) -> str:
     return h.hexdigest()
 
 
+def data_folder(folder: Path | str) -> Path:
+    """Make a folder the kit downloads or builds into, and check it can write there. When it cannot (a file in its
+    place, a folder it may not create or write in), stop with one line that names the folder and FLY_DATA_DIR."""
+    folder = Path(folder)
+    try:
+        folder.mkdir(parents=True, exist_ok=True)
+        tempfile.TemporaryFile(dir=folder).close()
+    except OSError as e:
+        why = ("a file of that name is in the way" if isinstance(e, FileExistsError) or (folder.exists() and not folder.is_dir())
+               else "part of that path is a file" if isinstance(e, NotADirectoryError) else e.strerror or str(e))
+        raise SystemExit(f"Can't write to the data folder {folder} ({why})" + (
+            ", set by FLY_DATA_DIR: point FLY_DATA_DIR at a folder you can write to." if os.environ.get("FLY_DATA_DIR")
+            else ": set FLY_DATA_DIR to a folder you can write to."))
+    return folder
+
+
 def download_connectome(path: Path | str = DATA_FILE, url: str | None = None, quiet: bool = False) -> Path:
     """Download the connectome file once (about 23 MB) and check that it is intact."""
     path = Path(path)
     url = url or os.environ.get("FLY_DATA_URL", DATA_URL)
-    if path.exists() and _sha256(path) == DATA_SHA256:
-        return path
-    path.parent.mkdir(parents=True, exist_ok=True)
+    damaged = ""
+    if path.exists():
+        if _sha256(path) == DATA_SHA256:
+            return path
+        damaged = (f"The file at\n  {path}\nis damaged or is not the right file ({path.stat().st_size:,} bytes; the "
+                   f"right one has {DATA_BYTES:,}, still gzipped).\n")
+    data_folder(path.parent)
     if not quiet:
-        print(f"Downloading the fly connectome (23 MB) from\n  {url}", file=sys.stderr)
+        print(f"{damaged}Downloading the fly connectome (23 MB) from\n  {url}", file=sys.stderr)
     tmp = path.with_suffix(".part")
     manual = (f"\nYou can also download it yourself in a browser from\n  {DATA_URL}\n"
-              f"and save it as\n  {path}\nthen run this again.")
+              f"and save it as\n  {path}\n{'in place of the damaged file there ' if damaged else ''}"
+              f"(as it is, not unpacked), then run this again.")
     try:
         with urllib.request.urlopen(url, timeout=60) as r, open(tmp, "wb") as f:
             total = int(r.headers.get("Content-Length") or 0)
@@ -84,6 +127,9 @@ def download_connectome(path: Path | str = DATA_FILE, url: str | None = None, qu
         if tmp.exists():
             tmp.unlink()
         raise SystemExit(f"\nCouldn't download the connectome: {e}{manual}")
+    except KeyboardInterrupt:                              # Ctrl+C: no half-downloaded file is left behind
+        tmp.unlink(missing_ok=True)
+        raise SystemExit("\nDownload stopped. Run the same command again to start it over.")
     if not quiet:
         print(file=sys.stderr)
     if _sha256(tmp) != DATA_SHA256:
@@ -173,7 +219,7 @@ class Connectome:
         self.aliases: dict[str, str] = dict(self.meta.get("aliases") or {})
         self._by_type = None
         self._cache: dict[str, np.ndarray] = {}
-        self._resolving: set[str] = set()
+        self._resolving = threading.local()     # the aliases each thread is resolving now (see _alias)
         self._col = None
         self._type_graph = None
 
@@ -196,7 +242,7 @@ class Connectome:
         c.meta = dict(self.meta, rewired=label)
         c._by_type = self._by_type            # depends only on the types: safe to share
         c._cache = dict(self._cache)          # population selections depend only on the annotations
-        c._resolving = set()
+        c._resolving = threading.local()
         c._col = None
         c._type_graph = None
         return c
@@ -265,17 +311,13 @@ class Connectome:
         hit = self._cache.get(key)
         if hit is not None:
             return hit
-        if self._by_type is None:
-            order = np.argsort(self.type_idx, kind="stable")
-            bounds = np.searchsorted(self.type_idx[order], np.arange(len(self.tables["types"]) + 1))
-            self._by_type = (order, bounds, {t: k for k, t in enumerate(self.tables["types"])})
+        self._index_types()
+        refused = self._guard().refused
         exact = self._exact_type(spec.strip())        # 70 type names contain ',' or '&': try whole first
         if exact is None:
             exact = self._alias(spec.strip())
         if exact is not None:
-            result = np.flatnonzero(exact).astype(np.int64)
-            self._cache[key] = result
-            return result
+            return self._remember(key, np.flatnonzero(exact).astype(np.int64), refused)
         keep, drop = [], []
         for term in (s.strip() for s in spec.split(",")):
             if not term:
@@ -297,8 +339,39 @@ class Connectome:
             for d in drop:
                 mask &= ~d
             result = np.flatnonzero(mask).astype(np.int64)
-        self._cache[key] = result
+        return self._remember(key, result, refused)
+
+    def _guard(self):
+        """This thread's recursion guard for aliases: the names it is resolving now (``terms``) and how many times it
+        has refused one that led back to itself (``refused``). Kept per thread: the game's HTTP threads select (find_types,
+        for /api/types) while its loop does, and one thread must not see another's names as a loop."""
+        guard = self._resolving
+        if not hasattr(guard, "terms"):
+            guard.terms, guard.refused = set(), 0
+        return guard
+
+    def _remember(self, key, result: np.ndarray, refused: int) -> np.ndarray:
+        """Cache a selection, unless the guard refused an alias while it was being worked out: that answer depends on
+        what this thread was resolving at the time, and the next select() of the same spec must work it out afresh."""
+        if self._guard().refused == refused:
+            self._cache[key] = result
         return result
+
+    def terms(self, spec: str) -> list[str]:
+        """The comma-separated terms of a population spec, as :meth:`select` reads them (a subtraction keeps its
+        ``!``): the whole spec is one term when it is a cell type's name or an alias (70 male type names contain a
+        comma, e.g. ``"DLMn a, b"``); otherwise each piece between commas is one."""
+        self._index_types()
+        whole = spec.strip()
+        if self._exact_type(whole) is not None or self._alias(whole) is not None:
+            return [whole]
+        return [t for t in (s.strip() for s in spec.split(",")) if t]
+
+    def _index_types(self):
+        if self._by_type is None:
+            order = np.argsort(self.type_idx, kind="stable")
+            bounds = np.searchsorted(self.type_idx[order], np.arange(len(self.tables["types"]) + 1))
+            self._by_type = (order, bounds, {t: k for k, t in enumerate(self.tables["types"])})
 
     def _and_parts(self, term: str) -> list[str]:
         """Split a term on ``&``, except inside an ontology label (ten lineage classes are called e.g.
@@ -345,14 +418,18 @@ class Connectome:
         target, side = self.aliases.get(term), None
         if target is None and len(term) > 2 and term[-2] == "/" and term[-1] in "LRM":
             target, side = self.aliases.get(term[:-2]), term[-1]
-        if target is None or term in self._resolving:
+        if target is None:
             return None
-        self._resolving.add(term)
+        guard = self._guard()
+        if term in guard.terms:                  # an alias that leads back to itself: not an alias here
+            guard.refused += 1
+            return None
+        guard.terms.add(term)
         try:
             mask = np.zeros(self.n, dtype=bool)
             mask[self.select(target)] = True
         finally:
-            self._resolving.discard(term)
+            guard.terms.discard(term)
         if side is not None:
             mask &= self.side == side
         return mask
@@ -375,7 +452,10 @@ class Connectome:
         elif key in ("prefix", "contains", "regex"):
             names = self.tables["types"]
             if key == "regex":
-                rx = re.compile(value)
+                try:
+                    rx = re.compile(value)
+                except re.error as e:                # a ValueError like every other bad spec, not a traceback
+                    raise ValueError(f"regex:{value} is not a regular expression Python can read ({e})") from None
                 ok = np.array([bool(t) and rx.search(t) is not None for t in names])
             else:
                 ok = np.array([bool(t) and (t.startswith(value) if key == "prefix" else value in t) for t in names])
@@ -396,14 +476,24 @@ class Connectome:
             col = {"class": self.cls, "superclass": self.superclass, "subclass": self.subclass,
                    "nt": self.nt, "nerve": self.nerve, "neuromere": self.neuromere, "frudsx": self.frudsx}[key]
             mask = col == value
-        elif key == "body":
-            mask = self.body_id == int(value)
-        elif key == "index":
-            mask = np.zeros(self.n, dtype=bool)
-            mask[int(value)] = True
-        elif key == "hex":
-            h1, h2 = (int(v) for v in value.split(":"))
-            mask = (self.hex1 == h1) & (self.hex2 == h2)
+        elif key in ("body", "index", "hex"):         # numbers: say which, instead of int()'s message
+            try:
+                nums = [int(v) for v in value.split(":")]
+            except ValueError:
+                nums = []
+            if len(nums) != (2 if key == "hex" else 1):
+                raise ValueError({"body": "body: needs a neuron's id, a whole number, e.g. body:10783",
+                                  "index": "index: needs a neuron's number in this file, e.g. index:1234",
+                                  "hex": "hex: needs two medulla column numbers, e.g. hex:12:7"}[key])
+            if key == "body":
+                mask = self.body_id == nums[0]
+            elif key == "index":
+                if not 0 <= nums[0] < self.n:
+                    raise ValueError(f"index:{nums[0]} is out of range: this fly's neurons are numbered 0 to {self.n - 1:,}")
+                mask = np.zeros(self.n, dtype=bool)
+                mask[nums[0]] = True
+            else:
+                mask = (self.hex1 == nums[0]) & (self.hex2 == nums[1])
         else:
             raise ValueError(f"unknown filter '{key}:' in population spec")
         if side is not None:
@@ -417,10 +507,14 @@ class Connectome:
             return 0
 
     def find_types(self, text: str, limit: int | None = None) -> list[tuple[str, int]]:
-        """List ``(type, count)`` for every cell type whose name contains ``text`` (case-insensitive)."""
+        """List ``(type, count)`` for every cell type whose name contains ``text`` (case-insensitive), and for every
+        name this file answers to as an alias (:attr:`aliases`: the female file's ``MN9`` is FlyWire's ``CB0701``)."""
         text = text.lower()
         counts = np.bincount(self.type_idx, minlength=len(self.tables["types"]))
         hits = [(t, int(counts[k])) for k, t in enumerate(self.tables["types"]) if t and text in t.lower()]
+        known = set(self.tables["types"])
+        hits += [(a, self.count(a)) for a in self.aliases              # names, not specs such as "prefix:pC1_"
+                 if ":" not in a and a not in known and text in a.lower() and self.count(a)]
         hits.sort(key=lambda tc: (not tc[0].lower().startswith(text), tc[0].lower()))
         return hits[:limit] if limit else hits
 
@@ -639,6 +733,30 @@ class TypeGraph:
         return self.src[e], self.weight[e]
 
 
+# What reading a damaged or wrong file raises: cut short, not gzipped or corrupt, too short for its header, not FLYB
+DAMAGED = (EOFError, gzip.BadGzipFile, zlib.error, struct.error, ValueError)
+
+
+def _damaged(path: Path, e: Exception, female: bool = False) -> str:
+    """One line for a connectome file that cannot be read: which file, what is wrong with it, and what to do."""
+    text = str(e)
+    why = ("it is cut short" if isinstance(e, (EOFError, struct.error)) or "buffer" in text
+           else "it is not gzipped" if text.startswith("Not a gzipped file")
+           else "its compressed data is corrupt" if isinstance(e, (zlib.error, gzip.BadGzipFile))
+           else "it is not a FLYB connectome file" if "not a FLYB" in text
+           else e.strerror if isinstance(e, OSError) and e.strerror else text)
+    if female:
+        from .flywire import SOURCE_DIR
+        return (f"The female fly's file {path} is damaged ({why}). Delete it and run again: it is rebuilt from "
+                f"FlyWire's files in {SOURCE_DIR} (downloaded again if they are gone).")
+    if path == DEFAULT_DATA_FILE:
+        return f"The connectome file {path} is damaged ({why}). Delete it and run again: it is downloaded again."
+    if path == DATA_FILE and "FLY_DATA_FILE" in os.environ:
+        return (f"The connectome file {path} (FLY_DATA_FILE) can't be read ({why}). Point FLY_DATA_FILE at an intact "
+                f".flyb.gz file, or unset it to use the kit's own download.")
+    return f"The connectome file {path} can't be read ({why}): give an intact .flyb.gz file."
+
+
 def load_connectome(path: Path | str | None = None, quiet: bool = False, female: bool = False) -> Connectome:
     """Download (first time only) and load the MaleCNS v1.0 connectome, or with ``female=True`` the female
     fly's FlyWire 783 connectome (built on first use, see :mod:`virtual_fly.flywire`).
@@ -648,13 +766,27 @@ def load_connectome(path: Path | str | None = None, quiet: bool = False, female:
     if female:
         if path is not None:
             raise ValueError("load_connectome(): give a path or female=True, not both")
-        from .flywire import ensure_female
-        path = ensure_female(quiet=quiet)
+        from .flywire import FEMALE_FILE, built_with, ensure_female
+        try:
+            if FEMALE_FILE.exists():
+                built_with(FEMALE_FILE)                    # a header that cannot be read: say so, rebuild nothing
+        except DAMAGED as e:
+            raise SystemExit(_damaged(FEMALE_FILE, e, female=True)) from None
+        try:
+            path = ensure_female(quiet=quiet)
+        except KeyboardInterrupt:                          # Ctrl+C while its sources download or it is built
+            raise SystemExit("\nStopped before the female fly was built. Run the same command again to finish it.")
     path = Path(DATA_FILE if path is None else path)
     if path == DEFAULT_DATA_FILE:
         download_connectome(path, quiet=quiet)
     t0 = time.time()
-    conn = Connectome(path)
+    try:
+        conn = Connectome(path)
+    except FileNotFoundError:
+        raise SystemExit(f"There is no connectome file at {path}"
+                         + (" (FLY_DATA_FILE names it)." if path == DATA_FILE and "FLY_DATA_FILE" in os.environ else ".")) from None
+    except (OSError, *DAMAGED) as e:                       # cut short, not gzipped, not a FLYB file, not readable ...
+        raise SystemExit(_damaged(path, e, female=female)) from None
     if not quiet:
         print(f"Loaded {conn.dataset} ({conn.sex}): {conn.n:,} neurons, {conn.n_edges:,} connections "
               f"({int(conn.n_syn.sum()):,} synapses) in {time.time() - t0:.1f}s", file=sys.stderr)

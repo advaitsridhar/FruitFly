@@ -31,4 +31,50 @@ def test_every_looked_up_id_exists():
     for js in sorted(WEB.glob("*.js")):
         looked_up |= set(re.findall(r'\$\("([^"]+)"\)', js.read_text(encoding="utf-8")))
     assert sorted(looked_up - known) == []
-    assert {"realBtn", "realDlg", "genomeRealBtn"} <= looked_up
+    assert {"realBtn", "realDlg", "genomeRealBtn", "genomeSyn"} <= looked_up
+
+
+def _rule(css, selector):
+    """The declarations of every rule for ``selector`` that starts a line, joined (whitespace-normalised)."""
+    found = re.findall(r"(?m)^\s*" + re.escape(selector) + r"\s*\{([^}]*)\}", css)
+    return " ".join(" ".join(found).split()) or None
+
+
+def test_the_neuron_popover_is_not_clipped_by_its_card():
+    # every card is paint-contained (no reflow shakes the sidebar), which clips what overflows it; the brain
+    # card's popover is taller than the card, and its links and buttons were cut off with it. Layout containment
+    # kept it out of the sidebar's scroll range, out of reach when the brain card was the last or the only card
+    css = (WEB / "style.css").read_text(encoding="utf-8")
+    assert "paint" in _rule(css, ".card")
+    brain = _rule(css, "#brainCard")
+    assert brain and "contain: none" in brain and "paint" not in brain and "z-index" in brain
+
+
+def test_the_header_fits_narrow_screens():
+    # the header's buttons wrap to a second line instead of running off a phone's or a tablet's screen,
+    # and the round '?' button keeps its size instead of being squashed
+    css = (WEB / "style.css").read_text(encoding="utf-8")
+    assert "flex: none" in _rule(css, ".linkbtn.round")
+    narrow = css[css.index("@media (max-width: 1080px)"):]
+    assert "flex-wrap: wrap" in _rule(narrow, "header")
+
+
+def test_the_panels_menu_keeps_the_focus_between_ticks():
+    # a checkbox in the Panels menu that dropped the focus closed the menu (it closes when the focus leaves)
+    js = (WEB / "layout.js").read_text(encoding="utf-8")
+    menu = js[js.index("  buildMenu() {"):js.index("  refreshMenu() {")]
+    assert ".blur()" not in menu
+    assert "menu.tabIndex = -1" in js
+
+
+def test_the_why_line_wraps_to_two_lines_and_keeps_its_full_text_as_a_tooltip():
+    # the water and feeding-bout explanations are longer than the card is wide: two lines show (the second one
+    # also under the mode chip), the tooltip has it all,
+    # and the card keeps one fixed height (it changes forty times a second above every other panel)
+    css = (WEB / "style.css").read_text(encoding="utf-8")
+    why, mode = _rule(css, ".why"), _rule(css, ".why .mode")
+    assert "height: 40px" in why and "line-height: 20px" in why and "-webkit-line-clamp: 2" in why and "nowrap" not in why
+    assert "display: inline-block" in mode and "white-space: nowrap" in mode and "line-height: 18px" in mode
+    js = (WEB / "panels.js").read_text(encoding="utf-8")
+    update = js[js.index("class WhyPanel"):js.index("class KeyNeurons")]
+    assert "drv.title = why" in update
