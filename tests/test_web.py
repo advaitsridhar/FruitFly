@@ -42,11 +42,12 @@ def _rule(css, selector):
 
 def test_the_neuron_popover_is_not_clipped_by_its_card():
     # every card is paint-contained (no reflow shakes the sidebar), which clips what overflows it; the brain
-    # card's popover is taller than the card, and its links and buttons were cut off with it
+    # card's popover is taller than the card, and its links and buttons were cut off with it. Layout containment
+    # kept it out of the sidebar's scroll range, out of reach when the brain card was the last or the only card
     css = (WEB / "style.css").read_text(encoding="utf-8")
     assert "paint" in _rule(css, ".card")
     brain = _rule(css, "#brainCard")
-    assert brain and "contain: layout" in brain and "paint" not in brain and "z-index" in brain
+    assert brain and "contain: none" in brain and "paint" not in brain and "z-index" in brain
 
 
 def test_the_header_fits_narrow_screens():

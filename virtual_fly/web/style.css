@@ -114,9 +114,11 @@ body.dragging, body.dragging * { cursor: grabbing !important; }
 
 /* ---------------------------------------------------------------- cards */
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; flex-shrink: 0; contain: layout paint; }
-/* the neuron popover is taller than the brain card: paint containment would clip it (and its links), so this
-   card keeps only the layout containment and sits above the cards below it */
-#brainCard { contain: layout; z-index: 7; }
+/* the neuron popover is taller than the brain card: paint containment would clip it (and its links), and layout
+   containment would keep it out of the sidebar's (or the page's) scroll range, out of reach when this card is the last
+   or the only one. So this card has no containment (nothing in it changes size as the fly runs, so the cards below
+   still keep still) and sits above the cards below it */
+#brainCard { contain: none; z-index: 7; }
 .card h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .8px; color: var(--muted); margin: 0 0 8px; font-weight: 600; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .card h2 .tag { text-transform: none; letter-spacing: 0; font-weight: 500; border: 1px solid var(--line); border-radius: 999px; padding: 0 8px; font-size: 11px; }
 .feedback { font-size: 12px; color: var(--muted); min-height: 16px; }

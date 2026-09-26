@@ -28,6 +28,7 @@ class Scenario:
     name: str
     description: str
     steps: list[Step] = field(default_factory=list)
+    female: str = ""                     # the description for the female fly, where hers differs
 
 
 def _place_two_odours(game, a="vinegar", b="banana", with_food=None, on="a"):
@@ -116,7 +117,10 @@ _add(Scenario(
              lambda g: {"pC1_hz": round(g.hz_shown.get("pC1", 0), 1), "song": round(g.decoder.m["song"], 2),
                         "female_receptive": round(g.world.female.receptive, 2) if g.world.female else 0}),
         Step("Done.", 0.0, lambda g: g.events.add(g.t, "scenario", "courtship scenario finished")),
-    ]))
+    ],
+    female="A second female enters the dish. The fly sees her as a small moving object (LC10a → DNa02, chase); touching "
+           "her drives the fly's pC1 neurons directly (hand-built: this brain has no tarsal taste neurons). The fly does "
+           "not sing: this female brain has no pIP10 and no nerve cord."))
 
 _add(Scenario(
     "plume", "Following a plume upwind",

@@ -108,6 +108,8 @@ def test_action_endpoint(served):
     assert post(base, "/api/action", {})[1] == {"ok": False, "error": "the action needs a 'type'"}
     assert post(base, "/api/action", {"type": "remove"})[1] == {"ok": False, "error": "'remove' needs 'id' (a number)"}
     assert "wall" in post(base, "/api/action", {"type": "drop", "kind": "sugar", "x": 49.5, "y": 0})[1]["error"]
+    for raw in (b'{"type": "remove", "id": Infinity}', b'{"type": "remove", "id": 1e400}', b'{"type": "stripes", "count": -Infinity}'):
+        assert post(base, "/api/action", raw)[1]["error"] in ("'id' must be a finite number", "'count' must be a finite number")
     assert game.actions.empty()
 
 
@@ -344,14 +346,14 @@ def test_serve_scans_ports_and_opens_the_browser(monkeypatch, capsys):
 
     monkeypatch.setattr(S, "ThreadingHTTPServer", FakeServer)
     monkeypatch.setattr(S.webbrowser, "open", lambda url: opened.append(url))
-    monkeypatch.setattr(S, "_command", lambda script: "python3 " + script)
     server = S.serve(FakeGame(), port=9100, open_browser=True, host="127.0.0.1")
     assert made == [("127.0.0.1", 9101)] and opened == ["http://127.0.0.1:9101/"] and server.daemon_threads
     assert "alive at http://127.0.0.1:9101/" in capsys.readouterr().out
     monkeypatch.setattr(S, "ThreadingHTTPServer", lambda *a: (_ for _ in ()).throw(OSError("busy")))
     with pytest.raises(SystemExit, match="free port") as e:
         S.serve(FakeGame(), port=9100, open_browser=False)
-    assert "from 9100 to 9119 (busy)" in str(e.value) and "Try another one: python3 fly_game.py --port 9000" in str(e.value)
+    assert "from 9100 to 9119 (busy)" in str(e.value)
+    assert str(e.value).endswith("Try another one: run the same command with --port 9000")   # which keeps --female and the rest
     with pytest.raises(SystemExit) as e:                                      # never advise the range that just failed
         S.serve(FakeGame(), port=9000, open_browser=False)
     assert "from 9000 to 9019" in str(e.value) and "--port 8000" in str(e.value)
@@ -378,12 +380,11 @@ def test_an_address_that_is_not_this_computers_is_named_not_the_ports(host, erro
         raise error
     if error is not None:
         monkeypatch.setattr(S, "ThreadingHTTPServer", refuse)
-    monkeypatch.setattr(S, "_command", lambda script: "python3 " + script)
     with pytest.raises(SystemExit) as e:
         S.serve(Game(), port=9100, open_browser=False, host=host)
     msg = str(e.value)
     assert msg.startswith(f"Could not listen on {host}: it is not one of this computer's addresses (")
-    assert msg.endswith("Leave out --host to use this computer only: python3 fly_game.py") and "port" not in msg
+    assert msg.endswith("Leave out --host to use this computer only: run the same command without it.") and "port" not in msg
     assert len(tried) <= 1                                                         # no other port was tried in vain
 
 

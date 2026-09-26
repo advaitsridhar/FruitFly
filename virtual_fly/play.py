@@ -144,4 +144,5 @@ def _main(argv=None):
 
 
 if __name__ == "__main__":
+    sys.argv[0] = "python -m virtual_fly.play"     # argparse names the program after it (else "play.py", before Python 3.14)
     main()
