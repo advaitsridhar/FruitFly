@@ -289,10 +289,7 @@ class Connectome:
         hit = self._cache.get(key)
         if hit is not None:
             return hit
-        if self._by_type is None:
-            order = np.argsort(self.type_idx, kind="stable")
-            bounds = np.searchsorted(self.type_idx[order], np.arange(len(self.tables["types"]) + 1))
-            self._by_type = (order, bounds, {t: k for k, t in enumerate(self.tables["types"])})
+        self._index_types()
         exact = self._exact_type(spec.strip())        # 70 type names contain ',' or '&': try whole first
         if exact is None:
             exact = self._alias(spec.strip())
@@ -323,6 +320,22 @@ class Connectome:
             result = np.flatnonzero(mask).astype(np.int64)
         self._cache[key] = result
         return result
+
+    def terms(self, spec: str) -> list[str]:
+        """The comma-separated terms of a population spec, as :meth:`select` reads them (a subtraction keeps its
+        ``!``): the whole spec is one term when it is a cell type's name or an alias (70 male type names contain a
+        comma, e.g. ``"DLMn a, b"``); otherwise each piece between commas is one."""
+        self._index_types()
+        whole = spec.strip()
+        if self._exact_type(whole) is not None or self._alias(whole) is not None:
+            return [whole]
+        return [t for t in (s.strip() for s in spec.split(",")) if t]
+
+    def _index_types(self):
+        if self._by_type is None:
+            order = np.argsort(self.type_idx, kind="stable")
+            bounds = np.searchsorted(self.type_idx[order], np.arange(len(self.tables["types"]) + 1))
+            self._by_type = (order, bounds, {t: k for k, t in enumerate(self.tables["types"])})
 
     def _and_parts(self, term: str) -> list[str]:
         """Split a term on ``&``, except inside an ontology label (ten lineage classes are called e.g.

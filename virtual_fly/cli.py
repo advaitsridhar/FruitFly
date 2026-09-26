@@ -17,9 +17,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
+import shlex
 import sys
 import time
 from dataclasses import replace
+from pathlib import Path
 
 import numpy as np
 
@@ -45,13 +48,25 @@ def parse_stim(text: str, default_hz: float = 80.0) -> list[tuple[str, float]]:
 
 
 def main(argv=None):
+    try:
+        _main(argv)
+    except KeyboardInterrupt:                    # Ctrl+C while the brain is built or the experiments run
+        raise SystemExit("\nStopped.")
+
+
+def _main(argv=None):
     ap = argparse.ArgumentParser(description="Simulate a whole fruit-fly nervous system (MaleCNS v1.0; FlyWire 783 with --female).",
                                  formatter_class=argparse.RawDescriptionHelpFormatter, epilog=__doc__)
     ap.add_argument("--find", metavar="TEXT", help="list neuron types whose name contains TEXT")
     ap.add_argument("--info", metavar="SPEC", help="describe the neurons matching SPEC (first 30)")
     ap.add_argument("--stim", metavar="SPEC:HZ[;SPEC:HZ]", help='stimulate populations, e.g. "MDN:60" or "LC4/R,LPLC2/R:150"')
-    ap.add_argument("--watch", metavar="SPEC[;SPEC]", default="", help='populations to report, separated by ";" or ","')
-    ap.add_argument("--ms", type=float, default=500, help="how long to simulate with --stim (default 500 ms)")
+    ap.add_argument("--watch", metavar="SPEC[;SPEC]", default="",
+                    help='populations to report, separated by ";" or ",". With "," a cell type whose name contains a comma '
+                         '(e.g. "DLMn a, b") stays whole and a "!" subtraction belongs to the population before it; '
+                         'when the list has a ";", only ";" separates')
+    ap.add_argument("--ms", type=float, default=500,
+                    help="how long to simulate with --stim, and at each rate of --sweep (default 500 ms; --sweep lets each "
+                         "rate settle for 100 ms before it counts spikes, so give it more than 100)")
     ap.add_argument("--only", metavar="TEXT", help="run only experiments whose name or tag contains TEXT")
     ap.add_argument("--seeds", type=int, default=5,
                     help="repeat each experiment with this many random seeds (default 5: the verdict is the mean, and a "
@@ -59,14 +74,15 @@ def main(argv=None):
     ap.add_argument("--json", metavar="FILE",
                     help="write the results as JSON: the experiments, or those of --stim, --sweep, --lesion, --trace, --inputs/--outputs")
     ap.add_argument("--trace", nargs=2, metavar=("FROM", "TO"), help="strongest wiring routes between two populations")
-    ap.add_argument("--hops", type=int, default=4, help="maximum path length for --trace (default 4)")
+    ap.add_argument("--hops", type=int, default=None,
+                    help="maximum path length for --trace, and for the routes --lesion finds its candidates on (default 4)")
     ap.add_argument("--avoid", metavar="SPEC", help="route --trace around these types (a virtual lesion)")
     ap.add_argument("--inputs", metavar="SPEC", help="strongest presynaptic types of a population")
     ap.add_argument("--outputs", metavar="SPEC", help="strongest postsynaptic types of a population")
     ap.add_argument("--sweep", metavar="SPEC:LO:HI:N", help="dose-response: stimulate SPEC at N rates from LO to HI Hz")
     ap.add_argument("--lesion", metavar="EXPERIMENT", help="silence each --candidates population during this experiment")
     ap.add_argument("--readout", metavar="SPEC", help="the readout to track for --lesion")
-    ap.add_argument("--candidates", metavar="SPEC[,SPEC]", default="",
+    ap.add_argument("--candidates", metavar="SPEC[,SPEC]", default=None,
                     help="populations to lesion (default: relays found by --trace between the stimulus and the readout)")
     ap.add_argument("--profile", choices=sorted(PROFILES), default="pure",
                     help="model profile: pure (the paper, default here), game (what the game runs), brakes")
@@ -110,7 +126,8 @@ def main(argv=None):
     ap.add_argument("--driver", metavar="LINE", help="MaleCNS neurons a driver line labels, e.g. SS02385 (NeuronBridge; needs internet)")
     ap.add_argument("--grow", metavar="LEVEL",
                     help="run everything on a fly grown from its wiring rules: type, class or bottleneck:K (K = 1 to 2048)")
-    ap.add_argument("--grow-seed", type=int, default=1, help="which individual to grow")
+    ap.add_argument("--grow-seed", type=int, default=None,
+                    help="which individual to grow with --grow or --genome-sweep (default 1)")
     ap.add_argument("--genome-sweep", metavar="LEVELS", nargs="?", const="real,type,class,bottleneck:64",
                     help='grow a fly at each level (comma-separated; default "real,type,class,bottleneck:64") and table which experiments survive')
     ap.add_argument("--female", action="store_true",
@@ -122,6 +139,10 @@ def main(argv=None):
                          "--stim, --sweep and --lesion use SEED")
     args = ap.parse_args(argv)
     _check_args(ap, args)
+    # None above only tells _check_args whether the option was given; these are the documented defaults
+    args.hops = 4 if args.hops is None else args.hops
+    args.grow_seed = 1 if args.grow_seed is None else args.grow_seed
+    args.candidates = args.candidates or ""
 
     conn = load_connectome(female=args.female)
     if args.find:
@@ -218,6 +239,8 @@ def main(argv=None):
     if args.trace:
         src, dst = args.trace
         check(conn, src), check(conn, dst)
+        if args.avoid:                           # a misspelt detour would silently avoid nothing
+            check(conn, args.avoid)
         t0 = time.time()
         paths = trace(conn, src, dst, max_hops=args.hops, top=args.top, avoid=args.avoid)
         print(f"\n{len(paths)} strongest routes from {src} to {dst} (up to {args.hops} hops, {time.time() - t0:.1f} s):")
@@ -302,28 +325,42 @@ def main(argv=None):
             print(f"\n(skipped {len(skipped)} experiments whose ranges were measured with the '{skipped[0].profile}' profile: "
                   f"{', '.join(e.name for e in skipped)}; run them with --profile {skipped[0].profile})")
         return
+    watch = _split_list(conn, args.watch)
+    for spec in watch:                           # a misspelt name would read 0 Hz: refuse it before simulating
+        check(conn, spec)
+    stims = parse_stim(args.stim or "")
+    for spec, hz in stims:                       # every item is checked before the first is applied
+        head, _, rate = spec.rpartition(":")
+        if not conn.count(spec) and conn.count(head):          # "MDN:abc": a population, then no rate
+            try:
+                float(rate)
+                problem = f"'{spec}:{hz:g}' has two rates"     # "MDN:60:30"
+            except ValueError:
+                problem = f"'{rate}' is not a rate in Hz"
+            _usage_error(ap, f"--stim: {problem}; use SPEC:HZ, e.g. \"MDN:60\"")
+        check(conn, spec)
     brain = build_brain(conn, args.profile, **overrides)
     for spec in filter(None, (x.strip() for x in args.silence.split(";"))):
         print(f"silencing {spec}: {brain.silence(check_spec(conn, spec))} neurons")
     for item in filter(None, (x.strip() for x in args.modulate.split(";"))):
         spec, _, factor = item.rpartition(":")
         print(f"modulating {spec} x{float(factor):g}: {brain.modulate(check_spec(conn, spec), float(factor))} neurons")
-    watch = [w.strip() for w in args.watch.replace(";", ",").split(",") if w.strip()]
-    for spec in watch:                           # a misspelt name would read 0 Hz: refuse it before simulating
-        check(conn, spec)
 
     if args.stim:
-        for spec, hz in parse_stim(args.stim):
-            head, _, rate = spec.rpartition(":")
-            if not conn.count(spec) and conn.count(head):          # "MDN:abc": a population, then no rate
-                _usage_error(ap, f"--stim: '{rate}' is not a rate in Hz; use SPEC:HZ, e.g. \"MDN:60\"")
-            brain.stimulate(check_spec(conn, spec), hz)
+        for spec, hz in stims:
+            brain.stimulate(spec, hz)
             print(f"stimulating {spec} ({conn.count(spec)} neurons) at {hz:g} Hz")
         if args.record:
             brain.start_recording()
         t0 = time.time()
         brain.run(args.ms)
-        print(f"simulated {args.ms:g} ms in {time.time() - t0:.1f} s; {brain.total_spikes:,} spikes in total")
+        if brain.parts is not None:              # graded cells' release quanta are counted with the spikes
+            graded = int(brain.spike_count[brain._gmask].sum())
+            total = (f"{brain.total_spikes:,} events in total (spikes and graded quanta): "
+                     f"{brain.total_spikes - graded:,} spikes and {graded:,} graded quanta")
+        else:
+            total = f"{brain.total_spikes:,} spikes in total"
+        print(f"simulated {args.ms:g} ms in {time.time() - t0:.1f} s; {total}")
         rates = {}
         for spec in watch:
             rates[spec] = brain.rate(spec)
@@ -349,8 +386,6 @@ def main(argv=None):
         spec, lo, hi, n = args.sweep.rsplit(":", 3)
         check_spec(conn, spec)
         rates = np.linspace(float(lo), float(hi), int(n))
-        if not watch:
-            raise SystemExit("--sweep needs --watch to say which populations to report")
         rows = E.sweep(brain, spec, rates, watch, ms=args.ms)
         print(f"\n  {'Hz in':>7}  " + "  ".join(f"{w:>12}" for w in watch))
         for r in rows:
@@ -361,10 +396,7 @@ def main(argv=None):
         return
 
     if args.lesion:
-        exps = [e for e in E.all_experiments() if args.lesion.lower() in e.name.lower()]
-        if not exps:
-            raise SystemExit(f"no experiment matches '{args.lesion}'")
-        exp = exps[0]
+        exp = next(e for e in E.all_experiments() if args.lesion.lower() in e.name.lower())   # _check_args: one does
         readout = args.readout or exp.readouts[-1].spec
         spec = next((r.spec for r in exp.readouts if r.spec == readout or r.label == readout), None)
         if spec is None:
@@ -433,59 +465,153 @@ def _usage_error(ap, message):
 
 
 def _check_args(ap, args):
-    """Refuse malformed option values before anything is loaded or simulated."""
-    def numbers(text, n):                        # "0.1:150" -> [0.1, 150.0]; None unless it is n numbers
+    """Refuse malformed option values, and options the chosen mode would ignore, before anything is loaded or simulated."""
+    def numbers(text, n):                        # "0.1:150" -> [0.1, 150.0]; None unless it is n finite numbers
         try:
             vals = [float(x) for x in text.split(":")]
         except ValueError:
             return None
-        return vals if len(vals) == n else None
-    if args.std and numbers(args.std, 2) is None:
-        _usage_error(ap, f"--std wants U:TAU_MS, e.g. 0.1:150 (not '{args.std}')")
-    if args.noise and numbers(args.noise, 2) is None:
-        _usage_error(ap, f"--noise wants HZ:MV, e.g. 5:15 (not '{args.noise}')")
+        return vals if len(vals) == n and all(map(math.isfinite, vals)) else None
+    for option, value in (("--ms", args.ms), ("--dt", args.dt), ("--gain", args.gain), ("--kenyon-gain", args.kenyon_gain),
+                          ("--fatigue", args.fatigue), ("--jitter", args.jitter)):
+        if value is not None and not math.isfinite(value):         # float() takes "nan" and "inf"
+            _usage_error(ap, f"{option} wants a number (not {value})")
+    for option, value in (("--ms", args.ms), ("--dt", args.dt)):
+        if value <= 0:
+            _usage_error(ap, f"{option} must be above 0 ms (not {value:g})")
+    if args.sweep and args.ms <= 100:            # experiments.sweep() lets each rate settle for 100 ms, then counts
+        _usage_error(ap, f"--sweep lets each rate settle for 100 ms before it counts spikes, so --ms must be above 100 "
+                         f"(not {args.ms:g}; the default is 500)")
+    for option, value in (("--seed", args.seed), ("--grow-seed", args.grow_seed)):
+        if value is not None and value < 0:
+            _usage_error(ap, f"{option} must be 0 or more (not {value})")
+    std = numbers(args.std, 2) if args.std else None
+    if args.std and (std is None or not 0 < std[0] <= 1 or std[1] <= 0):
+        _usage_error(ap, f"--std wants U:TAU_MS, U above 0 and at most 1 and TAU_MS above 0, e.g. 0.1:150 (not '{args.std}')")
+    noise = numbers(args.noise, 2) if args.noise else None
+    if args.noise and (noise is None or min(noise) < 0):
+        _usage_error(ap, f"--noise wants HZ:MV, both 0 or more, e.g. 5:15 (not '{args.noise}')")
     for item in filter(None, (x.strip() for x in args.modulate.split(";"))):
         spec, _, factor = item.rpartition(":")
-        if not spec or numbers(factor, 1) is None:
-            _usage_error(ap, f"--modulate wants SPEC:FACTOR, e.g. \"LB3b,LB3c:1.5\" (not '{item}')")
+        factor = numbers(factor, 1)
+        if not spec or factor is None or factor[0] < 0:
+            _usage_error(ap, f"--modulate wants SPEC:FACTOR, FACTOR 0 or more, e.g. \"LB3b,LB3c:1.5\" (not '{item}')")
+    for spec, hz in parse_stim(args.stim or ""):    # the rates; whether each SPEC names neurons is checked once loaded
+        if not math.isfinite(hz) or hz < 0:
+            _usage_error(ap, f"--stim: '{spec}:{hz:g}': a rate is a number of Hz, 0 or more")
     if args.sweep:
         spec, *rest = args.sweep.rsplit(":", 3)
-        if len(rest) != 3 or not spec or numbers(":".join(rest[:2]), 2) is None or not rest[2].strip().isdigit() \
-                or int(rest[2]) < 1:
-            _usage_error(ap, f"--sweep wants SPEC:LO:HI:N (N rates from LO to HI Hz), e.g. \"LB3b,LB3c:0:200:9\" (not '{args.sweep}')")
+        rates = numbers(":".join(rest[:2]), 2) if len(rest) == 3 else None
+        try:
+            n = int(rest[2]) if len(rest) == 3 else 0
+        except ValueError:                       # e.g. "²", which str.isdigit() accepts but int() does not
+            n = 0
+        if not spec or rates is None or min(rates) < 0 or n < 1:
+            _usage_error(ap, f"--sweep wants SPEC:LO:HI:N (N rates from LO to HI Hz, 0 or more), e.g. \"LB3b,LB3c:0:200:9\" "
+                             f"(not '{args.sweep}')")
+        if not args.watch.replace(";", " ").replace(",", " ").strip():
+            _usage_error(ap, "--sweep needs --watch to say which populations to report")
     levels = [x.strip() for x in (args.genome_sweep or "").split(",") if x.strip()]
     if args.genome_sweep is not None and not levels:
         _usage_error(ap, "--genome-sweep wants comma-separated levels, e.g. real,type,class,bottleneck:64")
-    grow = [("--grow", args.grow)] if args.grow else []
+    grow = [("--grow", args.grow)] if args.grow is not None else []
     for option, level in grow + [("--genome-sweep", lv) for lv in levels]:
         if not valid_level(level):               # K is bounded: see wiring.MAX_RANK
             _usage_error(ap, f"{option}: '{level}': {LEVEL_ERROR}")
+    if args.grow is not None and args.genome_sweep is not None:
+        _usage_error(ap, "--genome-sweep grows its own flies from the real one: leave out --grow")
+    if args.only is not None and args.genome_sweep is not None:
+        _usage_error(ap, "--genome-sweep runs every experiment of the profile: leave out --only")
     if args.seeds < 1:
         _usage_error(ap, f"--seeds must be at least 1 (not {args.seeds})")
     if args.record and not args.stim:
         _usage_error(ap, "--record FILE.npz saves the spikes of a --stim run; add --stim")
+    for option, value, needs, mode in (("--readout", args.readout, "--lesion EXPERIMENT", args.lesion),
+                                       ("--candidates", args.candidates, "--lesion EXPERIMENT", args.lesion),
+                                       ("--avoid", args.avoid, "--trace FROM TO", args.trace),
+                                       ("--hops", args.hops, "--trace FROM TO or --lesion EXPERIMENT", args.trace or args.lesion),
+                                       ("--grow-seed", args.grow_seed, "--grow LEVEL or --genome-sweep",
+                                        args.grow is not None or args.genome_sweep is not None)):
+        if value is not None and not mode:       # it would be ignored without a word
+            _usage_error(ap, f"{option} only applies with {needs}; add it, or leave out {option}")
+    for option, path in (("--json", args.json), ("--record", args.record)):
+        if path and Path(path).is_dir():
+            _usage_error(ap, f"{option}: '{path}' is a folder; give a file name")
+        if path and not Path(path).parent.is_dir():                  # found out after the run, it lost the results
+            _usage_error(ap, f"{option}: there is no folder '{Path(path).parent}' to write {Path(path).name} in")
+    if args.part:
+        from .parts import parse_param
+    for s in args.part:                          # the syntax; whether each SPEC names neurons is checked once loaded
+        try:
+            parse_param(s)
+        except ValueError as e:                  # float()'s own message is Python's, not the kit's
+            _usage_error(ap, f"--part: theta must be a number of mV (not '{s}')" if str(e).startswith("could not convert")
+                         else f"--part: {e}")
+    exps = E.all_experiments()
+    if args.lesion is not None and not (args.lesion.strip() and any(args.lesion.lower() in e.name.lower() for e in exps)):
+        _usage_error(ap, f"--lesion: no experiment's name contains '{args.lesion}'; the names are "
+                         + "; ".join(e.name for e in exps))
     if args.only:                                # the same match as experiments.run_all()
-        exps = E.all_experiments()
         if not any(args.only.lower() in e.name.lower() or args.only.lower() in " ".join(e.tags) for e in exps):
             _usage_error(ap, f"no experiment's name or tag contains '{args.only}'; the tags are "
                              + ", ".join(sorted({t for e in exps for t in e.tags})) + "; the names are "
                              + "; ".join(e.name for e in exps))
+    if args.backend == "numba":                  # the brain would refuse it with a traceback, after the data had loaded
+        from . import fastbrain
+        if not fastbrain.available():
+            raise SystemExit("--backend numba needs the numba package, which is not installed: pip install numba "
+                             "(or leave out --backend: NumPy gives the same spikes, about half as fast)")
 
 
 def check(conn, spec):
-    """The neurons ``spec`` selects; or stop with one line, and a hint to search the names in the same fly."""
+    """The neurons ``spec`` selects; or stop with one line, and a hint to search the names in the same fly.
+    Each term of a comma union must select some: a misspelt one would otherwise be dropped without a word."""
     female = getattr(conn, "sex", "male") == "female"
+    bad, note = spec, ""
     try:
         idx = conn.select(spec)
         if idx.size:
-            return idx
-        problem = f"No neurons match '{spec}'" + (" in the female fly (no nerve cord, no male-specific cells)" if female else "") + "."
+            bad = next((t for t in conn.terms(spec) if not t.startswith("!") and not conn.count(t)), None)
+            if bad is None:
+                return idx
+            name = next((r for r in _runs(conn, spec) if "," in r and r.split(",")[0].strip() == bad), None)
+            if name:                             # "MN9,DLMn a, b": select() reads 'DLMn a' and 'b'
+                note = f" '{name}' is one cell type's name, which a list separated by commas splits: give it on its own."
+        problem = (f"No neurons match '{bad}'" + (f" (part of '{spec}')" if bad != spec else "")
+                   + (" in the female fly (no nerve cord, no male-specific cells)" if female else "") + "." + note)
     except ValueError as e:
         problem = str(e).rstrip(".") + "."
-    if spec.split(":")[0] in ("body", "index", "hex", "regex"):
+    if bad.split(":")[0] in ("body", "index", "hex", "regex"):
         raise SystemExit(problem)                # a number or a pattern, not a name: a name search would not help
-    word = spec.split(":")[-1].split("/")[0].split(",")[0]
-    raise SystemExit(f"{problem} Search for names with: {command('fly_brain.py')}{' --female' if female else ''} --find {word}")
+    word = bad.split(":")[-1].split("/")[0].split(",")[0]
+    raise SystemExit(f"{problem} Search for names with: {command('fly_brain.py')}{' --female' if female else ''} "
+                     f"--find {shlex.quote(word)}")
+
+
+def _runs(conn, text):
+    """The pieces of ``text`` between commas, except that a run of pieces which together are one cell type's name or
+    alias (70 male names contain a comma, e.g. "DLMn a, b") stays whole: the longest run first, as select() tries
+    the whole spec first."""
+    pieces, i = text.split(","), 0
+    while i < len(pieces):
+        j = next((j for j in range(len(pieces), i + 1, -1)
+                  if conn.terms(",".join(pieces[i:j])) == [",".join(pieces[i:j]).strip()]), i + 1)
+        yield ",".join(pieces[i:j]).strip()
+        i = j
+
+
+def _split_list(conn, text):
+    """The populations of --watch: separated by ';' when the list has one, else by ',' (see _runs), where a '!'
+    subtraction belongs to the population before it."""
+    if ";" in text:
+        return [x.strip() for x in text.split(";") if x.strip()]
+    out = []
+    for run in _runs(conn, text):
+        if run.startswith("!") and out:
+            out[-1] += "," + run
+        elif run:
+            out.append(run)
+    return out
 
 
 def check_spec(conn, spec):
