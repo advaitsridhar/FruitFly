@@ -109,7 +109,20 @@ gathers and scatters cost more than the dense passes they save.
   A multi-threaded version of the dense pass was 1.3x faster on an idle machine and ten times
   slower with one other busy process on the box, so the kernel is single-threaded on purpose.
   The busy game tick (sugar, female, drum) went from 34 to 17 ms (1.5x real time) at `dt` 0.5 and
-  from 20 to 9 ms (2.7x) at `dt` 1.0.
+  from 20 to 9 ms (2.7x) at `dt` 1.0. Per experiment it is about twice as fast too (v2.8.1:
+  `fly_brain.py --profile game --only Sugar --backend numpy` or `numba`, real male connectome, five
+  seeds, `dt` 0.5 ms; Python 3.11, NumPy 2.4.6, numba 0.67; a 4-core 2.1 GHz Xeon shared with another
+  job, load average 0.4-1.7; three runs of each, every table identical between the two):
+
+  | wall time (five seeds) | NumPy | compiled | factor |
+  |---|---|---|---|
+  | Sugar on the mouthparts | 6.2 s (all three runs) | 3.1 s (all three) | 2.0x |
+  | Sugar + bitter together | 4.2-4.4 s | 2.3-2.5 s | 1.8x |
+  | Sugar on the mouthparts, fruitless neurons silenced | 4.5-4.7 s | 2.4-2.6 s | 1.9x |
+  | the whole command, loading included | 15.8-16.9 s | 9.2 s | 1.8x |
+
+  `fly_brain.py` names the integrator in its "Running the validated experiments" line and the game in
+  its "Brain integrator" line at start-up.
 * Every 20 steps, `v` and `g` values below 1 nV (`FLUSH_MV` = 1e-6 mV, seven million times below
   threshold) are snapped to 0. Without this, values decaying for hundreds of milliseconds drift into the float32 denormal
   range and the CPU slows every array operation several-fold: a busy game brain went from 76 ms
@@ -170,7 +183,9 @@ logged as "runaway firing".
 ## 2. Validation: the six classic experiments
 
 The six experiments of Shiu et al. 2024 and the fly-brain-minecraft benches, as coded in
-`experiments.py`. A readout passes when `lo ≤ rate ≤ hi + max(1, 0.15·hi)`.
+`experiments.py`. A readout passes when `lo ≤ rate ≤ hi + max(1, 0.15·hi)`: the rate is the mean over
+the seeds, and the same margin decides whether a seed on its own is outside. `fly_brain.py` writes the
+margin after the range (`0-5(+1) Hz`) whenever a mean or a seed needed it.
 
 | experiment | stimulus (population: Hz) | readout | expected |
 |---|---|---|---|
@@ -236,6 +251,44 @@ and are used by the game:
   or after 2.5 s. Before that a sustained wall touch drove the grooming neurons, grooming stopped
   the fly with its head on the wall, and it groomed there indefinitely.
 * `pC1` courtship neurons → `pIP10` (song).
+* Water (v2.8.1): `LB3a`. The MaleCNS data do not say which labellar cells sense water, so the water
+  cells were found by matching them to the published model's. Its notebook (Shiu et al. 2024,
+  `figures.ipynb` at the commit the kit pins) drives 18 labellar water cells, which FlyWire types as
+  `LB3` (17) and `LB2d` (1), both annotated "sugar/water", and 18 Ir94e (low-salt) cells: `LB1e` (11),
+  `LB2a-b` (4) and `LB2c` (3), annotated "low-salt" apart from LB1e ("bitter"). The MaleCNS splits LB3 into LB3a-d.
+  Naming every downstream partner of a population by its FlyBase class (the kit's VFB join, on both
+  flies) and comparing the two flies' synapse profiles (cosine similarity):
+
+  | MaleCNS type | the published water cells | sugar cells | Ir94e cells |
+  |---|---|---|---|
+  | LB3a | **0.95** | 0.13 | 0.14 |
+  | LB3b | 0.22 | 0.10 | 0.03 |
+  | LB3c | 0.46 | **0.96** | 0.06 |
+  | LB3d | 0.42 | 0.74 | 0.04 |
+  | LB2a / LB2b / LB2c / LB2d | 0.09 / 0.01 / 0.06 / 0.01 | 0.00 / 0.05 / 0.01 / 0.17 | 0.23 / 0.09 / 0.02 / 0.02 |
+
+  Only 14-26 % of each population's output synapses land on partners the join can name, but the
+  water profile is distinctive: the published water cells and LB3a both send most of it to Fudog
+  (DNg67; 282 and 372 synapses), DNpe030 and the VP5+SEZ adPN. They also respond alike (game profile,
+  five seeds, 100 ms settle and 500 ms measured, Hz):
+
+  | stimulus at 80 Hz | MN9 | G2N-1 | Fudog | Scapula | PPL1 |
+  |---|---|---|---|---|---|
+  | male `LB3a` (17 cells) | 0.0 | 0.0 | 42.4 | 0.0 | 0.0 |
+  | female: the published model's water cells (18) | 0.0 | 0.8 | 48.4 | 0.0 | 0.0 |
+  | male `LB2a-d` (18 cells), the game's water up to v2.8.0 | 0.0 | 0.0 | 0.0 | 140 | 13.6 |
+  | male sugar (the game's cells at hunger 0.5), for comparison | 46.6 | 35.6 | 13.6 | 5.7 | 1.5 |
+
+  At 200 Hz LB3a still gives MN9 0.0 Hz (pure and game); the female's water cells give 34 / 30 Hz
+  (pure / game), the published model's water-to-MN9 result at high rates. The game drives `LB3a` at
+  80 Hz × thirst when thirst is above 0.2 (`WATER_GRNS`). In this wiring water reaches Fudog and not
+  MN9, so a thirsty fly tastes water and does not drink, and its thirst only rises (headless game,
+  seed 0, thirst 1, water at the mouth, walking urge off, 8 s: MN9 0 Hz, Fudog 29 Hz, the drop
+  untouched, thirst still 1.0). No drink was built in by hand: the Why panel and "What's real here?"
+  say so. In the female fly `LB3a` is an alias for the published model's 18 water cells (section 9.2): at
+  the game's 80 Hz they reach Fudog and not MN9, so she does not drink either, although at 200 Hz they do
+  reach MN9 (above). The water rate is the kit's hand-built choice, as before; it was not raised to make
+  either fly drink.
 
 ---
 
@@ -394,6 +447,23 @@ silenced, and the "a few descending neurons flicker, nothing seizes" window is a
 of a mV wide. The kit implements the cheap Poisson-kick variant (`noise_hz`, `noise_mv`), off in
 every profile; `--noise HZ:MV` switches it on for anyone who wants to look.
 
+A kick goes into the synaptic input `g`, not the membrane, so a kick of 1 "mV" lifts `v` by at most
+0.16 mV, 9 ms later (`tau_m` 20 ms, `tau_s` 5 ms; the threshold is 7 mV above rest). What the kicks do
+on the kit (v2.8.1; male fly, game profile, no stimulus, seed 0, 1.5 s counted in three 0.5 s windows):
+
+| `--noise` | parts list | events/s in the three windows | neurons that fired |
+|---|---|---|---|
+| 2:1, 2:10 | off | 0, 0, 0 | 0 |
+| 2:15 | off | 24, 20, 20 | 32 |
+| 5:15 | off | 690, 580, 868 | 1,025 |
+| 2:20 | off | 500, 9,130, 62,516: runs away | 4,504 |
+| 2:0.3 | on | 0, 0, 0 | 0 |
+| 2:1 | on | 414, 27,274, 135,634: runs away | 12,067 |
+
+With the parts list on, the graded cells release in proportion to their depolarisation, so kicks
+that fire no neuron with it off start a runaway in them: at 2:1, 412 of the first window's 414
+events/s are graded quanta, and 107,034 of the third window's 135,634.
+
 ### 3.5 What still rings
 
 With the ALLNs silenced, an odour no longer runs away in the antennal lobe (0-6 spikes/s there
@@ -435,10 +505,12 @@ narrowed to the VS cells; the counts above are the final ones.
 
 In the game, 20 s in a quiet arena with the walking urge on (drawn body, parts list on, v2.8 final),
 all five male seeds enter a growing high state: seeds 3 and 4 within 1-2 s, seeds 0-2 after 11-13 s,
-with 2-10 escape jumps per run. The game's watchdog does not fire, because with the senses active
+with 2-10 escape jumps per run under v2.8.0's jump rule (3, 2, 3, 5 and 10; with v2.8.1's burst rule,
+section 5.7: 1, 0, 0, 1 and 2). The game's watchdog does not fire, because with the senses active
 it needs 4 s continuously above 150,000 events/s. The female is quieter: three of five seeds stay
 at rest for the whole 20 s, and seeds 2 and 4 enter a slowly growing state after 8-10 s (up to
-51,000-63,000 events/s by 20 s, mostly graded; both groom, and seed 4 makes 2 escape jumps).
+51,000-63,000 events/s by 20 s, mostly graded; both groom, and seed 4 made 2 escape jumps under
+v2.8.0's rule and makes none under the burst rule).
 
 ---
 
@@ -661,12 +733,36 @@ direct PN input; MBON31 41 %, mostly lateral horn; MBON20 26 %; MBON26 20 %; MBO
 and MBON09 89 %). The on-screen "approach MBONs" bar is `MBON11,MBON12,MBON14,MBON09` and the
 "avoidance MBONs" bar `MBON01,MBON02,MBON05,MBON06,MBON07`, all KC-dominated.
 
+The same test in the game (v2.8.1; the README quotes this one): `build_brain(conn, "game")` as
+shipped (kenyon_gain 1.0, dopamine neurons' fast synapses muted), parts list off and on, plasticity
+paused so the scales stay where they are set; the connections of the Kenyon cells that MIX (80 Hz)
+activates on any of seeds 0-4 (355 cells with the parts list off, 664 with it on) onto the 21
+PPL1-paired types of section 4.4 scaled by 0.5 or 0; unpaired odours the game's banana
+(`ORN_DM2,ORN_DM3,ORN_VM2,ORN_DC2,ORN_VA6`), yeast (`ORN_DM5,ORN_VC1,ORN_VA1v,ORN_DL1,ORN_VM5d`)
+and MIX2 of section 4.3, each at 80 Hz, none sharing a glomerulus with MIX; `experiments.run_experiment`,
+mean of seeds 0-4 (range over the seeds in brackets). Scaling every Kenyon cell's connections instead
+gives the same MIX numbers.
+
+| MBON | MIX before → ×0.5 → ×0 | banana / yeast / MIX2, before → ×0.5 |
+|---|---|---|
+| MBON14, parts list off | 38.0 (35.5-40) → 6.0 (5-6.5) → 0 | 0 → 0 / 0 → 0 / 1.4 → 0.6 |
+| MBON11, parts list off | 1.6 (0-3) → 0 → 0 | 0 → 0 / 0.2 → 0 / 0 → 0 |
+| MBON14, parts list on | 43.1 (41.5-45) → 4.1 (3-5) → 0 | 0 → 0 / 0 → 0 / 1.8 → 0.9 |
+| MBON11, parts list on | 38.6 (31-48) → 0 → 0 | 0 → 0 / 0 → 0 / 0 → 0 |
+
+MBON11's 31 Hz above came from the dopamine neurons' fast synapses, which the game mutes: in
+probe-game at kenyon_gain 0.75 (seeds 0-4) MBON11 answers MIX with 27.8 Hz, and 0.8 Hz once
+`class:DAN` is silenced too, while MBON14 stays at 26 Hz. In the game APL's inhibition then leaves
+MBON11 at 1-2 Hz unless the parts list is on (section 8.2). The unpaired control is weak here: the
+game's other odours hardly reach these MBONs in the first place (MIX2, which shares a few Kenyon
+cells with MIX, loses half of its 1-2 Hz).
+
 ### 4.7 The learning rule as implemented (`plasticity.py`)
 
 Everything structural is read from the wiring: the plastic synapses are every KC→MBON connection
-(one scale factor per connection), and the dopamine reaching an MBON is the synapse-weighted mean
-rate of the DANs that synapse directly onto it (table 4.4). Only the rule's constants are
-hand-chosen:
+(one scale factor per connection, i.e. per neuron pair: 33,496 connections carrying 402,850 synapses
+in MaleCNS), and the dopamine reaching an MBON is the synapse-weighted mean rate of the DANs that
+synapse directly onto it (table 4.4). Only the rule's constants are hand-chosen:
 
 | constant | value | meaning | basis |
 |---|---|---|---|
@@ -938,11 +1034,31 @@ and `DNb03` with `DNa02` silent. This is the pathway the game uses (section 5.7)
   because T4/T5 do not reach LC10a at all and reach LPLC2 too weakly for a reliable escape. The
   probe's LC4-input injection (T2, TmY3, Tm4 per column) was not adopted: LC4 has no direction
   selectivity, so it would fire for any large change in the image.
-* **Escape.** The game starts a jump on the first giant-fibre spike that reaches the body. With
-  the feature detectors gated at 60 °/s this is selective in practice; the probe's caveat stands
-  that a rate threshold (e.g. DNp01 ≥ 60 Hz over 50 ms) would be needed if looming were ever read
-  from the columns alone, where the wide-field flash of a large object gives DNp01 45-95 Hz and a
-  radius-3 patch 6.7 Hz.
+* **Escape.** The game starts a jump when the giant fibre fires a burst: at least 5 live DNp01 spikes
+  over the last two ticks, which is 50 Hz in each of the two cells over 50 ms (`GF_BURST`, hand-built,
+  v2.8.1). In real flies a giant-fibre spike forces the fast take-off, and the cell has a high
+  activation threshold (von Reyn et al. 2014). The model's cells do not: leg proprioception, which
+  fires while the fly walks, makes the two fire together now and then. Up to v2.8.0 a jump started on
+  2 spikes in one 25 ms tick, so a fly walking in an empty dish jumped about once a minute with nothing
+  in sight. In 30 min of walking (ten 180 s runs: seeds 3-7 with this rule, and v2.8.0 runs with the
+  jump switched off) the pair never gave more than 4 spikes in two ticks, while a clap peaks at 5-9
+  and a fast looming hand at 14-30. Headless game, game profile, drawn body, walking urge on, seeds
+  0-2, load 1-2 on 4 cores:
+
+  | | 2 spikes in one tick (v2.8.0) | 5 over two ticks (v2.8.1) |
+  |---|---|---|
+  | male, empty dish, 180 s | 6, 5 and 2 jumps (1.4 a minute) | 0, 0 and 0 |
+  | male, 10 claps 3 s apart | 10, 10 and 10 of 10, 25-50 ms after the clap | 10, 10 and 10 of 10, 50 ms after |
+  | male, the escape scenario | swoops 1 and 2 (fast) make it jump, swoop 3 (slow) does not | the same, at the same moments |
+  | male, DNp01 zapped for 2 s at 150 / 80 / 60 Hz | a jump within 25 ms | within 25-50 ms |
+  | male, DNp01 zapped at 30 Hz | within 25-150 ms | within 75-625 ms |
+  | female, empty dish | 0 | 0 |
+  | female, 10 claps | 0, 2 and 1 of 10 | 0, 0 and 0 (her clap gives at most 3 spikes in two ticks) |
+  | female, swoops and zaps | as the male | as the male (at 30 Hz within 125-925 ms) |
+
+  With a 5-spike threshold the slow third swoop stays below it, and so would a radius-3 patch read from
+  the columns alone (DNp01 6.7 Hz); the wide-field flash of a large object (45-95 Hz, section 5.4)
+  would not.
 
 ---
 
@@ -1088,12 +1204,24 @@ feed = n(MN9/50);  groom = n(max(DNg62, DNge078)/100);  song = n(pIP10/40);  cou
 
 (`n(x)` clips to 0..1; each drive is low-pass filtered with a 0.1-0.4 s time constant.) A
 behaviour wins when its drive exceeds a threshold (backward 0.25, feed 0.3, groom 0.35) and keeps
-going until it falls to half; the giant fibre overrides everything. The body is a kinematic
+going until it falls to half; a giant-fibre burst (section 5.7) overrides everything. The body is a kinematic
 model: 14 mm/s at full forward drive, 8 mm/s backward, 300 °/s turn rate, a 22 mm hop in 0.16 s,
 with short inertia. At start-up the decoder also measures, from the wiring, how many synapses
 each of its DNs sends to leg, wing, neck and abdominal motor neurons within two hops, and shows
 that on screen as the reason a DN is read as "forward" or "turn". The weights above are not
 measured from anything.
+
+**Feeding comes in bouts.** Headless game, game profile, walking urge off, hunger 0.7, sugar dropped
+at the mouth, 25 s, seeds 0-2: MN9 fires 28-45 Hz in the first second and about 22 Hz by 2 s, because
+the profile's fatigue (0.05 mV per spike, fading over 2 s; section 1.5) tires it under steady sugar.
+When the feed drive falls below half its threshold (MN9 about 7.5 Hz) the proboscis goes in, and the
+throat's sugar cells (`PhG1a-c`), which the mouth drives only while the proboscis is out
+(`senses/taste.py`), stop. Labellar and leg sugar alone then give the tired MN9 0-7 Hz, under the
+15 Hz a bout needs to start. So the first bout lasts 2.0-2.8 s and the fly stands on the drop; on two
+seeds of three it started again 3-6 s later, for 0.1-1.6 s at a time (hunger 0.70 → 0.41-0.45 in
+25 s). With fatigue off (`--fatigue 0`), seed 0 eats in one bout of 7.1 s until the drop is gone (MN9
+41-69 Hz, hunger → 0.23). While the fly tastes sugar and does not eat, the Why panel says "tastes
+sugar, but MN9 fires too little to feed".
 
 ---
 
@@ -1164,8 +1292,8 @@ would ship as a separate profile judged by the validated experiments.
 ### 6.7 An optional physics body: NeuroMechFly v2 (v2.8)
 
 `--body physics` swaps the drawn body for NeuroMechFly v2 (Wang-Chen et al. 2024) in MuJoCo, through
-the `flygym` package (`virtual_fly/physics.py`; `pip install -e ".[physics]"`, then
-`pip install --no-deps flygym==1.2.1`). The decoder is
+the `flygym` package (`virtual_fly/physics.py`; Python 3.10-3.12, installed as at the end of this
+section). The decoder is
 unchanged; its drives become flygym's two-sided descending signal, one stepping amplitude per body
 side (sign = stepping direction), with flygym's published steering constants: the inner side
 x (1 - 0.6|s|), the outer side x (1 + 0.2|s|). These are the two steering gestures Yang et al. (2024)
@@ -1217,11 +1345,29 @@ the default. The physics body's own wall contact never fired in these runs: the 
 use the drawn geometry, fire first, so the fly turns or backs away before its head touches.
 
 Hand-built, still: the decoder's weights, the forward term of the drive, the stride averaging, and the
-proboscis, wings and abdomen (drawn; the model has no joints there). Not modelled: the escape jump.
+proboscis, wings and abdomen (drawn; the model has no joints there). Not modelled: the escape jump. A
+giant-fibre burst (section 5.7) still wins for one tick, with the legs standing, and the game says
+"escape command" instead of "escape jump". With this body, walking alone set off v2.8.0's one-tick rule
+6 times in 60 s (seed 0, walking urge on, empty dish) and sets off the burst rule none, while 10 of 10
+claps and DNp01 zaps at 30-150 Hz still give the escape command.
 Cost: about a tenth of real time, about 0.45 GB more memory and about 680 MB of dependencies. No OpenGL
 is needed (MUJOCO_GL=disable); rendering video needs EGL, OSMesa or a display. The drawn body is
 unchanged and bit-identical with or without flygym installed. The physics body runs on the female fly
 too (section 9.5).
+
+Install. The physics body needs Python 3.10-3.12: flygym 1.2.1 requires Python below 3.13, dm_tree 0.1.8
+and labmaze (which dm_control needs) have no wheels for 3.13, and mujoco 3.2.7 has none for 3.14. In the
+kit's folder, with its virtual environment active (README, Setup, step 3; `python --version` must say
+3.10-3.12, else make the environment again with such a Python, e.g. `python3.12 -m venv --clear .venv`):
+
+```
+python -m pip install -e ".[physics]"            # the kit, MuJoCo, dm_control, numba and the rest
+python -m pip install --no-deps flygym==1.2.1
+```
+
+flygym goes in without its dependencies because its own list pins numba 0.60 and pulls in Jupyter; it
+imports numba all the same, so the `physics` extra includes numba (0.67 works). When the body cannot
+start, `--body physics` prints these steps and the import that failed.
 
 ## 7. The genome as a wiring recipe (v2.3)
 
@@ -1238,13 +1384,21 @@ together) is decided connection by connection with the pair's probability, a spa
 sampled, synapse counts come from the pair's distribution, and duplicates merge. A grown fly has
 the same number of connections and synapses (6.26 M / 91 M against 6.29 M / 90 M) and shares
 36 % of its individual connections with the real one; the rest are new neuron-to-neuron pairings
-of the same types. **The bottleneck** approximates the rule matrix at rank K with a randomized SVD
-(each group gets a K-number output code and a K-number input code; a rule is their product),
-re-thresholded to the original number of rules and rescaled to the original number of connections.
+of the same types. No grown connection has fewer synapses than the source's smallest: 5 in MaleCNS,
+whose file keeps connections of 5 or more, and 1 in FlyWire, which keeps them all. (Until v2.8.1 the
+floor was 5 for both flies, and the female grown from her type rules, seed 1, had 98.1 M synapses
+against her 54.5 M; with her own floor the same 15.0 M connections carry 56.5 M, and her class-rule
+fly 48.1 M instead of 86.9 M. The male's grown flies are bit-identical.) **The bottleneck**
+approximates the rule matrix at rank K with a randomized SVD (each group gets a K-number output code
+and a K-number input code; a rule is their product), re-thresholded to the original number of rules
+and rescaled to the original number of connections. K runs from 1 to 2048: from about K = 110 the
+codes hold more numbers than the rule table they compress, and the SVD's memory grows with K
+(K = 2049 took 12 minutes and 2.5 GB).
 **Class rules** use only superclass:class and side (125 groups, 2,665 rules).
 
 **What survives** (game profile; each grown fly tested with all eleven validated experiments;
-`fly-brain --genome-sweep`):
+`fly-brain --profile game --genome-sweep`; the default pure profile runs only the six classic experiments,
+and says which it skipped):
 
 | experiment | real | type, seed 1 | type, seed 2 | bottleneck 256 | bottleneck 64 | bottleneck 16 | class |
 |---|---|---|---|---|---|---|---|
@@ -1306,7 +1460,8 @@ dopaminergic, 165 octopaminergic and 415 serotonergic neurons of MaleCNS therefo
 a fast synaptic potential, yet the published model, and the game profile for octopamine and
 serotonin, treat them as ordinary excitatory neurons (the game profile already muted the
 dopamine neurons' fast synapses by hand, section 4). With the parts list on, all 979 lose their
-fast synapses (79,183 connections onto 30,157 targets) and each spike instead adds to a *tone*
+fast synapses (79,183 connections onto 30,157 targets; since v2.5 the literature's transmitters
+change these numbers, section 8.1) and each spike instead adds to a *tone*
 on its targets: one unit per ten synapses, decaying with a time constant of 0.5 s (dopamine;
 Cohn, Morantte & Ruta 2015 see dopamine transients of about a second in the mushroom body),
 1 s (octopamine) or 2 s (serotonin). The tone scales the target's synaptic input,
@@ -1431,9 +1586,10 @@ class carries yet (`TmY9a`, `Tm38`, `MeTu3c`, most `SNta`/`SNpp` sensory groups,
 subtypes) and the 11,916 untyped neurons.
 
 What the join gives: a selector, `fbbt:<class>`, that takes the ontology's `is_a` closure, so
-`fbbt:lobula columnar neuron` is every LC type the kit has (3,652 neurons), `fbbt:adult descending
-neuron` every DN (1,221), `fbbt:dopaminergic neuron` every cell the ontology calls dopaminergic
-(1,577), `fbbt:adult Kenyon cell` all 3,528 Kenyon cells, composable with everything else
+`fbbt:lobula columnar neuron` is every LC type the kit has (4,060 neurons), `fbbt:adult descending
+neuron` every DN (1,242), `fbbt:dopaminergic neuron` every cell the ontology calls dopaminergic
+(1,601), `fbbt:adult Kenyon cell` all 4,064 Kenyon cells (the MaleCNS connectome with the shipped
+`data/fbbt_map.json.gz`, harvest included; `fly-brain --info "fbbt:..."`), composable with everything else
 (`fbbt:adult descending neuron&nt:gaba`); an ontology search in the Neuron lab; and, in a neuron's
 popover, what its type *is*: the class and its definition, the anatomical parent chain (each parent
 a click away as a population), the lineage, the peptides the class is known to express, the
@@ -1465,6 +1621,12 @@ rules):
 | under `curated="all"` only: 16 more "unclear" types whose only class is another connectome's type, predicted dopaminergic or serotonergic there (SMP143, ATL043, AVLP594, ...) | 30 | a tone (that data set's prediction, not the literature's) |
 | under `curated="all"` only: 151 "unclear" types with another connectome's fast-transmitter prediction | 476 | the sign of their fast synapses |
 
+In all (MaleCNS, `PartsList(curated=...).compile(conn).counts`), the default policy gives 2,146 neurons
+a tone on 38,998 targets, the count the Genome card and `fly-brain --profile game --parts` print: 976 of
+them lose their fast synapses, and 1,170 (Mi15's 1,151 and 19 others) also release a fast transmitter
+and keep them. `curated="off"` gives the connectome's own 979, none of which keeps its fast synapses (30,157
+targets), and `curated="all"` 2,176, of which 1,162 keep them (39,702 targets).
+
 Tyramine has no place in the model and is ignored. PPL203 is one of the game profile's `class:DAN`
 neurons, whose fast synapses the game mutes by hand when the parts list is off; with the parts list on
 it keeps the GABA synapses the literature gives it. What the default policy does *not* do is flip the
@@ -1472,7 +1634,7 @@ sign of a confident fast prediction: the literature classes disagree with MaleCN
 transmitter of 25 types (5,892 neurons) (T3, L3, Mi2, Mi10, Tm39, ...), and where two data sets disagree on a
 fast transmitter the model has no way to pick. `curated="all"` lets the literature win there too (the
 signs flip, and the three modulatory types above lose their predicted fast synapses) for anyone who
-wants to see what that does (`fly-brain --curated all`); the popover shows the disagreement either
+wants to see what that does (`fly-brain --profile game --curated all`); the popover shows the disagreement either
 way. Classes that are another connectome's type only fill "unclear" predictions, and only under
 `all` (the survival table below shows why), and coarse matches (a `_a` type read as its stem's
 class, or a class read off one VFB individual) are never used for the model at all.
@@ -1639,7 +1801,7 @@ point neurons inhibiting each other. The real pair is also coupled by heterotypi
 (Wu et al. 2011), which the model does not have. One more limit: without receptor signs every tone
 raises the gain, which on top of local release drives the vinegar readouts past their ceilings on
 some seeds.
-`fly-brain --parts --global-apl` (or `PartsList(local=())`) gives the v2.5 behaviour of APL back
+`fly-brain --profile game --parts --global-apl` (or `PartsList(local=())`) gives the v2.5 behaviour of APL back
 with everything else unchanged.
 
 **Where APL's synapses really are (v2.8).** The kit's connectome holds one synapse count per pair of
@@ -1733,7 +1895,7 @@ all five seeds); APL's local release, the receptor facts and the graded cells do
 
 **The rule since v2.8: no receptor evidence, no modelled effect.** A tone changes a target's gain only
 through receptors the kit has data for: an adult atlas cluster (section 8.1) or a receptor fact. A target
-with neither feels no tone (`PartsList(unknown_sign=0.0)`; `fly-brain --one-sign-rule` gives the v2.7
+with neither feels no tone (`PartsList(unknown_sign=0.0)`; `fly-brain --profile game --one-sign-rule` gives the v2.7
 rule back). One measured effect needed a new kind of fact, because its receptor was never identified:
 octopamine raises the VS cells' responses to motion (Suver et al. 2012 recorded VS cells in flight),
 the effect the octopamine tone's size was set from. `RECEPTOR_FACTS` carries it as a measured sign for
@@ -1915,7 +2077,8 @@ the parquet file needs `pyarrow` (`pip install -e ".[female]"`).
   serotonergic that are not. It labels 5,172 of her 5,177 Kenyon cells dopaminergic (every γ, α/β and
   α′/β′ type; 4,652 of them with confidence 0.5 or more), and several
   olfactory receptor types serotonergic. Taken as they are, these labels would make 6,754 female
-  neurons slow modulators with their fast synapses removed (male: 2,146), and the Kenyon cells
+  neurons slow modulators with their fast synapses removed (the male has 2,146 modulators, 976 of them
+  without fast synapses, section 8.1), and the Kenyon cells
   would no longer drive the mushroom body. Two rules restore parity. A prediction below 0.5
   confidence is labelled "unclear", as in the male file (the sign stays the prediction's, so the
   label rule changes no sign; only the parts list reads the label). And FlyWire's literature column
@@ -1971,6 +2134,7 @@ something else, `flywire.ALIASES` maps the name, and the table is stored in the 
 | `LB3b`, `LB3c` (sugar) | the 20 sugar cells of the published model | FlyWire types all 122 labellar sugar and water cells as `LB3`; the published model's list is one side |
 | `LB1a`, `LB1d` | `LB1a,LB1d` | one FlyWire type |
 | `LB2a`, `LB2b` | `LB2a-b` | one FlyWire type |
+| `LB3a` (water, section 2.2) | the 18 water cells of the published model | FlyWire types all labellar sugar and water cells as `LB3`; the published model's water list (17 of them LB3, one LB2d) is the female's water population (v2.8.1, file build 6) |
 | `prefix:pC1_` | `prefix:pC1` (pC1a-e, 10 cells) | the doublesex pC1 cluster; the male's 148 `pC1_` cells include the male-specific P1 |
 | `R1-R6`, `prefix:R1-R6` | `R1-6` | the outer photoreceptors (8,452 cells), graded in the parts list |
 | `prefix:KCa'b'` | `prefix:KCa'b',prefix:KCapbp` (917 cells) | the α′/β′ Kenyon cells, one of APL's local-release groups |
@@ -2006,12 +2170,19 @@ validated results, so on the female they are a comparison, not a test:
 | wide-field motion (game) | HS / DNp15 / DNa02 R / DNa02 L | 442 / 180 / 158 / 0 | 348 / 162 / 87 / 44 | ... / 0-20 |
 | courtship command (game) | DNp13 | 31.5 | 0.0 | 5-90 |
 | sugar, fru silenced (game) | MN9 | 34.5 | 80.8 | 15-60 |
+| head bristles at 100 Hz, 200 ms (game; the game's touch) | MDN / aDN1 / aDN2 | 64.8 / 114.5 / 50.5 | **0.0** / 86.0 / 15.5 | not an experiment |
 
 The published model's headline results come out on the female: sugar drives MN9, bitter keeps
 it silent, and bitter wins over sugar (pure profile). The antennal grooming route works too with the
 published model's own protocol (its 145 Johnston's-organ cells on one side at 220 Hz): its aDN1 fires
 at 34 Hz. The kit's "dust" stimulus drives both antennae, and in FlyWire the two sides cancel (one
 side alone: aDN1 22 Hz on one side; both: 6 Hz).
+
+Her head bristles (`BM_InOm`, the game's touch at a wall or a post) reach the grooming neuron aDN1 but
+not MDN, on every seed. The male's strongest routes to MDN run through the ascending neurons AN09B009
+and AN17A026 (1,337 and 54 synapses); in her file the best one, through CB0191, carries 0.4-0.6 % of
+MDN's input. So at a wall she grooms instead of backing up, and the game hides the "bump a wall"
+checklist item for her, as it hides "dust it" and "clap"; its "What's real here?" says why.
 
 Most of the differences are not yet sex differences. The two datasets were reconstructed and their
 synapses detected differently: the median neuron has 200 input synapses in FlyWire, all
@@ -2383,6 +2554,8 @@ The starter kit's list, extended. These are the things a neuroscientist would po
   melanogaster*. *Journal of Comparative Physiology A* 157:263-277. doi:10.1007/BF01350033
 * Turner GC, Bazhenov M, Laurent G (2008). Olfactory representations by *Drosophila* mushroom body
   neurons. *Journal of Neurophysiology* 99(2):734-746. doi:10.1152/jn.01283.2007
+* von Reyn CR, Breads P, Peek MY, Zheng GZ, Williamson WR, Yee AL, Leonardo A, Card GM (2014). A
+  spike-timing mechanism for action selection. *Nature Neuroscience* 17(7):962-970. doi:10.1038/nn.3741
 * Wang F, Wang K, Forknall N, Parekh R, Dickson BJ (2020). Circuit and behavioral mechanisms of
   sexual rejection by *Drosophila* females. *Current Biology* 30(19):3749-3760.e3.
   doi:10.1016/j.cub.2020.07.083

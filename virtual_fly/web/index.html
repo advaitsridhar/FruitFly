@@ -35,7 +35,7 @@
       <button class="tool" data-tool="dust" title="Click near the fly to puff dust at its antennae">💨 Dust</button>
       <button class="tool" data-tool="shock" title="Electric shock: punishment dopamine (PPL1) pairs with whatever it smells">⚡ Shock</button>
       <button class="tool" data-tool="post" title="Click to plant a post the fly can bump into and see">🪵 Post</button>
-      <button class="tool act" id="clapBtn" title="A loud sound: Johnston's organ A/B neurons reach the giant fibre, so a clap can startle it into a jump">👏 Clap <span class="k">C</span></button>
+      <button class="tool act" id="clapBtn" title="A loud sound: Johnston's organ B neurons reach the giant fibre, so a clap can startle it into a jump (the physics body cannot jump)">👏 Clap <span class="k">C</span></button>
       <span class="sep"></span>
       <span class="odours" id="odourTools"></span>
       <span class="odourfood" id="odourFood" hidden>
@@ -61,7 +61,7 @@
           <button data-what="obstacles">posts</button>
         </div>
       </span>
-      <button class="btn" id="resetBtn" title="New fly, fresh brain (learned synapses are kept)">New fly</button>
+      <button class="btn" id="resetBtn" title="New fly, fresh brain (learned synapses and the checklist are kept)">New fly</button>
       <button class="btn" id="zoomBtn" title="Zoom the dish: the mouse wheel over it, this button, or + and −; above 1× the view follows the fly">🔍 1×</button>
       <span class="sep"></span>
       <label class="slider" title="Time scale of the simulation">speed <input type="range" id="speed" min="0.25" max="2" step="0.05" value="1"> <b id="speedVal">1.00×</b></label>
@@ -217,7 +217,7 @@
 
     <div class="card" id="genomeCard">
       <h2><span>Genome</span><span class="tag">wiring rules</span></h2>
-      <div class="feedback">A genome cannot list 90 million synapses; it holds rules. Grow a new fly from this connectome's cell-type wiring rules alone (the same neurons, wired afresh at random within the rules) and see which reflexes survive. Squeeze the rules through a bottleneck to see how much specificity they need.</div>
+      <div class="feedback">A genome cannot list <span id="genomeSyn">90 million</span> synapses; it holds rules. Grow a new fly from this connectome's cell-type wiring rules alone (the same neurons, wired afresh at random within the rules) and see which reflexes survive. Squeeze the rules through a bottleneck to see how much specificity they need.</div>
       <div class="row wrap" style="margin-top:6px">
         <label class="slider">wiring <select id="genomeLevel"></select></label>
         <label class="slider">seed <input type="number" id="genomeSeed" value="1" min="0" max="9999" style="width:64px"></label>

@@ -88,6 +88,15 @@ def test_select_body_and_index(conn):
     assert conn.select(f"index:{i}").tolist() == [i]
     assert conn.select(f"body:{conn.body_id[i]}").tolist() == [i]
     assert conn.select("body:1").size == 0
+    for spec, message in (("body:abc", "body: needs a neuron's id"), ("body:", "body: needs"), ("body:12.5", "body: needs"),
+                          ("index:x", "index: needs a neuron's number"), ("hex:12", "hex: needs two medulla column numbers"),
+                          ("hex:1:2:3", "hex: needs"), (f"index:{conn.n}", f"out of range: this fly's neurons are numbered 0 to {conn.n - 1:,}"),
+                          ("index:-1", "out of range")):                  # not int()'s words, nor numpy's wrap-around
+        with pytest.raises(ValueError, match=message):
+            conn.select(spec)
+    with pytest.raises(ValueError, match="not a regular expression"):   # re.error becomes a ValueError too
+        conn.select("regex:[")
+    assert conn.count("regex:[") == 0
 
 
 def test_select_accepts_arrays_and_iterables(conn):
@@ -138,6 +147,13 @@ def test_find_types_and_type_counts(conn):
     assert "" not in counts
     assert sum(counts.values()) == int((conn.types != "").sum()) == conn.n - 20
     assert counts["KCg-m"] == 40 and counts["MN9"] == 2
+
+
+def test_find_types_lists_the_aliases(conn):
+    c = conn.rewired(conn.row_ptr, conn.post_idx, conn.n_syn, label="aliased")
+    c.aliases = {"MN9x": "MN9", "prefix:MN9y": "MN9", "MN9": "GNG232", "NOPEx": "NOPE"}
+    assert c.find_types("mn9") == [("MN9", 2), ("MN9x", 2)]       # a real type wins; spec aliases and empty ones are left out
+    assert c.find_types("9x") == [("MN9x", 2)] and conn.find_types("mn9") == [("MN9", 2)]
 
 
 def test_describe_and_info(conn):
@@ -225,3 +241,14 @@ def test_type_graph_nodes_and_edges(conn):
     assert np.array_equal(tg.nodes_of("LC10a"), np.array(sorted([tg.index["LC10a/L"], tg.index["LC10a/R"]])))
     assert tg.nodes_of("class:nothing").size == 0
     assert tg.row_ptr[-1] == tg.col_ptr[-1] == tg.src.size
+
+
+def test_command_names_the_program_the_way_it_was_started(monkeypatch):
+    from virtual_fly import connectome
+    monkeypatch.setattr(connectome, "INSTALLED", False)
+    monkeypatch.setattr("sys.argv", ["fly_brain.py"])
+    assert connectome.command("fly_game.py") == "python fly_game.py"
+    monkeypatch.setattr("sys.argv", ["/venv/bin/fly-brain"])
+    assert connectome.command("fly_brain.py") == "fly-brain"
+    monkeypatch.setattr(connectome, "INSTALLED", True)
+    assert connectome.command("fly_game.py") == "fly-game"

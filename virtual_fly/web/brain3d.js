@@ -46,6 +46,7 @@ export class BrainView {
     this.path = null; this.picked = -1; this.onPick = null;
     this.dpr = window.devicePixelRatio || 1;
     this.nowSec = 0;
+    this.hasCord = L.region.includes(L.regions.indexOf("nerve cord"));   // the female fly is a brain without one
     this._buildArrays();
     this.gl = null;
     this.lost = false; this.glDead = false; this.lostAt = 0; this.losses = [];
@@ -295,7 +296,7 @@ export class BrainView {
     c.clearRect(0, 0, this.cssW, this.cssH);
     if (!need) return;
     c.fillStyle = "rgba(231,237,244,.5)"; c.font = "10.5px system-ui";
-    c.fillText("brain", 6, 14); c.fillText("nerve cord", 6, this.cssH * 0.66);
+    c.fillText("brain", 6, 14); if (this.hasCord) c.fillText("nerve cord", 6, this.cssH * 0.66);
     if (this.mode3d && this.gl) { c.fillStyle = "rgba(139,152,169,.7)"; c.fillText(`yaw ${Math.round(((this.yaw * 180 / Math.PI) % 360 + 360) % 360)}°`, 6, this.cssH - 8); }
     if (this.gl && this.lost) {                          // say so, instead of a silent dark box
       const secs = (performance.now() - this.lostAt) / 1000;

@@ -19,9 +19,9 @@ let toolOrder = ["lure", "hand", "sugar", "bitter", "water", "dust", "shock", "p
 const HINTS = {
   lure: "Wiggle the lure slowly beside the fly: it turns toward small moving things (a courtship-chase circuit).",
   hand: "Swoop the hand straight at the fly, fast. A slow hand doesn't scare it.",
-  sugar: "Click just in front of the fly's head to drop sugar. A hungry fly eats more eagerly.",
+  sugar: "Click just in front of the fly's head to drop sugar. A hungry fly eats more eagerly, in bouts of a few seconds.",
   bitter: "Click to drop bitter food. Try it right next to sugar.",
-  water: "Click to drop water: a thirsty fly drinks it.",
+  water: "Click to drop water: a thirsty fly tastes it, but in this model its water cells do not reach MN9, so it does not drink.",
   dust: "Click near the fly to puff dust at its antennae.",
   shock: "Click anywhere: an electric shock drives the PPL1 punishment dopamine neurons and pairs with whatever it smells now.",
   post: "Click to plant a post. The fly can see it and bump into it.",
@@ -40,7 +40,9 @@ async function loadLayout() {
   retina = new RetinaView($("retina"), L.retina || {});
   brain = new BrainView($("brain"), $("brainOverlay"), L);
   setText($("brainCount"), `${brain.m.toLocaleString()} somas`);
-  $("legend").innerHTML = L.regions.map((r, i) => `<span><i style="background:${REGION_COLORS[i]}"></i>${esc(r)}</span>`).join("");
+  const has = new Set(L.region);                     // only the regions this fly has (the female fly has no nerve cord)
+  $("legend").innerHTML = L.regions.map((r, i) => has.has(i) ? `<span><i style="background:${REGION_COLORS[i]}"></i>${esc(r)}</span>` : "").join("");
+  setText($("genomeSyn"), `${Math.round(L.synapses / 1e6)} million`);
   wireBrain();
   panels.why = new P.WhyPanel(L);
   panels.keys = new P.KeyNeurons(L);
@@ -160,11 +162,17 @@ function syncControls(s) {
   }
   if (w && !windDrag && !held("wind")) { wind.angle = w.angle; wind.speed = w.speed; const ws = $("windSpeed"); if (Math.abs(parseFloat(ws.value) - w.speed) > 0.5) ws.value = w.speed; drawWindDial(); setText($("windVal"), w.speed > 0 ? `${Math.round(w.speed)} mm/s` : "off"); }
 }
-let slowSince = 0;
+let slowSince = 0, bodyNoted = false;
+const PHYSICS_PACE = "The physics body (NeuroMechFly's legs in MuJoCo) runs at about a tenth of real time, so the fly's world is in slow motion: that is the body's pace, not your computer's.";
 function slowHint(s) {
   if (s.paused || s.rtf >= 0.6) { slowSince = 0; if ($("hint").__slow) { $("hint").__slow = false; setText($("hint"), HINTS[tool] || ""); } return; }
   if (!slowSince) slowSince = performance.now();
-  if (performance.now() - slowSince > 3000) { $("hint").__slow = true; setText($("hint"), `Your computer is running the brain at ${fmt(s.rtf, 2)}× real time, so the fly's world is in slow motion to keep up. Closing other programs helps.`); }
+  if (performance.now() - slowSince <= 3000) return;
+  if (s.fly && s.fly.physics) {                     // expected with this body: said once, then the line is the tools' again
+    if (!bodyNoted) { bodyNoted = true; setText($("hint"), PHYSICS_PACE); $("stRtf").parentElement.title = PHYSICS_PACE; }
+    return;
+  }
+  $("hint").__slow = true; setText($("hint"), `Your computer is running the brain at ${fmt(s.rtf, 2)}× real time, so the fly's world is in slow motion to keep up. Closing other programs helps.`);
 }
 let toastText = "";
 function toast(msg) {
@@ -347,7 +355,7 @@ function wireBrain() {
     pop.querySelector(".close").onclick = () => { setShown(pop, false); brain.picked = -1; };
     const r = await getJSON(`api/neuron?index=${i}`);
     if (!r || !r.ok) { pop.querySelector(".feedback").textContent = (r && r.error) || "no answer"; return; }
-    const n = r.neuron, spec = n.side ? `${n.type}/${n.side}` : n.type;
+    const n = r.neuron, spec = !n.type ? `index:${n.index}` : n.side ? `${n.type}/${n.side}` : n.type;   // an unannotated cell by itself
     const list = (rows) => rows.slice(0, 4).map((p) => `<li><b>${esc(p.type)}${p.side ? "/" + p.side : ""}</b> <span class="${p.sign > 0 ? "pos" : "neg"}">${p.sign > 0 ? "+" : "−"}</span> ${p.synapses} syn · ${p.neurons} cell${p.neurons === 1 ? "" : "s"}</li>`).join("") || "<li>none</li>";
     pop.innerHTML = `<button class="close">✕</button>
       <h5>${esc(n.type || "(unannotated)")}${n.side ? " / " + esc(n.side) : ""} <small style="color:var(--muted)">#${n.index}</small></h5>

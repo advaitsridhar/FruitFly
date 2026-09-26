@@ -57,11 +57,11 @@ from pathlib import Path
 
 import numpy as np
 
-from .connectome import PROJECT_DIR
+from .connectome import DATA_DIR
 
-FEMALE_FILE = PROJECT_DIR / "data" / "flywire-v783.flyb.gz"
-BUILD = 5                             # bump when the builder changes what goes in the file: older files are rebuilt
-SOURCE_DIR = PROJECT_DIR / "data" / "flywire-src"
+FEMALE_FILE = DATA_DIR / "flywire-v783.flyb.gz"
+BUILD = 6                             # bump when the builder changes what goes in the file: older files are rebuilt
+SOURCE_DIR = DATA_DIR / "flywire-src"
 DATASET = "flywire:v783"
 MIN_SYNAPSES = 1                      # every connection, as the published model uses them
 
@@ -102,6 +102,14 @@ SHIU_SUGAR = (720575940624963786, 720575940630233916, 720575940637568838, 720575
               720575940632425919, 720575940633143833, 720575940612670570, 720575940628853239, 720575940629176663,
               720575940611875570)
 
+# The labellar water cells the published model drives (its "neu_water" list in figures.ipynb at the pinned commit):
+# 17 of FlyWire's LB3 and one LB2d. The MaleCNS type whose outputs match them is LB3a (docs/SCIENCE.md 2.2), so the
+# kit's water population takes these cells in the female fly.
+SHIU_WATER = (720575940612950568, 720575940631898285, 720575940606002609, 720575940612579053, 720575940622902535,
+              720575940616177458, 720575940660292225, 720575940622486922, 720575940613786774, 720575940629852866,
+              720575940625861168, 720575940613996959, 720575940617857694, 720575940644965399, 720575940625203504,
+              720575940630553415, 720575940635172191, 720575940634796536)
+
 # Names the kit uses (MaleCNS cell types) -> the same cells in FlyWire, with where the match comes from. A name that
 # is already a FlyWire type needs no entry. Stored in the female file, where Connectome.select() reads it.
 ALIASES = {
@@ -111,6 +119,7 @@ ALIASES = {
     "GNG087": ("CB0219", "FBbt_20004033 (VFB synonyms GNG087 and CB0219)"),
     "LB3b": ("sugar", "FlyWire does not split LB3; the published model's sugar cells (SHIU_SUGAR)"),
     "LB3c": ("sugar", "FlyWire does not split LB3; the published model's sugar cells (SHIU_SUGAR)"),
+    "LB3a": ("water", "FlyWire does not split LB3; the published model's water cells (SHIU_WATER)"),
     "LB1a": ("LB1a,LB1d", "FlyWire types LB1a and LB1d together"),
     "LB2a": ("LB2a-b", "FlyWire types LB2a and LB2b together"),
     "LB2b": ("LB2a-b", "FlyWire types LB2a and LB2b together"),
@@ -147,7 +156,11 @@ def download_sources(src_dir: Path | str = SOURCE_DIR, quiet: bool = False) -> d
                 with urllib.request.urlopen(s["url"], timeout=120) as r, open(tmp, "wb") as f:
                     while chunk := r.read(1 << 20):
                         f.write(chunk)
+            except KeyboardInterrupt:
+                tmp.unlink(missing_ok=True)
+                raise
             except OSError as e:
+                tmp.unlink(missing_ok=True)
                 raise SystemExit(f"\nCouldn't download {s['url']}: {e}\nYou can also download it in a browser "
                                  f"and put it at {path}")
             if _sha256(tmp) != s["sha256"]:
@@ -267,9 +280,10 @@ def known_transmitters(annotations: list[dict]) -> dict[str, dict]:
 
 
 def aliases(roots) -> dict[str, str]:
-    """``ALIASES`` as population specs for this build (the sugar cells as ``body:`` terms, those present)."""
-    sugar = ",".join(f"body:{r}" for r in SHIU_SUGAR if r in roots)
-    return {k: (sugar if v == "sugar" else v) for k, (v, _) in ALIASES.items()}
+    """``ALIASES`` as population specs for this build (the sugar and water cells as ``body:`` terms, those present)."""
+    cells = {name: ",".join(f"body:{r}" for r in ids if r in roots)
+             for name, ids in (("sugar", SHIU_SUGAR), ("water", SHIU_WATER))}
+    return {k: cells.get(v, v) for k, (v, _) in ALIASES.items()}
 
 
 def write_flyb(path: Path | str, rows: list[dict], pre_root, post_root, n_syn, meta: dict) -> Path:
@@ -316,8 +330,12 @@ def write_flyb(path: Path | str, rows: list[dict], pre_root, post_root, n_syn, m
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".part")
-    with gzip.open(tmp, "wb", compresslevel=6) as f:
-        f.write(b"".join(parts))
+    try:
+        with gzip.open(tmp, "wb", compresslevel=6) as f:
+            f.write(b"".join(parts))
+    except BaseException:                           # Ctrl+C or a full disk: leave no half-written file behind
+        tmp.unlink(missing_ok=True)
+        raise
     tmp.replace(path)
     return path
 

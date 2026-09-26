@@ -2,12 +2,14 @@
 Start the game: ``python fly_game.py`` or ``python -m virtual_fly.play``.
 
     --port 9000          use another port
+    --host 0.0.0.0       let other computers on your network open the game (anyone on it can drive the fly)
     --no-browser         don't open a browser tab
     --profile pure       the paper's model exactly (expect runaway loops after bitter, dust and smells)
     --no-autopilot       start with the hand-built walking urge switched off
     --no-learning        start with mushroom-body plasticity switched off
     --no-columnar        don't drive the connectome's own T4/T5 motion-detector columns from the retina
-    --noise 2:1          background kicks per neuron per second : size in mV
+    --noise 5:15         background kicks per neuron per second : kick size (2:1 fires nothing; with --parts even
+                         2:1 runs away: docs/SCIENCE.md 3.4)
     --fast               brain time step 1 ms instead of 0.5 ms (about twice as fast; all six
                          classic experiments still pass)
     --parts              start with the genes as each neuron's parts list (the Genome card toggles it)
@@ -25,16 +27,35 @@ from .game import Game
 from .server import serve
 from .settings import PROFILES, build_brain
 
+
+def port_number(text: str) -> int:
+    port = int(text)
+    if not 1 <= port <= 65535:
+        raise argparse.ArgumentTypeError(f"{port} is not a port: use 1 to 65535")
+    return port
+
+
 def main(argv=None):
+    try:
+        _main(argv)
+    except KeyboardInterrupt:                    # Ctrl+C while the fly is built (the game itself says "Bye!")
+        raise SystemExit("\nStopped before the game started.")
+
+
+def _main(argv=None):
     ap = argparse.ArgumentParser(description="Play with a fly driven by a whole connectome (MaleCNS v1.0; FlyWire 783 with --female).",
                                  formatter_class=argparse.RawDescriptionHelpFormatter, epilog=__doc__)
-    ap.add_argument("--port", type=int, default=8765)
-    ap.add_argument("--host", default="127.0.0.1")
+    ap.add_argument("--port", type=port_number, default=8765, help="the first port to try (1-65535; the next 19 are tried too)")
+    ap.add_argument("--host", default="127.0.0.1",
+                    help="address to listen on: 127.0.0.1 (default) is this computer only; 0.0.0.0 lets other computers "
+                         "on your network open the game and drive the fly (there is no password)")
     ap.add_argument("--no-browser", action="store_true", help="don't open a browser tab automatically")
     ap.add_argument("--profile", choices=sorted(PROFILES), default="game")
     ap.add_argument("--pure", action="store_true", help="same as --profile pure")
     ap.add_argument("--fatigue", type=float, default=None, help="neuron fatigue in mV per spike (0 = off)")
-    ap.add_argument("--noise", metavar="HZ:MV", default=None, help="background kicks, e.g. 2:1.0 (0 = off)")
+    ap.add_argument("--noise", metavar="HZ:MV", default=None,
+                    help="background kicks per neuron, HZ:MV (off by default): with the parts list off 2:1 fires nothing and "
+                         "5:15 gives about 600-900 spikes/s; with --parts even 2:1 runs away (docs/SCIENCE.md 3.4)")
     ap.add_argument("--kenyon-gain", type=float, default=None)
     ap.add_argument("--no-autopilot", action="store_true", help="start with the hand-built walking urge switched off")
     ap.add_argument("--no-learning", action="store_true", help="switch mushroom-body plasticity off")
@@ -45,7 +66,7 @@ def main(argv=None):
     ap.add_argument("--backend", choices=("auto", "numpy", "numba"), default="auto",
                     help="brain integrator: the compiled numba kernels when numba is installed (auto), or plain NumPy")
     ap.add_argument("--grow", metavar="LEVEL", default=None,
-                    help="start with a fly grown from its wiring rules: type, class or bottleneck:K (the Genome card does the same)")
+                    help="start with a fly grown from its wiring rules: type, class or bottleneck:K, K = 1 to 2048 (the Genome card does the same)")
     ap.add_argument("--grow-seed", type=int, default=1, help="which individual to grow (any whole number)")
     ap.add_argument("--parts", action="store_true",
                     help="start with the parts list on: modulators as slow tones, graded optic-lobe cells (the Genome card toggles it)")
@@ -65,18 +86,23 @@ def main(argv=None):
                          "gaze stabilisation) instead of the stride-by-stride wobble")
     args = ap.parse_args(argv)
     if args.body == "physics":
-        from .physics import INSTALL_HINT, available
+        from .physics import available, unavailable_reason
         if not available():
-            raise SystemExit(INSTALL_HINT)
+            raise SystemExit(unavailable_reason())
 
     profile = "pure" if args.pure else args.profile
+    if args.stride_average and args.body != "physics":
+        ap.error("--stride-average only applies to the physics body: add --body physics")
     overrides = {"seed": args.seed, "dt": 1.0 if args.fast else args.dt, "backend": args.backend}
     if args.fatigue is not None:
         overrides["fatigue_mv"] = args.fatigue
     if args.kenyon_gain is not None:
         overrides["kenyon_gain"] = args.kenyon_gain
     if args.noise:
-        hz, mv = (float(x) for x in args.noise.split(":"))
+        try:
+            hz, mv = (float(x) for x in args.noise.split(":"))
+        except ValueError:
+            ap.error(f"--noise wants HZ:MV, e.g. 5:15 (got {args.noise!r})")
         overrides.update(noise_hz=hz, noise_mv=mv)
     from .parts import PartsList
     parts_list = PartsList(curated=args.curated or "modulators")
@@ -87,13 +113,19 @@ def main(argv=None):
     brain = build_brain(conn, profile, **overrides)
     if brain.backend == "numba":
         print("Brain integrator: compiled (numba).", file=sys.stderr)
+    elif args.backend == "numpy":
+        print("Brain integrator: NumPy (as asked with --backend numpy).", file=sys.stderr)
     else:
-        print("Brain integrator: NumPy. For a several-times faster brain: pip install numba", file=sys.stderr)
+        print("Brain integrator: NumPy. For a brain about twice as fast (same spikes): pip install numba", file=sys.stderr)
     if args.no_learning and brain.plasticity is not None:
         brain.plasticity.enabled = False
     if brain.parts is not None:
         c = brain.parts.counts
-        print(f"Parts list: on ({c['modulatory_neurons']:,} modulatory neurons, {c['graded_neurons']:,} graded cells).", file=sys.stderr)
+        print(f"Parts list: on ({c['modulatory_neurons']:,} modulatory neurons, {c['co_release_neurons']:,} of them also keeping "
+              f"their fast synapses; {c['graded_neurons']:,} graded cells).", file=sys.stderr)
+    if args.body == "physics":
+        print("Body: physics (NeuroMechFly v2 legs in MuJoCo; about a tenth of real time"
+              + ("; the senses see the pose averaged over a stride)." if args.stride_average else ")."), file=sys.stderr)
     game = Game(brain, autopilot=not args.no_autopilot, seed=args.seed, columnar=not args.no_columnar,
                 profile_name=profile, brain_factory=lambda c, **kw: build_brain(c, profile, **{**overrides, **kw}),
                 parts_list=parts_list, brain_kwargs={k: v for k, v in overrides.items() if k != "parts"}, body=args.body, stride_average=args.stride_average)

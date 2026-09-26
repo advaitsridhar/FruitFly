@@ -43,6 +43,7 @@ import numpy as np
 
 from . import genetics, vfb, wiring
 from . import parts as partslib
+from .connectome import command as _command
 
 from .pathways import relay_ranking, strongest_partners, trace
 
@@ -102,7 +103,10 @@ def make_handler(game):
                 if path == "/api/types":
                     text = get("q", "")
                     hits = conn.find_types(text, limit=int(get("limit", 50))) if text else []
-                    return self._json({"ok": True, "types": [{"type": t, "n": n} for t, n in hits]})
+                    known = set(conn.tables["types"])                   # an alias is marked with what it stands for
+                    return self._json({"ok": True, "types": [
+                        {"type": t, "n": n, **({"alias_of": conn.aliases[t]} if t in conn.aliases and t not in known else {})}
+                        for t, n in hits]})
                 if path == "/api/neuron":
                     if get("body"):
                         idx = conn.select(f"body:{int(get('body'))}")
@@ -290,19 +294,26 @@ def make_handler(game):
 
 
 def serve(game, port: int = 8765, open_browser: bool = True, host: str = "127.0.0.1"):
-    server = None
-    for p in range(port, port + 20):
+    server, err = None, None
+    last = min(port + 19, 65535)
+    for p in range(port, last + 1):
         try:
             server = ThreadingHTTPServer((host, p), make_handler(game))
             break
-        except OSError:
-            continue
+        except OSError as e:
+            err = e
     if server is None:
-        raise SystemExit("Could not find a free port. Try: python fly_game.py --port 9000")
+        other = 9000 if not port <= 9000 <= last else 8000             # a range that was not just tried
+        raise SystemExit(f"Could not find a free port on {host} from {port} to {last}" + (f" ({err})" if err else "")
+                         + f". Try another one: {_command('fly_game.py')} --port {other}")
     server.daemon_threads = True
     threading.Thread(target=game.loop, daemon=True).start()
-    url = f"http://{host}:{server.server_address[1]}/"
+    everywhere = host in ("0.0.0.0", "", "::")
+    url = f"http://{'127.0.0.1' if everywhere else host}:{server.server_address[1]}/"
     print(f"\nThe fly is alive at {url}\n(keep this window open; press Ctrl+C here to quit)\n")
+    if everywhere:
+        print(f"Listening on every network interface: other computers on your network can open "
+              f"http://<this computer's address>:{server.server_address[1]}/ and drive the fly (there is no password).\n")
     if open_browser:
         webbrowser.open(url)
     try:

@@ -350,3 +350,11 @@ def test_the_literature_panel_counts_only_her_types_and_names_her_sources(tmp_pa
     assert rows["KCab"]["source"].startswith("Davis") and rows["KCab"]["curated"] == ["acetylcholine"]
     male_only = [t for t in vfb.ontology().types if t not in c.tables["types"]]
     assert male_only and summ["agree"] + summ["differ"] + summ["unclear_with_curated"] <= len(set(c.tables["types"]))
+
+
+def test_the_water_cells_are_the_published_models():
+    roots = set(flywire.SHIU_WATER[:4]) | set(flywire.SHIU_SUGAR[:2])
+    spec = flywire.aliases(roots)
+    assert spec["LB3a"] == ",".join(f"body:{r}" for r in flywire.SHIU_WATER[:4])     # only those in the file
+    assert spec["LB3b"] == ",".join(f"body:{r}" for r in flywire.SHIU_SUGAR[:2])
+    assert not set(flywire.SHIU_WATER) & set(flywire.SHIU_SUGAR)

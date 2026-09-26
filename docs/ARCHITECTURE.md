@@ -19,13 +19,9 @@ virtual_fly/
                    neurons that release locally (APL)
   vfb.py           the anatomy-ontology join (Virtual Fly Brain): fbbt:/rx: selectors, per-type facts, curated
                    transmitters, receptor expression per class; reads data/fbbt_*.json.gz and data/vfb_receptors.json.gz
-tools/
-  build_vfb_data.py    fbbt.obo (+ the connector overlay) -> data/fbbt_map.json.gz, data/fbbt_tree.json.gz
-  merge_vfb_harvest.py a Virtual Fly Brain connector harvest -> tools/vfb_overlay.json, data/vfb_receptors.json.gz
-  harvest_neuprint_rois.py  neuPrint (token; run by .github/workflows/neuprint-harvest.yml) -> data/mb_roi_connectivity.json.gz,
-                       APL's and DPM's connections split by region
   settings.py      named model profiles (pure / game / brakes)
   cli.py           `python fly_brain.py ...`
+  __main__.py      `python -m virtual_fly ...`, the same command line
   world.py         the arena: food, posts, odour sources and plume puffs, wind, the drum, the female
   body.py          the fly's body: inertia, gait, appendages, collisions
   physics.py       the optional physics body: NeuroMechFly v2 legs in MuJoCo through flygym (--body physics)
@@ -39,6 +35,14 @@ tools/
   server.py        HTTP + Server-Sent Events API (docs/API.md)
   play.py          `python fly_game.py ...`
   web/             the browser page (no build step, no dependencies)
+tools/
+  build_vfb_data.py    fbbt.obo (+ the connector overlay) -> data/fbbt_map.json.gz, data/fbbt_tree.json.gz
+  merge_vfb_harvest.py a Virtual Fly Brain connector harvest -> tools/vfb_overlay.json, data/vfb_receptors.json.gz
+  harvest_neuprint_rois.py  neuPrint (token; run by .github/workflows/neuprint-harvest.yml) -> data/mb_roi_connectivity.json.gz,
+                       APL's and DPM's connections split by region
+  vfb_overlay.json     the connector harvest: FBbt classes for the names the OBO lacks (an input of build_vfb_data.py)
+data/              the connectome (downloaded the first time; the female fly's is built there) and the small tables
+                   read by vfb.py and parts.py (fbbt_*.json.gz, vfb_receptors.json.gz, mb_roi_connectivity.json.gz)
 tests/             pytest suite on a small synthetic connectome (no download needed)
 docs/              API.md (server contract), SCIENCE.md (what was measured and why), this file
 ```
@@ -62,7 +66,7 @@ Every tick is 25 ms of fly time:
    for the display but not for the body.
 5. **Decoder** (`MotorDecoder.decode`): descending-neuron rates -> smoothed motor drives (forward,
    yaw, backward, halt, feed, groom, song, court).
-6. **Behaviour selection** (`Game.choose_mode`): giant-fibre spikes win outright (a jump);
+6. **Behaviour selection** (`Game.choose_mode`): a giant-fibre burst wins outright (a jump);
    otherwise the strongest drive above its threshold wins, with hysteresis.
 7. **The body** moves with inertia, respecting the wall and posts; appendages follow their drives.
 8. **The world** steps: puffs drift and grow, the female walks, the drum turns.
@@ -72,7 +76,8 @@ Every tick is 25 ms of fly time:
 
 The game loop runs in one thread; the HTTP server handles requests in others. Anything that
 changes the wiring (silence, modulate, forget) takes `brain.lock`; reads of `state_json` are
-atomic swaps of an immutable bytes object; actions are queued and applied at the start of a tick.
+atomic swaps of an immutable bytes object; actions are checked on arrival (a bad one is refused with
+its reason), queued, and applied at the start of a tick.
 
 ## Performance notes
 
