@@ -3,14 +3,12 @@ harvest merge, on a tiny hand-written ontology and harvest."""
 
 import gzip
 import json
-import sys
 from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from tools import build_vfb_data as B  # noqa: E402
-from tools import merge_vfb_harvest as M  # noqa: E402
+from tools import build_vfb_data as B
+from tools import merge_vfb_harvest as M
 
 OBO = r'''format-version: 1.2
 data-version: fbbt/releases/2099-01-01
@@ -237,3 +235,9 @@ def test_the_harvest_merge(tmp_path, capsys):
     assert rx["families"] == ["scRNAseq_2022_FCA_MALE_HEAD", "FCA", "AFCA"]   # the preference order, adult only (not KURM)
     M.main(["--harvest", str(h), "--out", str(tmp_path / "out"), "--overlay", str(tmp_path / "new" / "dir" / "overlay.json")])
     assert (tmp_path / "new" / "dir" / "overlay.json").exists() and (tmp_path / "out" / "vfb_receptors.json.gz").exists()
+
+
+def test_the_tools_write_where_the_kit_reads():
+    from tools import harvest_neuprint_rois as H
+    from virtual_fly import parts, vfb
+    assert B.HERE.parent / "data" == M.HERE.parent / "data" == H.HERE.parent / "data" == vfb.DATA_DIR == parts.REGION_FILE.parent

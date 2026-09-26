@@ -338,8 +338,10 @@ def main(argv=None):
                 json.dump(rows, f, indent=1)
         return
 
+    integrator = ("compiled (numba)" if brain.backend == "numba" else "NumPy (--backend numpy)" if args.backend == "numpy"
+                  else "NumPy; pip install numba makes it about twice as fast, same spikes")
     print(f"Running the validated experiments with the '{args.profile}' profile "
-          f"(every neuron simulated, nothing trained)...")
+          f"(every neuron simulated, nothing trained; brain integrator: {integrator})...")
     results = E.run_all(brain, only=args.only, seeds=tuple(range(args.seed, args.seed + args.seeds)),
                         profile=args.profile)
     done = [r for r in results if r.ok is not None]

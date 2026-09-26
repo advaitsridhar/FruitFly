@@ -20,13 +20,15 @@ forward term (the drawn body's), the proboscis, wings and abdomen (still drawn: 
 has no joints there), and the escape jump (not modelled physically).
 
 Install (the kit's other dependencies are unchanged; flygym's own requirement list pins numba 0.60 and
-pulls in Jupyter, so install it without its dependencies)::
+pulls in Jupyter, so it goes in without its dependencies, but it does import numba, hence numba below)::
 
     pip install "mujoco==3.2.7" "dm_control==1.0.27" "dm_tree==0.1.8" gymnasium scipy \
-                "opencv-python-headless>=4" imageio matplotlib pyyaml tqdm networkx
+                "opencv-python-headless>=4" imageio matplotlib pyyaml tqdm networkx numba
     pip install --no-deps flygym==1.2.1
 
-Python 3.10-3.12 on Linux, macOS and Windows (wheels exist for all); not 3.13 (flygym, dm_tree 0.1.8).
+(or ``pip install -e ".[physics]"`` for the first line). Python 3.10-3.12 on Linux, macOS and Windows
+(wheels exist for all); not 3.13 or newer: flygym 1.2.1 requires Python < 3.13, dm_tree 0.1.8 and labmaze
+(a dm_control requirement) have no wheels for 3.13, and mujoco 3.2.7 has none for 3.14.
 No OpenGL is needed: rendering is switched off (MUJOCO_GL=disable).
 """
 
@@ -34,6 +36,7 @@ from __future__ import annotations
 
 import math
 import os
+import sys
 import time
 
 import numpy as np
@@ -53,9 +56,9 @@ try:
 except Exception as e:                                   # pragma: no cover - exercised where flygym is missing
     _IMPORT_ERROR = e
 
-INSTALL_HINT = ('the physics body needs flygym and MuJoCo: pip install "mujoco==3.2.7" "dm_control==1.0.27" '
-                '"dm_tree==0.1.8" gymnasium scipy "opencv-python-headless>=4" imageio matplotlib pyyaml tqdm networkx '
-                '&& pip install --no-deps flygym==1.2.1')
+INSTALL_HINT = ('the physics body needs Python 3.10-3.12 with flygym and MuJoCo: pip install "mujoco==3.2.7" '
+                '"dm_control==1.0.27" "dm_tree==0.1.8" gymnasium scipy "opencv-python-headless>=4" imageio matplotlib '
+                'pyyaml tqdm networkx numba && pip install --no-deps flygym==1.2.1')
 
 INNER_ATTENUATION = 0.6      # flygym follow_fly_closed_loop.py: inner = max(0.4, 1 - 0.6 |s|)
 OUTER_BOOST = 0.2            # flygym follow_fly_closed_loop.py: outer = min(1.2, 1 + 0.2 |s|)
@@ -65,6 +68,15 @@ SWING_EXTENSION = math.pi / 4   # flygym HybridTurningController._init_phasic_ga
 
 def available() -> bool:
     return _IMPORT_ERROR is None
+
+
+def unavailable_reason() -> str:
+    """Why the physics body cannot start: the install hint and the import that failed (say, numba missing)."""
+    major, minor = sys.version_info[:2]
+    if (major, minor) >= (3, 13):
+        return (f"the physics body needs Python 3.10-3.12 (flygym 1.2.1 does not install on 3.13 or newer), and this is "
+                f"Python {major}.{minor}: make a virtual environment with Python 3.12 for it (docs/SCIENCE.md section 6.7)")
+    return f"{INSTALL_HINT}\n(the import failed with: {_IMPORT_ERROR!r})"
 
 
 def descending_drive(mode: str, drive: dict, wander_yaw: float = 0.0) -> tuple[float, float]:
@@ -136,7 +148,7 @@ class Walker:
 
     def __init__(self, timestep: float = TIMESTEP, seed: int = 0, wall_center=None):
         if _IMPORT_ERROR is not None:
-            raise RuntimeError(INSTALL_HINT) from _IMPORT_ERROR
+            raise RuntimeError(unavailable_reason()) from _IMPORT_ERROR
         arena = _WalledFloor(center=wall_center) if wall_center is not None else FlatTerrain()
         self.fly = (_Fly if wall_center is not None else Fly)(enable_adhesion=True, draw_adhesion=False,
                                                                   spawn_pos=(0.0, 0.0, 0.2))
@@ -313,6 +325,6 @@ def make_body(kind: str, world, rng, seed: int = 0, stride_average: bool = False
         return FlyBody(world, rng)
     if kind == "physics":
         if not available():
-            raise RuntimeError(INSTALL_HINT)
+            raise RuntimeError(unavailable_reason()) from _IMPORT_ERROR
         return PhysicsBody(world, rng, seed=seed, stride_average=stride_average)
     raise ValueError("body must be 'drawn' or 'physics'")
