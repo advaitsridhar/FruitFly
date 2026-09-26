@@ -99,10 +99,13 @@ On macOS or Linux, use `python3` instead of `py`. To install the package with it
 and the test tools (in the virtual environment): `py -m pip install -e ".[dev]"` then `fly-game`,
 `fly-brain`, `pytest`. A plain `pip install .` (or `pip install git+https://github.com/advaitsridhar/FruitFly.git`,
 without a clone) works too: that copy carries the four small data files inside the package and
-downloads the connectome to `~/.cache/virtual-fly` instead of `data/` (`FLY_DATA_DIR` sets another folder).
+downloads the connectome to `~/.cache/virtual-fly` instead of `data/`. `FLY_DATA_DIR` sets another folder
+for everything the kit downloads or builds, in an installed copy and in a checkout alike (a checkout then
+downloads into that folder rather than using `data/`).
 
 **The female fly** needs one more package, `py -m pip install pyarrow`, and the first `--female` run
-downloads about 130 MB (FlyWire's connectivity table and annotations) and builds a 45 MB file in `data/`.
+downloads about 130 MB (FlyWire's connectivity table and annotations) and builds a 45 MB file: in `data/`
+in a checkout, in `~/.cache/virtual-fly` in an installed copy, or in `FLY_DATA_DIR` when that is set.
 
 **The physics body** (`--body physics`, optional) needs Python 3.10-3.12 (flygym 1.2.1 does not install
 on 3.13 or newer) and about 680 MB of packages; in a virtual environment made with such a Python:

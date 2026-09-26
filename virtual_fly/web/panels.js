@@ -39,7 +39,8 @@ export class WhyPanel {
     const m = $("mode"), mode = S.mode || (S.fly && S.fly.mode) || "idle";
     setText(m, MODE_TEXT[mode] || mode);
     if (m.__bg !== mode) { m.__bg = mode; m.style.background = MODE_COLOR[mode] || "#1c2633"; }
-    setText($("driver"), S.driver || "");
+    const drv = $("driver"), why = S.driver || "";
+    if (drv.__t !== why) { setText(drv, why); drv.title = why; }   // two lines show; the tooltip holds it all
     const f = S.senses || {}, details = [];
     for (const ch of this.chips) {
       const on = ch.key in f && f[ch.key] !== false && f[ch.key] !== "" && f[ch.key] != null;

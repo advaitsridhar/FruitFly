@@ -93,6 +93,10 @@ def _main(argv=None):
     profile = "pure" if args.pure else args.profile
     if args.stride_average and args.body != "physics":
         ap.error("--stride-average only applies to the physics body: add --body physics")
+    if args.backend == "numba":                  # said before the data is loaded, not as a traceback after
+        from .fastbrain import available as numba_available
+        if not numba_available():
+            ap.error("--backend numba needs the numba package: pip install numba (or leave out --backend to use NumPy)")
     overrides = {"seed": args.seed, "dt": 1.0 if args.fast else args.dt, "backend": args.backend}
     if args.fatigue is not None:
         overrides["fatigue_mv"] = args.fatigue

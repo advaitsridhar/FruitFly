@@ -85,3 +85,38 @@ def test_ctrl_c_while_the_female_fly_is_built(monkeypatch):
     monkeypatch.setattr(flywire, "ensure_female", interrupted)
     with pytest.raises(SystemExit, match="Stopped before the female fly was built"):
         C.load_connectome(female=True, quiet=True)
+
+
+def test_a_data_folder_that_cannot_be_used_is_one_line_naming_it_and_fly_data_dir(tmp_path, monkeypatch):
+    from virtual_fly import flywire
+    monkeypatch.setattr(C.urllib.request, "urlopen", lambda *a, **k: pytest.fail("downloaded into a folder it cannot use"))
+    in_the_way = tmp_path / "flydata"
+    in_the_way.write_text("a file where the folder should be")
+    under_a_file = in_the_way / "sub"
+    for folder, why in ((in_the_way, "a file of that name is in the way"), (under_a_file, "part of that path is a file")):
+        monkeypatch.delenv("FLY_DATA_DIR", raising=False)
+        with pytest.raises(SystemExit) as e:
+            C.download_connectome(folder / "malecns-v1.0.flyb.gz", quiet=True)
+        assert str(e.value) == f"Can't write to the data folder {folder} ({why}): set FLY_DATA_DIR to a folder you can write to."
+        monkeypatch.setenv("FLY_DATA_DIR", str(folder))
+        for call in (lambda: C.download_connectome(folder / "malecns-v1.0.flyb.gz", quiet=True),
+                     lambda: flywire.download_sources(folder / "flywire-src", quiet=True),
+                     lambda: flywire.write_flyb(folder / "flywire-v783.flyb.gz", [], [], [], [], {})):
+            with pytest.raises(SystemExit) as e:
+                call()
+            assert f"Can't write to the data folder {folder}" in str(e.value) and "\n" not in str(e.value)
+            assert "set by FLY_DATA_DIR: point FLY_DATA_DIR at a folder you can write to." in str(e.value)
+    assert in_the_way.read_text() == "a file where the folder should be"
+    fine = C.data_folder(tmp_path / "new" / "folder")                           # made, and nothing left in it
+    assert fine.is_dir() and list(fine.iterdir()) == []
+
+
+def test_fly_data_dir_expands_the_home_folder(tmp_path):
+    code = ("import virtual_fly.connectome as c, virtual_fly.flywire as f; "
+            "print(c.DATA_DIR, c.DEFAULT_DATA_FILE.parent, f.SOURCE_DIR.parent, f.FEMALE_FILE.parent)")
+    env = {k: v for k, v in os.environ.items() if k != "FLY_DATA_FILE"}
+    env.update(FLY_DATA_DIR="~/flydata", HOME=str(tmp_path), USERPROFILE=str(tmp_path),
+               PYTHONPATH=os.pathsep.join(p for p in (str(C.PROJECT_DIR), env.get("PYTHONPATH")) if p))
+    out = subprocess.run([sys.executable, "-c", code], env=env, cwd=tmp_path, capture_output=True, text=True,
+                         check=True).stdout.split()
+    assert out == [str(tmp_path / "flydata")] * 4 and not (tmp_path / "~").exists()

@@ -1,9 +1,11 @@
 """The HTTP/SSE API (server.py) on a real ThreadingHTTPServer bound to a free port."""
 
+import errno
 import gzip
 import http.client
 import io
 import json
+import socket
 import threading
 import urllib.error
 import urllib.parse
@@ -328,21 +330,28 @@ def test_serve_scans_ports_and_opens_the_browser(monkeypatch, capsys):
         def serve_forever(self):
             raise KeyboardInterrupt
 
+        def server_close(self):
+            pass
+
     class FakeGame:
         conn = None
+
+        def __init__(self):
+            self.stop_loop = threading.Event()
 
         def loop(self):
             pass
 
     monkeypatch.setattr(S, "ThreadingHTTPServer", FakeServer)
     monkeypatch.setattr(S.webbrowser, "open", lambda url: opened.append(url))
+    monkeypatch.setattr(S, "_command", lambda script: "python3 " + script)
     server = S.serve(FakeGame(), port=9100, open_browser=True, host="127.0.0.1")
     assert made == [("127.0.0.1", 9101)] and opened == ["http://127.0.0.1:9101/"] and server.daemon_threads
     assert "alive at http://127.0.0.1:9101/" in capsys.readouterr().out
     monkeypatch.setattr(S, "ThreadingHTTPServer", lambda *a: (_ for _ in ()).throw(OSError("busy")))
     with pytest.raises(SystemExit, match="free port") as e:
         S.serve(FakeGame(), port=9100, open_browser=False)
-    assert "from 9100 to 9119 (busy)" in str(e.value) and "--port 9000" in str(e.value)
+    assert "from 9100 to 9119 (busy)" in str(e.value) and "Try another one: python3 fly_game.py --port 9000" in str(e.value)
     with pytest.raises(SystemExit) as e:                                      # never advise the range that just failed
         S.serve(FakeGame(), port=9000, open_browser=False)
     assert "from 9000 to 9019" in str(e.value) and "--port 8000" in str(e.value)
@@ -352,6 +361,54 @@ def test_serve_scans_ports_and_opens_the_browser(monkeypatch, capsys):
     S.serve(FakeGame(), port=9101, open_browser=True, host="0.0.0.0")
     out = capsys.readouterr().out
     assert opened == ["http://127.0.0.1:9101/"] and "other computers on your network" in out and "no password" in out
+
+
+@pytest.mark.parametrize("host, error", [
+    ("203.0.113.5", None),                                                         # a real bind: not this computer's
+    ("203.0.113.5", OSError(errno.EADDRNOTAVAIL, "Cannot assign requested address")),
+    ("no.such.host.invalid", socket.gaierror(socket.EAI_NONAME, "Name or service not known")),   # not a name at all
+])
+def test_an_address_that_is_not_this_computers_is_named_not_the_ports(host, error, monkeypatch):
+    class Game:
+        conn = None
+    tried = []
+
+    def refuse(addr, handler):
+        tried.append(addr)
+        raise error
+    if error is not None:
+        monkeypatch.setattr(S, "ThreadingHTTPServer", refuse)
+    monkeypatch.setattr(S, "_command", lambda script: "python3 " + script)
+    with pytest.raises(SystemExit) as e:
+        S.serve(Game(), port=9100, open_browser=False, host=host)
+    msg = str(e.value)
+    assert msg.startswith(f"Could not listen on {host}: it is not one of this computer's addresses (")
+    assert msg.endswith("Leave out --host to use this computer only: python3 fly_game.py") and "port" not in msg
+    assert len(tried) <= 1                                                         # no other port was tried in vain
+
+
+def test_ctrl_c_stops_the_game_loop_before_serve_returns(conn, monkeypatch, capsys):
+    """After Ctrl+C the loop thread finishes its tick and ends before serve() returns: a daemon thread still inside
+    MuJoCo while Python shuts down crashed the process (the physics body)."""
+    game = Game(build_brain(conn, "game", seed=0), autopilot=False, seed=2)
+    ticked, threads = threading.Event(), []
+    tick = game.tick
+
+    def counted_tick():
+        threads.append(threading.current_thread())
+        tick()
+        ticked.set()
+    monkeypatch.setattr(game, "tick", counted_tick)
+
+    class Server(ThreadingHTTPServer):
+        def serve_forever(self, poll_interval=0.5):
+            assert ticked.wait(10)                          # the game is running ...
+            raise KeyboardInterrupt                         # ... when Ctrl+C comes
+    monkeypatch.setattr(S, "ThreadingHTTPServer", Server)
+    server = S.serve(game, port=0, open_browser=False)
+    assert "Bye!" in capsys.readouterr().out
+    assert game.stop_loop.is_set() and threads and not threads[-1].is_alive()
+    assert server.socket.fileno() == -1                     # and the port is let go
 
 
 def test_play_refuses_flags_it_cannot_honour(capsys):
@@ -364,3 +421,14 @@ def test_play_refuses_flags_it_cannot_honour(capsys):
         play.main(["--help"])
     help_text = " ".join(capsys.readouterr().out.split())
     assert "--host 0.0.0.0 let other computers on your network" in help_text and "(there is no password)" in help_text
+
+
+def test_play_says_numba_is_missing_before_loading_the_data(capsys, monkeypatch):
+    from virtual_fly import fastbrain, play
+    monkeypatch.setattr(fastbrain, "available", lambda: False)
+    monkeypatch.setattr(play, "load_connectome", lambda **k: pytest.fail("loaded the data first"))
+    with pytest.raises(SystemExit) as e:
+        play.main(["--backend", "numba", "--no-browser"])
+    assert e.value.code == 2
+    err = capsys.readouterr().err
+    assert "error: --backend numba needs the numba package: pip install numba" in err and "Traceback" not in err

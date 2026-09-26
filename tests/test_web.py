@@ -64,3 +64,16 @@ def test_the_panels_menu_keeps_the_focus_between_ticks():
     menu = js[js.index("  buildMenu() {"):js.index("  refreshMenu() {")]
     assert ".blur()" not in menu
     assert "menu.tabIndex = -1" in js
+
+
+def test_the_why_line_wraps_to_two_lines_and_keeps_its_full_text_as_a_tooltip():
+    # the water and feeding-bout explanations are longer than the card is wide: two lines show (the second one
+    # also under the mode chip), the tooltip has it all,
+    # and the card keeps one fixed height (it changes forty times a second above every other panel)
+    css = (WEB / "style.css").read_text(encoding="utf-8")
+    why, mode = _rule(css, ".why"), _rule(css, ".why .mode")
+    assert "height: 40px" in why and "line-height: 20px" in why and "-webkit-line-clamp: 2" in why and "nowrap" not in why
+    assert "display: inline-block" in mode and "white-space: nowrap" in mode and "line-height: 18px" in mode
+    js = (WEB / "panels.js").read_text(encoding="utf-8")
+    update = js[js.index("class WhyPanel"):js.index("class KeyNeurons")]
+    assert "drv.title = why" in update

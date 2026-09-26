@@ -144,10 +144,11 @@ body.dragging, body.dragging * { cursor: grabbing !important; }
 .popover .pos { color: var(--green); } .popover .neg { color: var(--orange); }
 
 /* why: everything in this card has a fixed height, because it changes forty times a second and sits
-   above every other panel */
-.why { font-size: 13px; display: flex; align-items: center; gap: 6px; height: 24px; white-space: nowrap; }
-.why .mode { display: inline-block; font-weight: 650; padding: 1px 8px; border-radius: 999px; background: #1c2633; flex: none; width: 7.6em; text-align: center; }   /* wide enough for "backing up" */
-.why #driver { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+   above every other panel. The explanation runs on after the mode chip and under it, two lines at most (the
+   full text is its tooltip) */
+.why { font-size: 13px; line-height: 20px; height: 40px; overflow: hidden; overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.why .mode { display: inline-block; font-weight: 650; padding: 1px 8px; border-radius: 999px; background: #1c2633; width: 7.6em; text-align: center; white-space: nowrap; line-height: 18px; vertical-align: top; margin-right: 6px; }   /* wide enough for "backing up" */
 .chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
 .sensedetail { margin-top: 6px; font-size: 12px; color: var(--ink); height: 34px; line-height: 17px; overflow: hidden;
   display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow-wrap: anywhere; }

@@ -26,8 +26,10 @@ import os
 import re
 import struct
 import sys
+import tempfile
 import time
 import urllib.request
+import zlib
 from pathlib import Path
 from typing import Iterable
 
@@ -49,14 +51,17 @@ SHIPPED_DATA_DIR = PACKAGE_DIR / "data" if INSTALLED else PROJECT_DIR / "data"
 
 def command(script: str) -> str:
     """How to start one of the kit's programs (``fly_brain.py``, ``fly_game.py``) the way this copy was started: the console
-    script (``fly-brain``) in an installed copy or when started as one, else ``python fly_brain.py`` from the folder."""
+    script (``fly-game``) in an installed copy or when this process is one of the two console scripts (an editable install),
+    else ``python3 fly_game.py`` from the folder (``py fly_game.py`` on Windows), as the README spells it."""
     console = script.removesuffix(".py").replace("_", "-")
-    return console if INSTALLED or Path(sys.argv[0]).name == console else f"python {script}"
+    if INSTALLED or Path(sys.argv[0]).stem in ("fly-brain", "fly-game"):
+        return console
+    return f"{'py' if sys.platform == 'win32' else 'python3'} {script}"
 DATA_DIR = Path(os.environ.get("FLY_DATA_DIR") or (Path.home() / ".cache" / "virtual-fly" if INSTALLED
-                                                   else PROJECT_DIR / "data"))
+                                                   else PROJECT_DIR / "data")).expanduser()
 DEFAULT_DATA_FILE = DATA_DIR / "malecns-v1.0.flyb.gz"
 # FLY_DATA_FILE points the whole kit at another connectome file (no download, no checksum)
-DATA_FILE = Path(os.environ.get("FLY_DATA_FILE", DEFAULT_DATA_FILE))
+DATA_FILE = Path(os.environ.get("FLY_DATA_FILE", DEFAULT_DATA_FILE)).expanduser()
 # Pinned to one commit so the file can never change under you.
 DATA_URL = ("https://raw.githubusercontent.com/blendi-remade/fly-brain-minecraft/"
             "6cfa30175003ef25da68a237d5eda958f8047b82/src/main/resources/connectome/malecns-v1.0.flyb.gz")
@@ -72,6 +77,22 @@ def _sha256(path: Path) -> str:
     return h.hexdigest()
 
 
+def data_folder(folder: Path | str) -> Path:
+    """Make a folder the kit downloads or builds into, and check it can write there. When it cannot (a file in its
+    place, a folder it may not create or write in), stop with one line that names the folder and FLY_DATA_DIR."""
+    folder = Path(folder)
+    try:
+        folder.mkdir(parents=True, exist_ok=True)
+        tempfile.TemporaryFile(dir=folder).close()
+    except OSError as e:
+        why = ("a file of that name is in the way" if isinstance(e, FileExistsError) or (folder.exists() and not folder.is_dir())
+               else "part of that path is a file" if isinstance(e, NotADirectoryError) else e.strerror or str(e))
+        raise SystemExit(f"Can't write to the data folder {folder} ({why})" + (
+            ", set by FLY_DATA_DIR: point FLY_DATA_DIR at a folder you can write to." if os.environ.get("FLY_DATA_DIR")
+            else ": set FLY_DATA_DIR to a folder you can write to."))
+    return folder
+
+
 def download_connectome(path: Path | str = DATA_FILE, url: str | None = None, quiet: bool = False) -> Path:
     """Download the connectome file once (about 23 MB) and check that it is intact."""
     path = Path(path)
@@ -82,7 +103,7 @@ def download_connectome(path: Path | str = DATA_FILE, url: str | None = None, qu
             return path
         damaged = (f"The file at\n  {path}\nis damaged or is not the right file ({path.stat().st_size:,} bytes; the "
                    f"right one has {DATA_BYTES:,}, still gzipped).\n")
-    path.parent.mkdir(parents=True, exist_ok=True)
+    data_folder(path.parent)
     if not quiet:
         print(f"{damaged}Downloading the fly connectome (23 MB) from\n  {url}", file=sys.stderr)
     tmp = path.with_suffix(".part")
@@ -693,6 +714,30 @@ class TypeGraph:
         return self.src[e], self.weight[e]
 
 
+# What reading a damaged or wrong file raises: cut short, not gzipped or corrupt, too short for its header, not FLYB
+DAMAGED = (EOFError, gzip.BadGzipFile, zlib.error, struct.error, ValueError)
+
+
+def _damaged(path: Path, e: Exception, female: bool = False) -> str:
+    """One line for a connectome file that cannot be read: which file, what is wrong with it, and what to do."""
+    text = str(e)
+    why = ("it is cut short" if isinstance(e, (EOFError, struct.error)) or "buffer" in text
+           else "it is not gzipped" if text.startswith("Not a gzipped file")
+           else "its compressed data is corrupt" if isinstance(e, (zlib.error, gzip.BadGzipFile))
+           else "it is not a FLYB connectome file" if "not a FLYB" in text
+           else e.strerror if isinstance(e, OSError) and e.strerror else text)
+    if female:
+        from .flywire import SOURCE_DIR
+        return (f"The female fly's file {path} is damaged ({why}). Delete it and run again: it is rebuilt from "
+                f"FlyWire's files in {SOURCE_DIR} (downloaded again if they are gone).")
+    if path == DEFAULT_DATA_FILE:
+        return f"The connectome file {path} is damaged ({why}). Delete it and run again: it is downloaded again."
+    if path == DATA_FILE and "FLY_DATA_FILE" in os.environ:
+        return (f"The connectome file {path} (FLY_DATA_FILE) can't be read ({why}). Point FLY_DATA_FILE at an intact "
+                f".flyb.gz file, or unset it to use the kit's own download.")
+    return f"The connectome file {path} can't be read ({why}): give an intact .flyb.gz file."
+
+
 def load_connectome(path: Path | str | None = None, quiet: bool = False, female: bool = False) -> Connectome:
     """Download (first time only) and load the MaleCNS v1.0 connectome, or with ``female=True`` the female
     fly's FlyWire 783 connectome (built on first use, see :mod:`virtual_fly.flywire`).
@@ -702,7 +747,12 @@ def load_connectome(path: Path | str | None = None, quiet: bool = False, female:
     if female:
         if path is not None:
             raise ValueError("load_connectome(): give a path or female=True, not both")
-        from .flywire import ensure_female
+        from .flywire import FEMALE_FILE, built_with, ensure_female
+        try:
+            if FEMALE_FILE.exists():
+                built_with(FEMALE_FILE)                    # a header that cannot be read: say so, rebuild nothing
+        except DAMAGED as e:
+            raise SystemExit(_damaged(FEMALE_FILE, e, female=True)) from None
         try:
             path = ensure_female(quiet=quiet)
         except KeyboardInterrupt:                          # Ctrl+C while its sources download or it is built
@@ -711,7 +761,13 @@ def load_connectome(path: Path | str | None = None, quiet: bool = False, female:
     if path == DEFAULT_DATA_FILE:
         download_connectome(path, quiet=quiet)
     t0 = time.time()
-    conn = Connectome(path)
+    try:
+        conn = Connectome(path)
+    except FileNotFoundError:
+        raise SystemExit(f"There is no connectome file at {path}"
+                         + (" (FLY_DATA_FILE names it)." if path == DATA_FILE and "FLY_DATA_FILE" in os.environ else ".")) from None
+    except (OSError, *DAMAGED) as e:                       # cut short, not gzipped, not a FLYB file, not readable ...
+        raise SystemExit(_damaged(path, e, female=female)) from None
     if not quiet:
         print(f"Loaded {conn.dataset} ({conn.sex}): {conn.n:,} neurons, {conn.n_edges:,} connections "
               f"({int(conn.n_syn.sum()):,} synapses) in {time.time() - t0:.1f}s", file=sys.stderr)
