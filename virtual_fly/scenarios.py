@@ -29,6 +29,7 @@ class Scenario:
     description: str
     steps: list[Step] = field(default_factory=list)
     female: str = ""                     # the description for the female fly, where hers differs
+    pair: str = ""                       # the description with a simulated partner in the dish, where it differs
 
 
 def _place_two_odours(game, a="vinegar", b="banana", with_food=None, on="a"):
@@ -134,7 +135,11 @@ _add(Scenario(
     ],
     female="A second female enters the dish. The fly sees her as a small moving object (LC10a → DNa02, chase); touching "
            "her drives the fly's pC1 neurons directly (hand-built: this brain has no tarsal taste neurons). The fly does "
-           "not sing: this female brain has no pIP10 and no nerve cord."))
+           "not sing: this female brain has no pIP10 and no nerve cord.",
+    pair="The simulated female is placed ahead of him and both flies are left to their brains for 90 s. Nothing links "
+         "the two brains but the world: he sees her as a small moving object (LC10a → DNa02, chase), taps her (his leg "
+         "taste cells, and the kit's hand-built pC1 arousal) and sings (pIP10, one wing out); she sees him, hears his "
+         "song on her Johnston's organ and is bumped by him. The measure shows his pC1 and song and their distance."))
 
 _add(Scenario(
     "plume", "Following a plume upwind",
@@ -160,6 +165,94 @@ _add(Scenario(
     ]))
 
 
+# ---------------------------------------------------------------------------------------------- two flies
+# Scenarios that need a simulated partner in the dish (docs/TWO_FLIES_PLAN.md 5.9 item 3). They are kept apart from
+# SCENARIOS, so the single fly's layout and the ids Game.action accepts without a partner do not change (D3).
+PAIR_SCENARIOS: dict[str, Scenario] = {}
+PAIR_NEAR_MM = 15.0                      # "near": real centre-to-centre mm, as the plan's measurements count it
+
+
+def _pair_start(game):
+    """Place the two flies as the courtship scenario does and start the counts afresh."""
+    _reset_store(game)
+    game.world.clear("all")
+    _female_enters(game)
+    game.body.reset(-10.0, -8.0, 0.3)
+    game.scenario.store.update(ticks=0, near=0, sang=0, taps=0, touching=False, hear_sum=0.0, hear_n=0,
+                               dnp37_sum=0.0, dnp13_sum=0.0, vpoen_sum=0.0, v_sang=[0.0, 0], v_quiet=[0.0, 0],
+                               bursts=[0, 0], gf_prev=[0, 0])
+
+
+def _pair_measure(game):
+    """What the two flies are doing, this tick and so far (numbers only: none of them is a verdict). Runs at the
+    start of each tick, so it reads the last completed tick."""
+    from .game import GF_BURST
+    if len(game.flies) < 2:
+        return {}
+    m, f = game.flies[0], game.flies[1]
+    st = game.scenario.store
+    if "ticks" not in st:                                  # started by hand, without the step's action
+        _pair_start(game)
+    st["ticks"] += 1
+    d = math.hypot(f.body.pose.x - m.body.pose.x, f.body.pose.y - m.body.pose.y)
+    sings = m.m["song"] > 0.3
+    st["near"] += d < PAIR_NEAR_MM
+    st["sang"] += sings
+    touching = "touches_fly" in m.senses_now
+    st["taps"] += touching and not st["touching"]
+    st["touching"] = touching
+    hear = f.senses_now.get("hears_song", 0.0)
+    if hear:
+        st["hear_sum"] += hear
+        st["hear_n"] += 1
+    hz = f.bt.hz
+    st["dnp37_sum"] += hz.get("DNp37", 0.0)
+    st["dnp13_sum"] += hz.get("DNp13", 0.0)
+    st["vpoen_sum"] += hz.get("vpoEN", 0.0)
+    if f.body.pose.jump is None:                           # a jump's flight is not walking
+        acc = st["v_sang"] if sings else st["v_quiet"]
+        acc[0] += abs(f.body.pose.v)
+        acc[1] += 1
+    for k, a in enumerate((m, f)):                         # the game's own escape rule: a burst over two ticks
+        if a.bt.gf + st["gf_prev"][k] >= GF_BURST:
+            st["bursts"][k] += 1
+        st["gf_prev"][k] = a.bt.gf
+    return {"distance_mm": round(d, 1), "he_sings": sings, "she_hears_hz": round(hear, 1),
+            "her_DNp37_hz": round(hz.get("DNp37", 0.0), 1), "her_DNp13_hz": round(hz.get("DNp13", 0.0), 1),
+            "her_vpoEN_hz": round(hz.get("vpoEN", 0.0), 1), "her_speed_mm_s": round(abs(f.body.pose.v), 1),
+            "taps": st["taps"], "bursts_male": st["bursts"][0], "bursts_female": st["bursts"][1]}
+
+
+def _pair_summary(game):
+    """The numbers of the 90 s, into the event log (docs/SCIENCE.md 10.5 reports them over five seeds)."""
+    from .game import TICK_MS
+    st = game.scenario.store
+    n = max(1, st.get("ticks", 0))
+    secs = n * TICK_MS / 1000.0
+    mean = lambda acc: acc[0] / acc[1] if acc[1] else 0.0
+    game.events.add(game.t, "scenario",
+                    f"two-fly courtship finished: within {PAIR_NEAR_MM:g} mm {100 * st.get('near', 0) / n:.0f} % of {secs:.0f} s; "
+                    f"he sang {st.get('sang', 0) * TICK_MS / 1000:.1f} s and tapped her {st.get('taps', 0)} times "
+                    f"({st.get('taps', 0) / secs * 60:.1f}/min); she heard {st.get('hear_sum', 0.0) / max(1, st.get('hear_n', 0)):.1f} Hz "
+                    f"on her Johnston's organ for {100 * st.get('hear_n', 0) / n:.0f} % of the time; her DNp37 {st.get('dnp37_sum', 0.0) / n:.1f} Hz, "
+                    f"DNp13 {st.get('dnp13_sum', 0.0) / n:.1f} Hz, vpoEN {st.get('vpoen_sum', 0.0) / n:.1f} Hz; her speed "
+                    f"{mean(st.get('v_sang', [0, 0])):.1f} mm/s while he sang, {mean(st.get('v_quiet', [0, 0])):.1f} while he did not; "
+                    f"giant-fibre bursts: his {st.get('bursts', [0, 0])[0]}, hers {st.get('bursts', [0, 0])[1]}")
+
+
+PAIR_SCENARIOS["pair_courtship"] = Scenario(
+    "pair_courtship", "Courtship, two brains",
+    "The male and the simulated female, left to their brains for 90 s: he is placed behind and to her left, she ahead "
+    "with a heading of her own. The measure shows their distance, whether he sings, what she hears, her decision "
+    "neurons (vpoEN, DNp37, DNp13: readouts, not verdicts), her speed, his taps and each fly's giant-fibre bursts; the "
+    "end logs the totals. Her walking is the hand-built walking urge, so compare with the same run with it off "
+    "(docs/SCIENCE.md 10.5).",
+    [
+        Step("Two brains, one dish: 90 s.", 90.0, _pair_start, _pair_measure),
+        Step("Done.", 0.0, _pair_summary),
+    ])
+
+
 class ScenarioRunner:
     def __init__(self, game):
         self.game = game
@@ -173,7 +266,11 @@ class ScenarioRunner:
     def start(self, sid: str):
         if self.current is not None:
             self.stop(silent=True)
-        self.current = SCENARIOS[sid]
+        sc = SCENARIOS.get(sid) or (PAIR_SCENARIOS.get(sid) if len(self.game.flies) > 1 else None)
+        if sc is None:                                     # Game.action refuses these first; this is for callers in code
+            raise KeyError(f"{sid} is a two-fly scenario: it needs a simulated partner in the dish"
+                           if sid in PAIR_SCENARIOS else f"unknown scenario {sid}")
+        self.current = sc
         self.step_i = -1
         self.store = {}
         self.saved_tool = self.game.world.tool

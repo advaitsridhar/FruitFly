@@ -31,7 +31,7 @@ from .brain import FlyBrain
 from . import genetics
 from . import parts as partslib
 from . import wiring
-from .scenarios import SCENARIOS, ScenarioRunner
+from .scenarios import PAIR_SCENARIOS, SCENARIOS, ScenarioRunner
 from .senses.social import resolve_overlaps
 from .senses.olfaction import ODOURS
 from .world import World
@@ -158,6 +158,18 @@ ACTIONS = {
 # the tools the page offers (and "none", which scenarios use): the "tool" action takes these and the odour ids
 TOOLS = ("lure", "hand", "sugar", "bitter", "water", "dust", "shock", "post", "none")
 
+# The pair checks (docs/TWO_FLIES_PLAN.md 5.9 item 5): shown only when a simulated partner is in the dish, each in the
+# checklist (and the `done` set) of the fly it describes; a male's need a female other, a female's a male other.
+PAIR_CHECKS_MALE = [
+    ("pair:seen", "His eyes pick her out: LC10a fires when she crosses his view"),
+    ("pair:sang", "He sings at her: pC1 → pIP10, one wing out, within 15 mm of her"),
+    ("pair:tapped", "He taps her: a foreleg lands, his leg taste cells fire"),
+]
+PAIR_CHECKS_FEMALE = [
+    ("pair:heard", "She hears his song: his song reaches her Johnston's organ"),
+    ("pair:seen_him", "She sees him: LC10a fires when he crosses her view"),
+    ("pair:touched", "She was tapped (her file has no leg taste cells; nothing fires in her)"),
+]
 CHECKS = [
     ("feed", "Feed it: drop sugar in its path → MN9 fires, the proboscis comes out"),
     ("bitter", "Offer bitter food → the bitter pathway keeps MN9 silent"),
@@ -474,7 +486,11 @@ class Game:
         if kind == "scenario" and a.get("id") is not None and not isinstance(a["id"], str):
             return {"ok": False, "error": f"'id' must be a scenario id ({', '.join(SCENARIOS)}), not {a['id']!r}"}
         if kind == "scenario" and a.get("id") and a["id"] not in SCENARIOS:
-            return {"ok": False, "error": f"unknown scenario {a['id']}"}
+            if a["id"] not in PAIR_SCENARIOS:
+                return {"ok": False, "error": f"unknown scenario {a['id']}"}
+            if len(self.flies) < 2:                          # a two-fly scenario (docs/TWO_FLIES_PLAN.md 5.9 item 3)
+                return {"ok": False, "error": f"{a['id']} is a two-fly scenario: it needs a simulated partner in the dish "
+                                              "(start the game with --partner female)"}
         if kind == "grow":
             level = str(a.get("level", "type")).strip().lower()
             if not wiring.valid_level(level):

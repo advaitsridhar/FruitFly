@@ -37,10 +37,12 @@ virtual_fly/
                    one per brain when there are two flies), the same spikes either way; advance_all is the lockstep
   game.py          the sensorimotor loop over every fly: senses -> brains (in lockstep) -> decoders -> bodies; the world's
                    clock; internal state; events; the actions from the browser
-  scenarios.py     scripted protocols (conditioning, courtship, plume, escape)
-  server.py        HTTP + Server-Sent Events API (docs/API.md)
+  scenarios.py     scripted protocols (conditioning, courtship, plume, escape; with a partner, the two-fly courtship)
+  server.py        HTTP + Server-Sent Events API (docs/API.md); every per-fly endpoint takes ?fly=k, actions a "fly" field
   play.py          `python fly_game.py ...`
-  web/             the browser page (no build step, no dependencies)
+  web/             the browser page (no build step, no dependencies); with a partner it shows both flies, a fly menu
+                   (`#focusSel`) picks which one the panels, retina and brain map follow, per-fly actions carry that
+                   fly's id (`setActionFly` in util.js), and two brain maps stay alive so no WebGL context is rebuilt
 tools/
   build_vfb_data.py    fbbt.obo (+ the connector overlay) -> data/fbbt_map.json.gz, data/fbbt_tree.json.gz
   merge_vfb_harvest.py a Virtual Fly Brain connector harvest -> tools/vfb_overlay.json, data/vfb_receptors.json.gz

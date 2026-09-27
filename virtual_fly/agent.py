@@ -30,9 +30,10 @@ from . import vfb
 from . import wiring
 from .experiments import survival as survival_report
 from .game import (BUILTIN_KEYS, CHECKS, COURTSHIP_HZ, COURTSHIP_SECS, COURTSHIP_SPEC, FEMALE_READOUTS, GF_BURST, HIDDEN_READOUTS,
+                   PAIR_CHECKS_FEMALE, PAIR_CHECKS_MALE,
                    PHEROMONE_GRNS, READOUTS, REWARD_HZ, REWARD_SPEC, SHOCK_HZ, SHOCK_SPEC, SOUND_HZ, SOUND_SPEC,
                    STILL_TICKS, TICK_MS, ZAP_PRESETS, InternalState, MotorDecoder)
-from .scenarios import SCENARIOS
+from .scenarios import PAIR_SCENARIOS, SCENARIOS
 from .senses.mechano import Antennae, Bristles
 from .senses.mechano import SOUND
 from .senses.olfaction import ODOURS, Nose
@@ -933,6 +934,9 @@ class FlyAgent:
             if "court" not in self.done:
                 self.event("behaviour", "courtship song: pC1 → pIP10, one wing out")
             self.done.add("court")
+            self.done.add("pair:sang")
+        if self._others:
+            self._pair_checks()
         if self.io.has_plasticity and self.bt.learn[0] and "learn" not in self.done \
                 and self.bt.learn[1] > 0.002:
             self.done.add("learn")
@@ -940,6 +944,34 @@ class FlyAgent:
         courting = 1.0 if mode == "court" else 0.0
         self.state.step(dt, self.eating, self.drinking, courting)
         self.courting = courting
+
+    def pair_checks(self) -> list[tuple[str, str]]:
+        """The checklist items about the other fly this fly can do (docs/TWO_FLIES_PLAN.md 5.9 item 5): a male's
+        with a female in the dish (seen, sang if it has song cells, tapped if it has leg taste cells), a female's
+        with a male in the dish (heard if she has sound cells, seen him, touched). Empty for a single fly."""
+        others = [f for f in self.game.flies if f is not self]
+        if not others:
+            return []
+        if self.sex == "male" and any(f.sex == "female" for f in others):
+            return [(i, text) for i, text in PAIR_CHECKS_MALE
+                    if (i != "pair:sang" or self.readouts["pIP10"].size) and (i != "pair:tapped" or self.has_leg_taste)]
+        if self.sex == "female" and any(f.sex == "male" for f in others):
+            return [(i, text) for i, text in PAIR_CHECKS_FEMALE if i != "pair:heard" or self.has_sound_cells]
+        return []
+
+    def _pair_checks(self):
+        """Tick the pair checks from this tick's senses (hand-built rules on the labelled encoders' outputs)."""
+        felt, cfg = self.senses_now, self.game.social
+        # a small moving object in view with nothing else small in the dish is the other fly (the lure and the hand
+        # are the player's; a scripted female never exists with a partner)
+        if cfg.seen and "small" in felt and self.world.hand is None:
+            self.done.add("pair:seen" if self.sex == "male" else "pair:seen_him")
+        if "touches_fly" in felt and "pheromone" in felt:
+            self.done.add("pair:tapped")
+        if "hears_song" in felt:
+            self.done.add("pair:heard")
+        if self.sex == "female" and any(f.senses_now.get("touches_fly") == self.id for f in self.game.flies if f is not self):
+            self.done.add("pair:touched")
 
     def after_senses(self, dt: float, bt: BrainTick):
         """Sense events, the feeding-bout and water Why lines, the driver text and the smoothed numbers shown on screen."""
@@ -1073,11 +1105,13 @@ class FlyAgent:
             "readouts": self.readout_meta,
             "checks": [{"id": i, "text": self._check_text(i, t)} for i, t in CHECKS   # none this fly cannot do
                        if (i not in ("court", "genetics") or self.readouts["pIP10"].size)   # no song cells, no song to lose
-                       and not (c.sex == "female" and i in ("groom", "sound", "wall"))],
+                       and not (c.sex == "female" and i in ("groom", "sound", "wall"))]
+                      + [{"id": i, "text": t} for i, t in self.pair_checks()],        # only with a partner in the dish
             "odours": [{"id": o.id, "name": o.name, "glomeruli": o.glomeruli, "innate": o.innate, "colour": o.colour,
                         "note": o.note} for o in ODOURS.values()],
-            "scenarios": [{"id": k, "name": s.name, "description": s.female if c.sex == "female" and s.female else s.description}
-                          for k, s in SCENARIOS.items()],
+            "scenarios": [{"id": k, "name": s.name, "description": self._scenario_text(s)} for k, s in SCENARIOS.items()]
+                         + ([{"id": k, "name": s.name, "description": s.description} for k, s in PAIR_SCENARIOS.items()]
+                            if len(self.game.flies) > 1 else []),                     # the two-fly scenarios
             "retina": self.retina.layout(),
             "profile": self.profile_name,
             "genetics": self.genetics,
@@ -1091,6 +1125,13 @@ class FlyAgent:
             "body": self.body_kind, "stride_average": bool(getattr(self.body, "stride_average", False)),
             "whats_real": self.whats_real(),
         }, separators=(",", ":")).encode()
+
+    def _scenario_text(self, s) -> str:
+        """A scenario's description for this fly: its two-fly text with a partner in the dish (the scripted female
+        cannot enter then, D9), the female fly's own where hers differs, else the plain one. Single-fly texts unchanged."""
+        if len(self.game.flies) > 1 and s.pair:
+            return s.pair
+        return s.female if self.conn.sex == "female" and s.female else s.description
 
     def _check_text(self, check_id: str, text: str) -> str:
         """A checklist item's text; with a simulated female partner in the dish the two courtship items name her,

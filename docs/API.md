@@ -33,9 +33,9 @@ Returned once at start-up (gzip-compressed if the client accepts it; ~2.4 MB raw
 | `edges`, `synapses` | connection and synapse counts |
 | `dataset`, `sex` | which connectome: `male-cns:v1.0` / `male`, or `flywire:v783` / `female` (`fly_game.py --female`, or fly 1 of `--partner female`) |
 | `readouts[]` | `{key, spec, label, group, max, colour}`: the key-neuron bars, in display order, grouped by `group` (only those whose cells exist in this connectome: the female fly has no `pIP10` or `TTMn`); a female fly in a game with a partner also has the group `Her decisions` (`vpoEN`, `pC2l`, `DNp37`, `DNp13`, `DNp55`, `oviDN`, `SAG`: watches, never a verdict) |
-| `checks[]` | `{id, text}`: the experiments checklist (the female's leaves out `groom`, `sound`, `wall`, `court` and `genetics`; with a female partner the male's `court` and `genetics` items name her instead of "add a female") |
+| `checks[]` | `{id, text}`: the experiments checklist (the female's leaves out `groom`, `sound`, `wall`, `court` and `genetics`; with a female partner the male's `court` and `genetics` items name her instead of "add a female"). With a simulated partner each fly's list ends with its pair checks, ids prefixed `pair:` (a male with a female in the dish: `pair:seen`, `pair:sang`, `pair:tapped`; a female with a male: `pair:heard`, `pair:seen_him`, `pair:touched`), each ticked into that fly's `done` and kept across New fly like the others |
 | `odours[]` | `{id, name, glomeruli[], innate, colour, note}` |
-| `scenarios[]` | `{id, name, description}` |
+| `scenarios[]` | `{id, name, description}`; with a simulated partner the `courtship` description is its two-fly text and the list ends with the two-fly scenarios (`pair_courtship`: 90 s of both brains, a measure of their distance, his song, what she hears, her decision readouts, her speed, his taps and each fly's giant-fibre bursts, and a closing event with the totals) |
 | `retina` | `{L: {n_az, n_el, az[], el[]}, R: {...}}` facet directions (radians, fly frame; `az` + = left) |
 | `profile` | model profile name (`game`, `pure`, `brakes`) |
 | `settings` | brain settings dict (dt, backend `numpy`/`numba`, gain, fatigue, silenced, plasticity ...) |
@@ -139,7 +139,7 @@ of that fly's built-in readout keys (hers include the `Her decisions` group). Wo
 | `wind` | `angle, speed` | rad (direction it blows toward), mm/s (0 = off) |
 | `female` | `on[, x, y]` | add / remove the scripted female (refused with `on: true` while a simulated partner is in the dish) |
 | `learning` | `on` and/or `forget: true` | toggle plasticity / reset learned weights |
-| `scenario` | `id` or none | start a scenario / stop the running one |
+| `scenario` | `id` or none | start a scenario / stop the running one (a two-fly id such as `pair_courtship` is refused without a simulated partner) |
 | `record` | `on[, spikes]` | start/stop recording (frames; optionally every spike) |
 | `state` | `hunger`, `thirst` | set internal state 0..1 |
 | `place_fly` | `x, y[, h]` | teleport the fly |
