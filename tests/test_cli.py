@@ -367,6 +367,20 @@ def test_a_pass_through_the_margin_is_shown(capsys, monkeypatch):
     (["--hops", "2", "--only", "silence"], "--hops only applies with --trace FROM TO or --lesion EXPERIMENT"),
     (["--grow-seed", "3", "--only", "silence"], "--grow-seed only applies with --grow LEVEL or --genome-sweep"),
     (["--genome-sweep", "real", "--only", "vinegar"], "--genome-sweep runs every experiment of the profile: leave out --only"),
+    (["--only", "F1"], "no experiment's name or tag contains 'F1'; the tags are classic, courtship, escape"),   # a pair id needs the flag
+    (["--pair-experiments", "--stim", "MN9:60"], "--pair-experiments runs the pair experiments: leave out --stim"),
+    (["--pair-experiments", "--find", "MN9"], "--pair-experiments runs the pair experiments: leave out --find"),
+    (["--pair-experiments", "--info", "MN9"], "leave out --info"),
+    (["--pair-experiments", "--genes"], "leave out --genes"),
+    (["--pair-experiments", "--lines", "MN9"], "leave out --lines"),
+    (["--pair-experiments", "--driver", "SS02385"], "leave out --driver"),
+    (["--pair-experiments", "--sweep", "LB3b,LB3c:0:200:3", "--watch", "MN9"], "leave out --sweep"),
+    (["--pair-experiments", "--trace", "LC4", "DNp01"], "leave out --trace"),
+    (["--pair-experiments", "--inputs", "MN9"], "leave out --inputs"),
+    (["--pair-experiments", "--outputs", "MN9"], "leave out --outputs"),
+    (["--pair-experiments", "--lesion", "sugar"], "leave out --lesion"),
+    (["--pair-experiments", "--genome-sweep", "real"], "leave out --genome-sweep"),
+    (["--pair-experiments", "--only", "nonsense"], "no experiment's name or tag contains 'nonsense'; the tags are courtship, hearing, pair, smell; the names are F1 female hears song; "),
     (["--grow", "type", "--genome-sweep", "real"], "--genome-sweep grows its own flies from the real one: leave out --grow"),
     (["--grow", ""], "--grow: '': level must be real, type, class or bottleneck:K"),
     # one exit code (2) for every malformed value
@@ -382,6 +396,41 @@ def test_malformed_options_stop_with_one_line_before_loading(capsys, monkeypatch
         main(argv)
     err = capsys.readouterr().err
     assert e.value.code == 2 and err.count("\n") == 1 and message in err and "Traceback" not in err
+
+
+def test_pair_experiments_pass_the_option_check_and_run_on_the_synthetic_fly(capsys, tmp_path):
+    """--pair-experiments --only F1 passes _check_args (the pair ids are matched against E.PAIR), and a pair run's closing
+    hint names the partner."""
+    import argparse
+    ns = _parse(["--pair-experiments", "--only", "F1"])
+    cli._check_args(argparse.ArgumentParser(), ns)                             # no SystemExit: F1 is matched against E.PAIR
+    out_json = tmp_path / "pair.json"
+    main(["--pair-experiments", "--only", "M1", "--seeds", "1", "--profile", "game", "--json", str(out_json)])
+    out = capsys.readouterr().out
+    assert "Running the pair experiments (their ranges are provisional" in out and "M1 song does not startle him" in out
+    assert "Then play: python3 fly_game.py --partner female" in out or "Then play: fly-game --partner female" in out
+    names = [r["name"] for r in json.load(open(out_json))["results"]]
+    assert names == ["M1 song does not startle him"]
+    main(["--pair-experiments", "--only", "F2", "--seeds", "1", "--profile", "game"])
+    assert "cannot be done" in capsys.readouterr().out                        # the synthetic male has no DNp37
+
+
+def _parse(argv):
+    """The CLI's own parser on argv, without running anything: _main builds the parser and calls _check_args at once, so
+    intercept _check_args to catch the parsed namespace."""
+    caught = {}
+
+    def catch(ap, args):
+        caught["ap"], caught["args"] = ap, args
+        raise SystemExit(0)
+    original = cli._check_args
+    cli._check_args = catch
+    try:
+        with pytest.raises(SystemExit):
+            cli._main(argv)
+    finally:
+        cli._check_args = original
+    return caught["args"]
 
 
 def test_number_selectors_say_what_they_need():

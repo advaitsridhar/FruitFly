@@ -80,6 +80,29 @@ def test_run_all_with_only_filter(brain, capsys):
     assert E.run_all(brain, E.GENETIC, verbose=False, profile="pure") == []       # measured in the game profile
 
 
+def test_the_pair_experiments_stay_out_of_the_sixteen_and_the_re_test(brain):
+    """The pair experiments (docs/TWO_FLIES_PLAN.md 5.9 item 2) run only with --pair-experiments; their ranges are provisional."""
+    assert len(E.PAIR) == 6 and [e.name.split()[0] for e in E.PAIR] == ["F1", "F2", "F3", "F4", "F5", "M1"]
+    assert not any(e is x for e in E.PAIR for x in E.all_experiments())     # (Experiment is not hashable)
+    assert len(E.all_experiments()) == 16 and len(E.CLASSIC + E.EXTENDED) == 11
+    low = [e.name.lower() for e in E.all_experiments()] + [t for e in E.all_experiments() for t in e.tags]
+    for e in E.PAIR:                                  # --only matches substrings: a pair id must never pick a 16 experiment
+        assert "pair" in e.tags and e.profile == "game" and e.stimulus and e.readouts and e.note
+        assert not any(e.name.split()[0].lower() in x for x in low)
+        for r in e.readouts:
+            assert r.lo <= r.hi and r.source == E.PAIR_SOURCE
+            assert "acceptance" not in r.label.lower() and "rejection" not in r.label.lower()
+    assert E.PAIR[0].stimulus == {E.SONG_SPEC: E.SONG_MAX_HZ} and E.PAIR[-1].stimulus == {E.SONG_SPEC: E.SONG_MAX_HZ}
+    # the synthetic male has DNp01 and JO-A/JO-B but none of the female's decision neurons: M1 runs, F1 keeps its giant-fibre
+    # readout, the rest are n/a, and nothing raises
+    out = E.run_all(brain, E.PAIR, seeds=(0,), verbose=False)
+    by = {r.name.split()[0]: r for r in out}
+    assert by["M1"].ok is not None and by["F2"].ok is None and by["F3"].ok is None and by["F5"].ok is None
+    assert [x.ok is not None for x in by["F1"].readouts] == [False, False, False, False, True]
+    rows = E.survival(brain, seeds=(0,))
+    assert len(rows) == 11 and not any(r["name"].startswith(("F1", "M1")) for r in rows)
+
+
 def test_classic_silence_experiment_passes_on_synthetic_brain(brain):
     res = run_experiment(brain, E.CLASSIC[0])
     assert res.name.startswith("Silence") and res.ok and res.readouts[0].hz == 0

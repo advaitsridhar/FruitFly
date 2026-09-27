@@ -68,6 +68,10 @@ def _main(argv=None):
                     help="how long to simulate with --stim, and at each rate of --sweep (default 500 ms; --sweep lets each "
                          "rate settle for 100 ms before it counts spikes, so give it more than 100)")
     ap.add_argument("--only", metavar="TEXT", help="run only experiments whose name or tag contains TEXT")
+    ap.add_argument("--pair-experiments", action="store_true",
+                    help="run the pair experiments instead of the 16: what one fly's song, pC1, pC2l, cVA and mating-status "
+                         "neurons do in the other fly's wiring (F1-F5 are written for the female fly, M1 for the male; on the "
+                         "other fly they are a comparison). Their ranges are provisional, measured on the real connectome")
     ap.add_argument("--seeds", type=int, default=5,
                     help="repeat each experiment with this many random seeds (default 5: the verdict is the mean, and a "
                          "readout that passes on the mean while some seed on its own misses is reported)")
@@ -429,10 +433,12 @@ def _main(argv=None):
 
     integrator = ("compiled (numba)" if brain.backend == "numba" else "NumPy (--backend numpy)" if args.backend == "numpy"
                   else "NumPy; pip install numba makes it about twice as fast, same spikes")
-    print(f"Running the validated experiments with the '{args.profile}' profile "
+    what = ("the pair experiments (their ranges are provisional: measured on the real connectome, docs/SCIENCE.md section 10)"
+            if args.pair_experiments else "the validated experiments")
+    print(f"Running {what} with the '{args.profile}' profile "
           f"(every neuron simulated, nothing trained; brain integrator: {integrator})...")
-    results = E.run_all(brain, only=args.only, seeds=tuple(range(args.seed, args.seed + args.seeds)),
-                        profile=args.profile)
+    results = E.run_all(brain, experiments=E.PAIR if args.pair_experiments else None, only=args.only,
+                        seeds=tuple(range(args.seed, args.seed + args.seeds)), profile=args.profile)
     done = [r for r in results if r.ok is not None]
     bad = [r for r in done if not r.ok]
     n_read = sum(sum(x.ok is not None for x in r.readouts) for r in done)
@@ -462,6 +468,7 @@ def _main(argv=None):
         print(f"Try the game's settings: {command('fly_brain.py')} --profile game" + same_fly
               + "".join(f' --part "{p}"' for p in args.part) + "".join(f" {o}" for o in brain_only if o != "--part"))
     print(f"Then play: {command('fly_game.py')}" + same_fly
+          + (" --partner male" if args.pair_experiments and args.female else " --partner female" if args.pair_experiments else "")
           + (f" (without {', '.join(brain_only)}, which the game does not take)" if brain_only else ""))
 
 
@@ -553,7 +560,14 @@ def _check_args(ap, args):
         except ValueError as e:                  # float()'s own message is Python's, not the kit's
             _usage_error(ap, f"--part: theta must be a number of mV (not '{s}')" if str(e).startswith("could not convert")
                          else f"--part: {e}")
-    exps = E.all_experiments()
+    for option, given in (("--find", args.find is not None), ("--info", args.info is not None), ("--genes", args.genes),
+                          ("--lines", args.lines is not None), ("--driver", args.driver is not None), ("--stim", bool(args.stim)),
+                          ("--sweep", bool(args.sweep)), ("--trace", args.trace is not None), ("--inputs", args.inputs is not None),
+                          ("--outputs", args.outputs is not None), ("--lesion", args.lesion is not None),
+                          ("--genome-sweep", args.genome_sweep is not None)):
+        if args.pair_experiments and given:          # the flag would be ignored without a word
+            _usage_error(ap, f"--pair-experiments runs the pair experiments: leave out {option}")
+    exps = E.PAIR if args.pair_experiments else E.all_experiments()
     if args.lesion is not None and not (args.lesion.strip() and any(args.lesion.lower() in e.name.lower() for e in exps)):
         _usage_error(ap, f"--lesion: no experiment's name contains '{args.lesion}'; the names are "
                          + "; ".join(e.name for e in exps))
