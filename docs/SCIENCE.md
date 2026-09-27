@@ -2433,7 +2433,61 @@ route (uterine sensory neurons, absent in FlyWire), mating status. Cost: about a
 
 ### 10.5 What the female does next to him (provisional)
 
-(the pair scenario over five seeds, with its three controls: pending)
+`tools/pair_courtship.py`: the male and the simulated FlyWire female placed as the courtship scenario places them (he at
+(−10, −8) heading 0.3 rad, she at (14, 10) facing her own way), 90 s, seeds 0-4, game profile, parts list off, both
+brains in their own processes, and the three controls the plan asks for: her walking urge off, the song channel off
+(he still sings), and every channel off (a partner in the dish that neither can sense). Distances are real
+centre-to-centre millimetres; "near" is within 15 mm; "facing" is her centre within ±30° of his heading while near;
+speeds are the drawn body's, jump ticks left out; a burst is 5 or more giant-fibre spikes over two ticks (the escape
+rule). Ranges over the five seeds, mean in brackets.
+
+| | full (seen, song, contact, collide) | her walking urge off | song channel off | every channel off |
+|---|---|---|---|---|
+| time within 15 mm, of 90 s | 70-84 s (79) | 59-88 (80) | 70-82 (77) | 4-17 (9) |
+| her centre within ±30° of his heading, while near | 12-33 % (22) | 12-32 % (25) | 17-25 % (23) | 2-40 % (22) |
+| time he sings (song > 0.3) | 60-74 s (69) | 63-80 (75) | 58-74 (67) | 0 |
+| his taps, per minute | 10-15 (13) | 9-16 (12) | 11-16 (13) | 0 |
+| his pC1 / pIP10, Hz per cell | 37-46 / 46-56 | 38-50 / 48-61 | 35-47 / 44-58 | 0 / 0 |
+| his LC10a left / right, Hz per cell | 6-13 / 7-22 | 10-21 / 3-9 | 6-11 / 8-19 | 0 / 0 |
+| her Johnston's organ, Hz per cell while it sounds (share of ticks) | 39-48 (78-93 %) | 43-53 (65-98 %) | 0 | 0 |
+| her vpoEN / DNp37 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| her DNp13, Hz per cell | 0-1.0 (0.5) | 0-0.4 (0.1) | 0-1.2 (0.5) | 1.1-3.4 (1.9) |
+| her speed while he sings / while he does not, mm/s | 4.0-7.3 (5.6) / 5.8-8.7 (7.4) | 0.4-0.9 (0.6) / 0.8-1.9 (1.4) | 5.1-6.7 (5.9) / 6.3-8.1 (7.3) | — / 6.0-7.8 (6.9) |
+| his speed, mm/s | 4.0-5.7 (5.0) | 3.9-5.9 (5.0) | 3.9-5.6 (5.0) | 6.2-7.0 (6.5) |
+| his modes: court / walk / feed | 62 / 19 / 12 % | 72 / 15 / 11 % | 59 / 21 / 13 % | 0 / 82 / 0 % |
+| her modes: walk / idle / groom | 95 / 1 / 3 % | 67 / 32 / 1 % | 94 / 1 / 4 % | 83 / 3 / 14 % |
+| giant-fibre bursts in 90 s, his / hers, per seed | 3,1,2,0,0 / 2,0,1,2,1 | 0,0,0,0,0 / 13,6,3,0,0 | 3,2,3,0,1 / 0,1,0,2,1 | 0 / 0 |
+
+**What this shows.**
+
+* **He courts her, and the wiring is what makes him.** With the channels on he is within 15 mm of her for 70-84 of
+  90 s, sings for 60-74 s and taps her 10-15 times a minute, against 4-17 s near, no song and no tap when the flies
+  cannot sense each other. The chase is her image on his retina driving `LC10a` and, through the wiring, `DNa02`
+  (section 6.1); the song is pC1 → pIP10, where pC1 is fired by his taps through the kit's hand-built arousal
+  (the leg taste cells' own route being about 8× too weak, section 6.1). His proboscis motor neuron also fires while he
+  taps her (a "feed" mode 11-13 % of the time, in single-fly courtship too): a wiring route from the contact
+  senses to MN9 that the scripted-female game already had.
+* **She hears him and nothing follows.** His song sounds on her Johnston's organ at 39-48 Hz per cell for 78-93 % of
+  the time, yet `vpoEN` and `DNp37` never fire and `DNp13` stays under 1.2 Hz, as 10.3 and 10.4 predicted. Her one
+  measurable change is the other way: `DNp13` reads 1.1-3.4 Hz when she cannot sense him and 0-1.2 Hz when she can,
+  with the song channel on or off, so what she sees or feels of him lowers it a little; her hearing has no part in it.
+* **"Song slows her" is not measured.** She walks slower while he sings (4.0-7.3 against 5.8-8.7 mm/s, in every
+  seed), but she does exactly the same with the song channel off (5.1-6.7 against 6.3-8.1): he sings when he is at
+  her, bumping and tapping, and the collision rule is what slows her. Deutsch et al. (2019) found that song slows a
+  receptive virgin; this model cannot show it, because the song does not reach the neurons that would. Her
+  orientation to him is no better than chance in every condition (12-33 % within ±30° against 2-40 % when nothing is
+  sensed).
+* **Her movement is the walking urge.** With it off she covers 0.4-1.9 mm/s, mostly the push of his bumping; her
+  descending neurons drive nothing on their own (section 9.4). Every claim about "what she does" is a claim about a
+  hand-built drive perturbed by him, which is why the controls are reported with the numbers.
+* **Escapes.** Alone in a drawn dish neither fly jumps (section 5.7). In the pair he bursts 0-3 times in 90 s and she
+  0-2, both from the partner looming on the retina or a tap (never from song: the song channel off changes neither
+  count); with her walking urge off she stands where he keeps arriving and bursts 0-13 times, the more he looms.
+  Jump ticks are left out of the speeds above.
+
+Hand-built, still: every channel (10.1), the placement, the 15 mm and ±30° of the measures. Not modelled: the sex
+peptide's route, mating status, her song, copulation. Cost: 90 s of the pair takes about 37 s of wall time here; the
+twenty runs 13 minutes.
 
 ### 10.6 Not modelled
 

@@ -181,6 +181,15 @@ and matches `--only` against the pair list. Written into docs/SCIENCE.md 10.4.
 dt 1.0: RTF 4.27, 5.77 / 7.58 ms; parts on dt 0.5: RTF 1.88, 13.34 / 16.0 ms, parent 1,721, children 470 + 714 MB; parts on dt 1.0:
 RTF 2.60, 9.49 / 12.28 ms. Target (plan 3.3): 0.7x. In docs/SCIENCE.md 10.2.
 
+### Phase 1: the pair over 90 s with its controls (plan 5.9 item 3; `tools/pair_courtship.py`; `../runs/p1-pair-courtship.json`; 13 min)
+Five seeds, parts off, brains in processes; full / her urge off / song off / all off. Near 15 mm: 70-84 / 59-88 / 70-82 / 4-17 s. He sings
+60-74 / 63-80 / 58-74 / 0 s; taps 10-15 / 9-16 / 11-16 / 0 per min. She hears 39-48 Hz (78-93 % of ticks) / 43-53 / 0 / 0. Her vpoEN and
+DNp37 0 everywhere; DNp13 0-1.0 / 0-0.4 / 0-1.2 / 1.1-3.4 Hz. Her speed while he sings vs not: 4.0-7.3 vs 5.8-8.7 / 0.4-0.9 vs 0.8-1.9 /
+5.1-6.7 vs 6.3-8.1 / — vs 6.0-7.8 mm/s: the slowing survives the song channel being off, so it is his bumping and tapping, not song
+(no song effect measured; decision 15 stands). Bursts his / hers per seed: 3,1,2,0,0 / 2,0,1,2,1; urge off 0 / 13,6,3,0,0; song off
+3,2,3,0,1 / 0,1,0,2,1; all off 0 / 0. Written into docs/SCIENCE.md 10.5. (The run started before commit 9fa090d, so its JSON lists "cues"
+among the channels and its escape-event counts lack the per-fly tag; the burst counts per fly are from each fly's own giant fibre.)
+
 ### Golden hashes (plan 4.9)
 - Synthetic (`tests/golden_single_fly.json`): nine configurations, made with Python 3.12.3, NumPy 2.5.3, numba 0.67.0; a second
   run reproduces every hash (the test passes in normal mode; a determinism test runs one configuration twice).
