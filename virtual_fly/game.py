@@ -19,30 +19,21 @@ from __future__ import annotations
 
 import json
 import math
-import os
 import queue
 import random
 import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import numpy as np
 
-from .body import FlyBody, JUMP_TIME, WALK_SPEED
 from .brain import FlyBrain
-from .plasticity import APPROACH_NTS, AVOID_NTS
 from . import genetics
 from . import parts as partslib
-from . import retest as retestlib
-from . import vfb
 from . import wiring
-from .experiments import survival as survival_report
 from .scenarios import SCENARIOS, ScenarioRunner
-from .senses.mechano import Antennae, Bristles
-from .senses.olfaction import ODOURS, Nose
-from .senses.taste import WATER_GRNS, Forelegs, Mouth
-from .senses.vision import Retina
-from .world import ARENA_R, FLY_HALF, World, wrap
+from .senses.olfaction import ODOURS
+from .world import World
 
 TICK_MS = 25.0          # brain time simulated per world update
 GF_BURST = 5            # live giant-fibre spikes over two ticks that start an escape jump (hand-built, see choose_mode)
@@ -276,73 +267,20 @@ class Game:
     def __init__(self, brain: FlyBrain, autopilot: bool = True, seed: int = 0, columnar: bool = True,
                  profile_name: str = "game", brain_factory=None, parts_list=None, brain_kwargs: dict | None = None,
                  retest: str = "auto", body: str = "drawn", stride_average: bool = False):
-        self.brain, self.conn = brain, brain.conn
+        from .agent import FlyAgent                      # (agent.py imports this module's constants)
         self.profile_name = profile_name
-        # the genome: the real wiring, and flies grown from its rules (see wiring.py)
-        self.real_conn = brain.conn
-        self.brain_factory = brain_factory or self._default_brain_factory
-        # how a re-test process rebuilds the brain: build_brain(conn, profile, **brain_kwargs, parts=...). Known
-        # for the default factory; a caller with its own factory says so (play.py), or re-tests run in a thread.
-        self._brain_kwargs = brain_kwargs if brain_kwargs is not None else (None if brain_factory else {})
-        if retest not in ("auto", "process", "thread"):
-            raise ValueError("retest must be 'auto', 'process' or 'thread'")
-        self.retest_mode = retest
-        self._retest_handle = None                      # the running re-test process, if any
-        self._survival_cache: dict[tuple, list] = {}     # re-test results: the same fly and settings give the same rows
-        self._retest_lock = threading.Lock()
-        self._rules_cache: dict = {}
-        self._survival_token = None
-        self.genome: dict = {"level": "real", "seed": 0, "growing": None, "survival": None, "wiring": None, "rules": None, "error": None}
-        self.parts_on = brain.parts is not None          # the genes as each neuron's parts list (parts.py)
-        # the PartsList to (re)build with: the running brain's, else the one the caller chose (curated policy ...)
-        self._parts_list = brain.parts.parts if brain.parts is not None else parts_list
-        self._parts_counts: dict | None = None
         self.rng = random.Random(seed)
         self.seed = seed
         self.actions: queue.Queue = queue.Queue()
-        self.autopilot = autopilot
         self.paused = False
         self.speed = 1.0
         self.world = World(seed)
-        if body == "physics":                          # optional: NeuroMechFly v2 in MuJoCo (virtual_fly/physics.py)
-            from .physics import make_body
-            self.body = make_body("physics", self.world, self.rng, seed=seed, stride_average=stride_average)
-        else:
-            self.body = FlyBody(self.world, self.rng)
-        self.body_kind = body
-        self.retina = Retina(self.world, self.conn, columnar=columnar)
-        self.columnar_on = self.retina.columnar is not None
-        self.nose = Nose(self.world)
-        self.mouth = Mouth(self.world)
-        # in the female file LB3a is an alias for the published model's 18 water cells (FlyWire's types do not split
-        # sugar from water)
-        self.water_cells = int(sum(self.conn.select(s).size for s in WATER_GRNS))
-        self.forelegs = Forelegs(self.world, PHEROMONE_GRNS)
-        self.antennae = Antennae(self.world)
-        self.bristles = Bristles(self.world)
-        self.decoder = MotorDecoder(self.conn)
-        self.state = InternalState()
         self.events = EventLog()
         self.scenario = ScenarioRunner(self)
-        self.readouts = {r[0]: self.conn.select(r[1]) for r in READOUTS}
-        self.readouts.update({k: self.conn.select(v) for k, v in HIDDEN_READOUTS.items()})
-        c = self.conn
-        self.readout_meta = [{"key": r[0], "spec": r[1], "label": r[2], "group": r[3], "max": r[4], "colour": r[5],
-                              "genes": genetics.genotype(c, c.select(r[1]))["tags"]}
-                             for r in READOUTS if self.readouts[r[0]].size]      # (the female fly has no pIP10, no TTMn)
-        self.genetics = genetics.summary(c, self.readout_meta)
-        self.neuronbridge = genetics.NeuronBridge()
-        self.custom_readouts: dict[str, str] = {}
-        for r in READOUTS:
-            if self.readouts[r[0]].size:                 # not for cells this fly lacks (/api/history leaves them out)
-                self.brain.add_monitor(r[0], r[1], bin_ms=TICK_MS)
-        self.user_silenced: set[str] = set()
-        self.user_modulated: dict[str, float] = {}
-        self.has_soma = ~np.isnan(self.conn.soma[:, 0])
-        # build the input index and the cell-type graph now (a second or two), so that the first
-        # pathway trace or neuron lookup from the browser does not stall behind the game loop
-        self.conn.col_ptr
-        self.conn.type_graph()
+        # the flies: one today; fly 0 keeps the game's own random stream (a partner gets its own, docs/TWO_FLIES_PLAN.md 5.1)
+        self.flies = [FlyAgent(self, 0, brain, sex=getattr(brain.conn, "sex", "male"), rng=self.rng, seed=seed,
+                               autopilot=autopilot, columnar=columnar, body=body, stride_average=stride_average,
+                               parts_list=parts_list, brain_factory=brain_factory, brain_kwargs=brain_kwargs, retest=retest)]
         self.layout_json = self._make_layout()
         self.state_json = b"{}"
         self.state_dict: dict = {}
@@ -351,265 +289,28 @@ class Game:
         self.recording: list | None = None
         self.record_active = False
         self.record_spikes = False
-        self.learning_on = brain.plasticity is not None
         self.lock = threading.RLock()
         self.stop_loop = threading.Event()               # set: loop() returns after the tick it is in
         self.subscribers: list[queue.Queue] = []
-        self.done: set[str] = set()                      # the checklist: kept when the player asks for a new fly
         self.reset_world(first=True)
+
+    def fly(self, k: int = 0) -> "FlyAgent":
+        """The k-th fly in the dish (fly 0: the protagonist)."""
+        return self.flies[k]
 
     # ------------------------------------------------------------------ world
     def reset_world(self, first: bool = False):
-        self.brain.reset()
+        a = self.flies[0]
+        a.brain.reset()
         self.world.clear("all")
         self.world.hand = None
         self.world.set_stripes(0, 0.0)
-        self.body.reset()
-        # the senses forget what they were in the middle of
-        self.antennae.dust_left = 0.0
-        self.antennae.hearing = 0.0
-        self.bristles.touch_left = 0.0
-        self.bristles.last_touch_t = -99.0
-        self.nose.background.clear()
-        self.retina.features = type(self.retina.features)(self.retina.eyes)
-        self._prev_felt = {}
-        self.zaps = []                    # [spec, hz, seconds left]
-        self.mode = "idle"
-        self.wander = dict(walking=True, left=2.0, yaw=0.0)
-        self.runaway_s = 0.0
-        self.graded_eps = 0.0                         # the graded cells' release quanta per second (parts list)
-        self.since_input = 0.0
-        self.calms = 0
+        a.reset_state()
         self.message, self.message_left = "", 0.0
-        self.hz_shown = {k: 0.0 for k in self.readouts}
         self.t = 0.0
-        self.senses_now: dict = {}
-        self.driver = ""
-        self.gf_cooldown = 0.0
-        self.gf_prev = 0                   # live giant-fibre spikes in the last tick (a jump needs a burst)
-        self.still_ticks = STILL_TICKS     # ticks the body has not moved (a new fly starts at rest)
-        self.turn_command = 0.0            # last tick's commanded yaw (efference copy for the eyes)
-        self.court_left = 0.0              # seconds of pC1 drive left after tapping the female
-        self.sound_left = 0.0
-        self.bitter_t = 0.0
-        self.sugar_t = 0.0                 # how long sugar has been at the mouth
-        self.eating = 0.0
-        self.drinking = 0.0
-        self.song_side = 1.0
-        self.shock_left = 0.0
-        self.learned_bias = 0.0
-        self.smelling: str | None = None
-        self.state = InternalState()
-        self.decoder.m = {k: 0.0 for k in self.decoder.m}
         self.scenario.stop(silent=True)
         if not first:
             self.events.add(self.t, "system", "New fly, fresh brain (learned synapses kept; use 'forget' to reset them).")
-
-    # ------------------------------------------------------------------ the genome: growing a fly
-    _BRAIN_KWARGS = ("dt", "gain", "kenyon_gain", "fatigue_mv", "fatigue_ms", "std_u", "std_tau_ms",
-                     "noise_hz", "noise_mv", "noise_spec", "threshold_jitter", "seed", "backend")
-
-    def _default_brain_factory(self, conn, **extra):
-        from .settings import build_brain
-        kw = {k: v for k, v in self.brain.settings().items() if k in self._BRAIN_KWARGS}
-        kw.update(extra)
-        return build_brain(conn, self.profile_name, **kw)
-
-    def parts_arg(self, on: bool):
-        """The ``parts=`` argument for a rebuild: the PartsList this game was started with (its curated
-        policy and receptor setting), or the default one."""
-        return (self._parts_list or True) if on else False
-
-    def parts_list(self) -> "partslib.PartsList":
-        """The parts list this game switches on (the default one unless it was started with another)."""
-        return self._parts_list or partslib.PartsList()
-
-    def parts_counts(self) -> dict:
-        """What the parts list finds in this connectome (compiled once; the same whether it is switched on)."""
-        if self.brain.parts is not None:
-            return self.brain.parts.counts
-        if self._parts_counts is None:
-            self._parts_counts = self.parts_list().compile(self.real_conn).counts
-        return self._parts_counts
-
-    def _start_grow(self, level: str, seed: int):
-        self.genome.update(growing={"level": level, "seed": seed, "t0": time.time()}, error=None)
-        self.events.add(self.t, "genome", f"growing a fly: {level} wiring, seed {seed}")
-        self.say(f"Growing a fly from its {level} wiring rules…", 4.0)
-        threading.Thread(target=self._grow_worker, args=(level, seed), daemon=True).start()
-
-    def _grow_worker(self, level: str, seed: int):
-        try:
-            conn2, rules = wiring.grow_level(self.real_conn, level, seed, rules_cache=self._rules_cache)
-            brain2 = self.brain_factory(conn2, parts=self.parts_arg(self.parts_on))
-            cmp = wiring.compare(self.real_conn, conn2) if conn2 is not self.real_conn else None
-            self.actions.put({"type": "_swap_brain", "brain": brain2, "conn": conn2, "level": level, "seed": seed,
-                              "rules": rules.summary() if rules is not None else None, "wiring": cmp,
-                              "parts": self.parts_on, "reason": "grow"})
-        except Exception as e:                       # a bad level, or out of memory: report, keep the old fly
-            self.genome.update(growing=None, error=str(e))
-            print("error growing a fly", repr(e))
-
-    def _start_rebuild(self, on: bool):
-        """Rebuild the current fly's brain with the parts list on or off (same wiring), in the background."""
-        self.genome.update(growing={"level": self.genome["level"], "seed": self.genome["seed"], "reason": "parts",
-                                    "parts": on, "t0": time.time()}, error=None)
-        self.events.add(self.t, "genome", f"rebuilding the brain with the parts list {'on' if on else 'off'}")
-        self.say("Giving each neuron its parts…" if on else "Back to identical neurons…", 4.0)
-        threading.Thread(target=self._rebuild_worker, args=(on,), daemon=True).start()
-
-    def _rebuild_worker(self, on: bool):
-        try:
-            brain2 = self.brain_factory(self.conn, parts=self.parts_arg(on))
-            self.actions.put({"type": "_swap_brain", "brain": brain2, "conn": self.conn, "level": self.genome["level"],
-                              "seed": self.genome["seed"], "rules": self.genome["rules"], "wiring": self.genome["wiring"],
-                              "parts": on, "reason": "parts"})
-        except Exception as e:
-            self.genome.update(growing=None, error=str(e))
-            print("error rebuilding the brain", repr(e))
-
-    def _swap_brain(self, a: dict):
-        old = self.brain
-        with old.lock:
-            self.brain, self.conn = a["brain"], a["conn"]
-            for r in READOUTS:
-                if self.readouts[r[0]].size:
-                    self.brain.add_monitor(r[0], r[1], bin_ms=TICK_MS)
-            for k, spec in self.custom_readouts.items():
-                self.brain.add_monitor(k, spec, bin_ms=TICK_MS)
-            for spec in self.user_silenced:
-                try:
-                    self.brain.silence(spec)
-                except ValueError:
-                    pass
-            for spec, factor in self.user_modulated.items():
-                try:
-                    self.brain.modulate(spec, factor)
-                except ValueError:
-                    pass
-            if self.brain.plasticity is not None:
-                self.brain.plasticity.enabled = self.learning_on
-            self.zaps = []
-            self.runaway_s = 0.0
-        level, seed = a["level"], a["seed"]
-        self.parts_on = bool(a.get("parts", self.parts_on))
-        self.genome.update(level=level, seed=seed, growing=None, wiring=a["wiring"], rules=a["rules"], error=None,
-                           survival={"running": True, "results": []})
-        if a.get("reason") == "parts":
-            if self.parts_on:
-                c = self.brain.parts.counts
-                self.events.add(self.t, "genome", f"parts list on: {c['modulatory_neurons']:,} modulatory neurons act through slow "
-                                f"tones on {c['modulated_targets']:,} targets, {c['graded_neurons']:,} cells transmit graded signals")
-                self.say("Each neuron now has its parts. Testing the reflexes…", 4.0)
-                self.done.add("parts")
-            else:
-                self.events.add(self.t, "genome", "parts list off: every neuron is the same machine again")
-                self.say("Every neuron is the same machine again. Testing the reflexes…", 4.0)
-        elif level == "real":
-            self.events.add(self.t, "genome", "back to the real wiring")
-            self.say("The real wiring is back.", 3.0)
-        else:
-            w = a["wiring"] or {}
-            self.events.add(self.t, "genome", f"a fly grown from its {level} wiring rules (seed {seed}): "
-                            f"{w.get('edges_grown', 0):,} connections, {100 * w.get('shared_connections_fraction', 0):.0f}% shared with the real wiring")
-            self.say(f"A new fly, grown from its {level} wiring rules. Testing its reflexes…", 4.0)
-            self.done.add("genome")
-        token = object()
-        self._survival_token = token
-        threading.Thread(target=self._survival_worker, args=(a["conn"], token), daemon=True).start()
-
-    def _retest_spec(self, conn) -> dict | None:
-        """What a re-test process needs to rebuild this brain, or None when it cannot (then: a thread)."""
-        if self.retest_mode == "thread" or self._brain_kwargs is None:
-            return None
-        path = getattr(self.real_conn, "path", None)
-        if path is None or not os.path.exists(path):
-            return None
-        kw = {k: v for k, v in self.brain.settings().items() if k in self._BRAIN_KWARGS}
-        kw.update(self._brain_kwargs)
-        kw["parts"] = self.parts_arg(self.parts_on)
-        wiring_ = None
-        if conn is not self.real_conn:                   # a grown fly: send its wiring, the neurons are the same
-            wiring_ = {"row_ptr": conn.row_ptr, "post_idx": conn.post_idx, "n_syn": conn.n_syn, "label": "grown"}
-        return {"path": str(path), "wiring": wiring_, "profile": self.profile_name, "brain_kwargs": kw,
-                "vfb": vfb.injected(), "regions": partslib.injected_region_table()}   # data swapped in at runtime
-
-    def _survival_key(self, conn) -> tuple:
-        """Everything a survival report depends on. Each seed resets the brain and starts its own random
-        generator, so the same wiring, profile, brain settings and parts list always give the same rows."""
-        kw = {k: v for k, v in self.brain.settings().items() if k in self._BRAIN_KWARGS}
-        kw.update(self._brain_kwargs or {})
-        return (conn.dataset, int(conn.n_edges), self.profile_name, repr(sorted(kw.items())),
-                repr(self.parts_arg(self.parts_on)))
-
-    def _survival_worker(self, conn, token):
-        """Run the validated experiments on a private copy of the new brain while the game keeps going: in a
-        low-priority child process when possible (retest.py), else in this thread. A newer re-test replaces
-        an older one (the older process is terminated, an older thread stops at its next experiment)."""
-        with self._retest_lock:
-            prev, self._retest_handle = self._retest_handle, None
-        if prev is not None:
-            prev.cancel()
-        t0 = time.time()
-
-        def progress(rows):
-            if self._survival_token is token:
-                self.genome["survival"] = {"running": True, "results": rows}
-        try:
-            key = self._survival_key(conn)
-            cached = self._survival_cache.get(key)
-            spec = None if cached is not None else self._retest_spec(conn)
-            handle = None
-            if cached is not None:                       # this fly was tested with these settings before
-                rows, where = [dict(r) for r in cached], "cache"
-            elif spec is not None:
-                try:
-                    handle = retestlib.Retest(spec)
-                except Exception as e:                   # no child processes here: re-test in this thread
-                    print("re-testing in a thread:", repr(e))
-            if handle is not None:
-                with self._retest_lock:
-                    if self._survival_token is token:
-                        self._retest_handle = handle
-                    else:                                # superseded while the process was starting
-                        handle.cancel()
-                try:
-                    rows, where = handle.wait(progress), "process"
-                except RuntimeError as e:
-                    if handle.cancelled or self._survival_token is not token:
-                        raise
-                    print("the re-test process failed, re-testing in a thread:", e)   # e.g. it could not import
-                    failed = handle
-                else:
-                    failed = None
-                finally:
-                    with self._retest_lock:                  # done: let go of its queue (no leaked semaphores at exit)
-                        if self._retest_handle is handle:
-                            self._retest_handle = None
-                if failed is not None:
-                    handle = None
-            if cached is None and handle is None:
-                brain = self.brain_factory(conn, parts=self.parts_arg(self.parts_on))
-                rows = survival_report(brain, profile=self.profile_name, on_progress=progress,
-                                       should_stop=lambda: self._survival_token is not token)
-                where = "thread"
-            if self._survival_token is token:
-                if cached is None:
-                    self._survival_cache[key] = [dict(r) for r in rows]
-                ok = sum(1 for r in rows if r["ok"]); tested = sum(1 for r in rows if r["ok"] is not None)
-                self.genome["survival"] = {"running": False, "results": rows, "ok": ok, "tested": tested,
-                                           "secs": round(time.time() - t0, 1), "where": where}
-                self.events.add(self.t, "genome", f"reflex survival: {ok} of {tested} experiments pass on this wiring")
-        except Exception as e:
-            if self._survival_token is token:
-                self.genome["survival"] = {"running": False, "results": [], "error": str(e)}
-
-    def genome_status(self) -> dict:
-        g = dict(self.genome)
-        if g["growing"]:
-            g["growing"] = {**g["growing"], "secs": round(time.time() - g["growing"]["t0"], 1)}
-        g["parts"] = {"on": self.parts_on, "status": self.brain.parts_status()}
-        return g
 
     def say(self, text: str, secs: float = 3.0):
         self.message, self.message_left = text, secs
@@ -879,359 +580,28 @@ class Game:
         elif kind == "place_fly":
             self.body.reset(float(a["x"]), float(a["y"]), float(a.get("h", self.body.pose.h)))
 
-    # ------------------------------------------------------------------ senses (hand-built encoders)
-    def senses(self, dt: float):
-        """Returns (spec -> Hz, per-neuron indices, per-neuron Hz) and fills ``self.senses_now``."""
-        pose = self.body.pose
-        rates: dict[str, float] = {}
-        felt: dict = {}
-
-        def add(r: dict[str, float]):
-            for spec, hz in r.items():
-                rates[spec] = max(rates.get(spec, 0.0), hz)
-
-        # eyes: render the retina, derive feature-detector rates (+ columnar T4/T5 when enabled)
-        vis, col_idx, col_hz = self.retina.look(pose, dt, turn_command=self.turn_command)
-        add(vis)
-        f = self.retina.features.felt
-        if "loom" in f:
-            felt["loom"] = f["loom"]
-        if "small" in f:
-            felt["small"] = f["small"]
-        if "flow" in f:
-            felt["flow"] = f["flow"]
-        # taste at the mouth and the forelegs
-        add(self.mouth.rates(pose, self.state.hunger, self.state.thirst, pose.proboscis))
-        for kind in self.mouth.touching:
-            felt["taste_" + kind] = True
-        add(self.forelegs.rates(pose))
-        if self.forelegs.touching_female:
-            felt["pheromone"] = True
-            self.court_left = COURTSHIP_SECS
-        if self.court_left > 0:                      # hand-built: contact with the female arouses pC1
-            rates[COURTSHIP_SPEC] = max(rates.get(COURTSHIP_SPEC, 0.0), COURTSHIP_HZ * min(1.0, self.court_left / 1.0))
-            felt["courting"] = True
-            self.court_left -= dt
-        if self.sound_left > 0:
-            rates[SOUND_SPEC] = max(rates.get(SOUND_SPEC, 0.0), SOUND_HZ)
-            felt["sound"] = True
-            self.sound_left -= dt
-        # smell
-        add(self.nose.rates(pose, dt))
-        od, c = self.nose.strongest()
-        self.smelling = od if c > 0.02 else None
-        if self.smelling:
-            felt["smell"] = self.smelling
-            self.done.add("smell")
-        # wind, sound, dust
-        if self.world.female is not None:
-            self.antennae.hearing = 0.0
-        add(self.antennae.rates(pose, dt))
-        if self.antennae.airspeed_l + self.antennae.airspeed_r > 0.05:
-            felt["wind"] = round(math.degrees(self.antennae.wind_bearing))
-        if self.antennae.dust_left > 0:
-            felt["dust"] = True
-        # touch and proprioception
-        add(self.bristles.rates(pose, dt, self.body.bumped, self.t))
-        if self.bristles.touch_left > 0:
-            felt["touch"] = True
-        # neuromodulatory signals the wiring does not carry (hand-built, labelled)
-        if self.eating > 0.2 and "sugar" in self.mouth.touching and self.learning_on:
-            rates[REWARD_SPEC] = max(rates.get(REWARD_SPEC, 0.0), REWARD_HZ * min(1.0, self.eating))
-            felt["reward"] = True
-        if self.shock_left > 0:
-            rates[SHOCK_SPEC] = max(rates.get(SHOCK_SPEC, 0.0), SHOCK_HZ)
-            felt["shock"] = True
-            self.shock_left -= dt
-        # zaps from the neuron panel
-        for z in self.zaps:
-            rates[z[0]] = max(rates.get(z[0], 0.0), z[1])
-            z[2] -= dt
-        self.zaps = [z for z in self.zaps if z[2] > 0]
-        if self.zaps:
-            felt["zap"] = ", ".join(f"{z[0]} {z[1]:g} Hz" for z in self.zaps)
-        self.senses_now = felt
-        return rates, col_idx, col_hz
-
-    # ------------------------------------------------------------------ behaviour selection (hand-built)
-    def choose_mode(self, m: dict, gf_spikes: int) -> str:
-        burst, self.gf_prev = gf_spikes + self.gf_prev, gf_spikes
-        if self.body.pose.jump is not None:
-            return "escape"
-        # the giant fibre must fire a burst: >= GF_BURST live spikes over this tick and the last (50 Hz per cell over
-        # 50 ms). Walking alone (leg proprioception) makes the pair fire together now and then, at most 4 spikes over
-        # two ticks in 30 min of it; a clap gives 5-9, a fast looming hand 14-30, a zap as many as its rate
-        # (docs/SCIENCE.md 5.7)
-        if burst >= GF_BURST and self.body.jump_lock <= 0 and self.gf_cooldown <= 0:
-            away = self.world.hand if (self.world.hand is not None and self.world.tool == "hand") else None
-            self.body.start_jump(away)
-            self.gf_cooldown = 1.0
-            if "loom" in self.senses_now:
-                self.done.add("escape")
-            if self.body_kind == "physics":                # NeuroMechFly has no jump model
-                self.say("Giant fibre fired: the escape command (the physics body cannot jump)", 1.5)
-                self.events.add(self.t, "behaviour", "escape command (giant fibre DNp01 burst; the physics body has no jump)")
-            else:
-                self.say("Giant fibre fired: escape jump!", 1.5)
-                self.events.add(self.t, "behaviour", "escape jump (giant fibre DNp01 burst)")
-            return "escape"
-        # strongest command wins (a hand-built stand-in for the nerve cord's own arbitration).
-        # A behaviour starts above its threshold and continues until its drive falls to half of it.
-        options = [(0.0, "")]
-        for name, start, weight in (("backward", 0.25, 1.15), ("feed", 0.3, 1.0), ("groom", 0.35, 0.9)):
-            ongoing = self.mode == name
-            if m[name] > (start / 2 if ongoing else start):
-                options.append((weight * m[name] + (0.15 if ongoing else 0.0), name))
-        mode = max(options)[1] or "walk"
-        if mode == "walk" and (m["song"] > 0.3 or m["court"] > 0.4):
-            mode = "court"
-        return mode
-
-    def odour_steering(self) -> tuple[float, str]:
-        """Hand-built odour-guided steering: innate valence (a literature label) plus the *learned*
-        bias read off the KC->MBON synapses of the Kenyon cells active right now.
-
-        Returns (yaw bias, explanation). + = turn right."""
-        if not self.smelling:
-            self.learned_bias = 0.0
-            return 0.0, ""
-        odour = ODOURS[self.smelling]
-        innate = {"attractive": 0.35, "aversive": -0.35}.get(odour.innate, 0.0)
-        learned = 0.0
-        pl = self.brain.plasticity
-        if pl is not None:
-            trace = pl.kc_trace
-            act = trace[pl.pe_kc]                       # eligibility of each plastic synapse's KC
-            if act.sum() > 0:
-                nt = pl.mbon_nt[pl.pe_mbon]                  # the MBONs' transmitters (plasticity.mbon_transmitters)
-                depression = 1.0 - pl.scale
-                app = np.isin(nt, APPROACH_NTS)
-                av = np.isin(nt, AVOID_NTS)
-                wa = float((act * depression)[app].sum() / max(act[app].sum(), 1e-6))
-                wv = float((act * depression)[av].sum() / max(act[av].sum(), 1e-6))
-                learned = 1.2 * (wv - wa)               # avoid-MBON synapses weakened -> approach more
-        self.learned_bias = learned
-        valence = max(-1.0, min(1.0, innate + learned))
-        if abs(valence) < 0.05:
-            return 0.0, ""
-        grad = self.nose.gradient().get(self.smelling, 0.0)     # + = stronger on the left antenna
-        c = self.nose.felt.get(self.smelling, 0.0)
-        toward = -math.copysign(1.0, grad) if abs(grad) > 0.02 * max(c, 0.05) else 0.0   # -1 = left
-        # no gradient: head upwind (attractive) or downwind (aversive), like a real fly's surge
-        if toward == 0.0 and self.antennae.airspeed_l + self.antennae.airspeed_r > 0.05:
-            b = self.antennae.wind_bearing                        # where the wind comes from, + = left
-            toward = -math.copysign(1.0, b) if abs(b) > 0.15 else 0.0
-        yaw = valence * toward * 0.6
-        why = (f"odour '{odour.name}': innate {innate:+.2f}" + (f", learned {learned:+.2f}" if abs(learned) > 0.02 else "")
-               + " (hand-built steering)")
-        return yaw, why
-
     # ------------------------------------------------------------------ the loop
     def tick(self):
         dt = TICK_MS / 1000.0
         self._apply_actions()
         self.scenario.step(dt)
-        rates, col_idx, col_hz = self.senses(dt)
-        b = self.brain
-        with b.lock:
-            if col_idx.size:
-                b.set_stimulus_arrays(col_idx, col_hz, extra=rates)
-            else:
-                b.set_stimuli(rates)
-            b.reset_counts()
-            chunks = []
-            for _ in range(int(round(TICK_MS / b.dt))):
-                s = b.step()
-                if s.size:
-                    chunks.append(s)
-            spikes = np.concatenate(chunks) if chunks else np.zeros(0, dtype=np.int64)
-            counts = b.spike_count
-            live = np.where(b.silenced_mask(), 0, counts) if b.silenced else counts   # what reaches the body
-        hz = {k: (float(counts[i].sum()) / max(1, i.size) / dt if i.size else 0.0) for k, i in self.readouts.items()}
-        motor_hz = {k: (float(live[i].sum()) / max(1, i.size) / dt if i.size else 0.0) for k, i in self.readouts.items()}
-        gf = int(live[self.readouts["GF"]].sum())
-        m = self.decoder.decode(motor_hz, dt)
-        self.gf_cooldown -= dt
-        mode = self.choose_mode(m, gf)
-        why = []
-        wander_yaw = 0.0
-        if mode == "escape":
-            why.append("brain: giant fibre DNp01 burst")
-        elif mode == "backward":
-            why.append("brain: MDN (moonwalker) neurons")
-        elif mode == "feed":
-            why.append("brain: MN9 proboscis motor neuron")
-        elif mode == "groom":
-            why.append("brain: aDN1/aDN2 grooming neurons")
-        elif mode == "court":
-            why.append("brain: pC1 → pIP10 courtship neurons" if m["song"] > 0.3 else "brain: pC1 courtship neurons")
-        if mode in ("walk", "court"):
-            if abs(m["yaw"]) > 0.08:
-                parts = []
-                if abs(motor_hz["DNa02R"] - motor_hz["DNa02L"]) > 8 or abs(motor_hz["DNg13R"] - motor_hz["DNg13L"]) > 15:
-                    parts.append("DNa02/DNg13")
-                if abs(motor_hz["DNp15R"] - motor_hz["DNp15L"]) > 15:
-                    parts.append("optomotor T4/T5 → HS → DNp15")
-                why.append("brain: steering via " + (", ".join(parts) if parts else "DNa01/DNa03"))
-            if m["forward"] > 0.1:
-                why.append("brain: walking DNs (DNp09, BDN1/2/4, oDN1)")
-            drive_forward = m["forward"]
-            if self.autopilot:                       # hand-built urge to walk: flies do this on their own,
-                w = self.wander                      # but this model has no spontaneous activity
-                w["left"] -= dt
-                if w["left"] <= 0:
-                    w["walking"] = not w["walking"] or self.rng.random() < 0.3 + 0.3 * self.state.hunger
-                    w["left"] = self.rng.uniform(1.5, 4.5) if w["walking"] else self.rng.uniform(0.4, 1.5)
-                w["yaw"] += -w["yaw"] * dt / 0.8 + 0.9 * math.sqrt(dt) * self.rng.gauss(0, 1)
-                if w["walking"]:
-                    drive_forward = max(drive_forward, 0.5 + 0.2 * self.state.hunger)
-                    wander_yaw = max(-0.35, min(0.35, w["yaw"])) * (1 - min(1.0, abs(m["yaw"]) * 3))
-                    why.append("autopilot: walking urge (hand-built)")
-                if (self.t - self.bristles.last_touch_t < 1.5 and m["backward"] < 0.1
-                        and self.t - self.bristles.last_touch_t > 0.6):
-                    wander_yaw = 0.8                 # hand-built fallback if it stays stuck at the wall
-                    why.append("autopilot: turning away from the wall")
-            od_yaw, od_why = self.odour_steering()   # always computed (the learned bias is shown on screen)
-            if od_yaw and self.autopilot:
-                wander_yaw += od_yaw
-                why.append(od_why)
-            m = {**m, "forward": drive_forward}
-        if mode not in ("walk", "court"):
-            self.odour_steering()                    # keeps the learned-bias readout live while feeding etc.
-        drive = {**m, "song_side": self.song_side}
-        if self.world.female is not None:
-            fx, fy = self.world.female.x, self.world.female.y
-            bearing = wrap(math.atan2(fy - self.body.pose.y, fx - self.body.pose.x) - self.body.pose.h)
-            self.song_side = 1.0 if bearing < 0 else -1.0
-            d = math.hypot(fx - self.body.pose.x, fy - self.body.pose.y)
-            drive["abdomen"] = 1.0 if (m["court"] > 0.5 and d < 6.0) else 0.0
-        self.body.move(dt, mode, drive, wander_yaw)
-        self.turn_command = wander_yaw if mode in ("walk", "court") else 0.0   # voluntary part only
-        # nothing moves the legs: say "resting", not "walking". The drawn body is judged by how it moves; the physics body
-        # by what it is told to do (its stepping drive, as a speed against the same 0.05 mm/s), since MuJoCo's thorax
-        # jitters faster than that while the fly stands. Only once it has stayed still for STILL_TICKS, so that a
-        # one-tick lull does not blink 'resting'
-        if self.body_kind == "physics":
-            still = max(abs(d) for d in self.body.drive_lr) * WALK_SPEED < 0.05
-        else:
-            still = abs(self.body.pose.v) < 0.05 and abs(self.body.pose.w) < 0.05
-        self.still_ticks = self.still_ticks + 1 if still else 0
-        if mode == "walk" and self.still_ticks >= STILL_TICKS:
-            mode = self.body.pose.mode = "idle"
-        self.mode = mode
-        # eating, drinking, grooming bookkeeping
-        self.eating = self.drinking = 0.0
-        if mode == "feed":
-            hx, hy = self.body.pose.head
-            for f in self.world.food:
-                if math.hypot(hx - f.x, hy - f.y) < f.r + 0.8:
-                    if f.kind == "sugar":
-                        f.amount -= 14.0 * dt
-                        self.eating = 1.0
-                        if "feed" not in self.done:
-                            self.events.add(self.t, "behaviour", "eating: sugar taste → MN9, proboscis out")
-                        self.done.add("feed")
-                    elif f.kind == "water":
-                        f.amount -= 10.0 * dt
-                        self.drinking = 1.0
-            self.world.food = [f for f in self.world.food if f.amount > 3]
-        if mode == "groom" and "dust" in self.senses_now:     # the "Dust it" item: grooming at a wall bump does not count
-            self.done.add("groom")
-        if mode == "escape" and "sound" in self.senses_now and "loom" not in self.senses_now:
-            self.done.add("sound")
-        if self.world.drum_speed and abs(m["yaw"]) > 0.2 and (m["yaw"] > 0) == (self.world.drum_speed < 0):
-            self.done.add("optomotor")
-        if mode == "backward":
-            if self.t - self.bristles.last_touch_t < 1.0:
-                self.done.add("wall")
-            if any(z[0] == "MDN" for z in self.zaps):
-                self.done.add("moonwalk")
-        if "taste_bitter" in self.senses_now and m["feed"] < 0.1:
-            self.bitter_t += dt
-            if self.bitter_t > 0.5:
-                self.done.add("bitter")
-        small = self.senses_now.get("small", "")
-        if small in ("L", "R") and ((small == "L" and m["yaw"] < -0.25) or (small == "R" and m["yaw"] > 0.25)) \
-                and self.world.tool == "lure" and self.world.hand is not None:
-            self.done.add("lure")
-        if m["song"] > 0.3 and self.world.female is not None:
-            if "court" not in self.done:
-                self.events.add(self.t, "behaviour", "courtship song: pC1 → pIP10, one wing out")
-            self.done.add("court")
-        if self.brain.plasticity is not None and self.brain.plasticity.events and "learn" not in self.done \
-                and self.brain.plasticity.depressed_fraction() > 0.002:
-            self.done.add("learn")
-            self.events.add(self.t, "learning", "KC→MBON synapses depressed: the fly has learned something about this odour")
-        courting = 1.0 if mode == "court" else 0.0
-        self.state.step(dt, self.eating, self.drinking, courting)
-        self.world.step(dt, (self.body.pose.x, self.body.pose.y), fly_singing=m["song"], courted=courting > 0)
-        # events for salient sense changes
-        self._sense_events()
-        # sugar at the mouth for a while, yet MN9 itself quiet, with no bitter and nothing silenced: the bout has ended
-        self.sugar_t = self.sugar_t + dt if "taste_sugar" in self.senses_now else 0.0
-        if self.sugar_t > 1.0 and mode != "feed" and "taste_bitter" not in self.senses_now and not self.user_silenced \
-                and self.hz_shown["MN9"] < 15:
-            why.append("tastes sugar, but MN9 fires too little to feed: under steady sugar it tires within seconds, "
-                       "so feeding comes in bouts")
-        if "taste_water" in self.senses_now and mode != "feed":   # water never reaches MN9 here: say so, add no drive
-            why.append("touches water, but this fly's data name no water cells" if not self.water_cells else
-                       "touches water, but is not thirsty" if self.state.thirst <= 0.2 else
-                       "tastes water (LB3a), but in this wiring the water cells do not reach MN9: it does not drink"
-                       if getattr(self.real_conn, "sex", "male") != "female" else      # as her What's real says
-                       "tastes water (the published model's water cells), but at the game's rates they do not reach MN9: "
-                       "it does not drink")
-        self.driver = "  +  ".join(why)
-        if not self.driver:
-            self.driver = ("nothing: the brain is quiet" if not spikes.size else
-                           "the brain is busy, but no movement command is strong enough")
-        for k, v in hz.items():                      # smooth the numbers shown on screen
-            self.hz_shown[k] = self.hz_shown.get(k, 0.0) + (v - self.hz_shown.get(k, 0.0)) * min(1.0, dt / 0.15)
+        a = self.flies[0]
+        rates, col_idx, col_hz = a.senses(dt)
+        bt = a.advance(dt, rates, col_idx, col_hz)
+        a.act(dt, bt)
+        a.bookkeep(dt)
+        self.world.step(dt, (a.body.pose.x, a.body.pose.y), fly_singing=a.m["song"], courted=a.courting > 0)
+        a.after_senses(dt, bt)
         self.t += dt
         self.message_left -= dt
-        # watchdog: this simple model can lock into runaway firing. It counts events: spikes plus the graded cells'
-        # release quanta (parts list), each one a spike's worth of transmitter; the graded share is shown apart
-        n_graded = int(b._gmask[spikes].sum()) if spikes.size and b._graded_idx.size else 0
-        self.graded_eps = n_graded / dt
-        sps = spikes.size / dt
-        self.since_input = 0.0 if rates else self.since_input + dt
-        self.runaway_s = self.runaway_s + dt if sps > 150000 else 0.0
-        if (self.runaway_s > 1.5 and self.since_input > 0.5) or self.runaway_s > 4.0:
-            with b.lock:
-                b.reset()
-            self.calms += 1
-            self.runaway_s = 0.0
-            self.say("Runaway firing (a known flaw of this simple model: the smell centre, or with the parts list the optic lobe). Brain calmed.", 4.0)
-            self.events.add(self.t, "system", "runaway firing: brain reset to rest")
+        a.watchdog(dt, bt)
         if self.recording is not None and self.record_active:
-            self.recording.append({"t": round(self.t, 3), "fly": self.body.to_dict(), "mode": mode,
-                                   "hz": {k: round(v, 1) for k, v in hz.items() if self._has(k)}, "senses": self.senses_now,
-                                   "sps": int(sps)})
-        self.publish(spikes, self.hz_shown, sps)
-
-    _prev_felt: dict = {}
-
-    def _sense_events(self):
-        f, p = self.senses_now, self._prev_felt
-        for key, text in (("loom", "sees something looming"), ("pheromone", "tastes the female's pheromone (foreleg contact)"),
-                          ("dust", "dust on the antennae"), ("shock", "electric shock"), ("reward", "sugar reward → PAM dopamine (hand-built)"),
-                          ("sound", "hears a loud sound"), ("courting", "courtship arousal: pC1 driven after tapping the female (hand-built)")):
-            if key in f and key not in p:
-                self.events.add(self.t, "sense", text)
-        if f.get("smell") and f.get("smell") != p.get("smell"):
-            self.events.add(self.t, "sense", f"smells {ODOURS[f['smell']].name}")
-        self._prev_felt = dict(f)
+            self.recording.append({"t": round(self.t, 3), "fly": a.body.to_dict(), "mode": a.mode,
+                                   "hz": {k: round(v, 1) for k, v in bt.hz.items() if a._has(k)}, "senses": a.senses_now,
+                                   "sps": int(a.sps)})
+        self.publish(bt.spikes, a.hz_shown, a.sps)
 
     # ------------------------------------------------------------------ publishing
-    def learning_summary(self) -> dict | None:
-        pl = self.brain.plasticity
-        if pl is None:
-            return None
-        summ = pl.summary(self.conn)
-        return {"enabled": self.learning_on, "depressed_fraction": round(pl.depressed_fraction(), 4),
-                "events": pl.events, "learned_bias": round(self.learned_bias, 3), "smelling": self.smelling,
-                "mbon": {t: {"strength": round(v["strength"], 3), "now": round(v["now"], 3), "valence": v["valence"],
-                             "dopamine": round(v["dopamine"], 3)} for t, v in summ.items()}}
-
     def publish(self, spikes, hz, sps):
         vis = spikes[self.has_soma[spikes]]
         if vis.size > 2500:
@@ -1307,132 +677,86 @@ class Game:
             if used < budget:
                 time.sleep(budget - used)
 
-    # ------------------------------------------------------------------ static data for the browser
-    def _make_layout(self):
-        c = self.conn
-        x, y, z = c.soma[:, 0], c.soma[:, 1], c.soma[:, 2]
-        ok = ~np.isnan(x)
-        x0, x1 = np.nanmin(x), np.nanmax(x)
-        y0, y1 = np.nanmin(y), np.nanmax(y)
-        z0, z1 = np.nanmin(z), np.nanmax(z)
-        scale = max(x1 - x0, z1 - z0) / 1000.0
-        px = np.where(ok, (x1 - x) / scale, -1).round().astype(int)      # flipped: fly's left on the left
-        py = np.where(ok, (z - z0) / scale, -1).round().astype(int)      # head at the top, nerve cord below
-        pz = np.where(ok, (y - y0) / scale, -1).round().astype(int)      # depth (anterior-posterior)
-        sc = c.superclass
-        region = np.full(c.n, 6, dtype=int)
-        region[np.isin(sc, ["ol_intrinsic", "visual_projection", "visual_centrifugal", "ol_sensory",
-                            "visual_projection_tbc"])] = 0
-        region[np.char.startswith(sc.astype(str), "cb_")] = 1
-        region[np.char.startswith(sc.astype(str), "vnc")] = 3
-        region[np.isin(sc, ["descending_neuron", "descending_neuron_tbc"])] = 2
-        region[np.isin(sc, ["ascending_neuron", "sensory_ascending", "sensory_ascending_tbc"])] = 4
-        region[np.isin(sc, ["cb_motor", "vnc_motor"])] = 5
-        region[c.cls == "Kenyon_Cell"] = 7
-        region[np.isin(c.cls, ["MBON", "DAN"])] = 8
-        type_counts = c.type_counts()
-        return json.dumps({
-            "n": int(c.n), "w": int(round((x1 - x0) / scale)), "h": int(round((z1 - z0) / scale)),
-            "d": int(round((y1 - y0) / scale)),
-            "x": px.tolist(), "y": py.tolist(), "z": pz.tolist(), "region": region.tolist(),
-            "regions": ["optic lobes", "central brain", "descending", "nerve cord", "ascending", "motor", "other",
-                        "Kenyon cells", "MBON / DAN"],
-            "arena_r": ARENA_R, "fly_half": FLY_HALF, "tick_ms": TICK_MS,
-            "presets": [{"spec": s, "hz": h, "label": l} for s, h, l in ZAP_PRESETS if c.select(s).size],   # cells this fly has
-            "types": sorted(type_counts, key=lambda t: -type_counts[t])[:5000],
-            "edges": int(c.n_edges), "synapses": int(c.n_syn.sum()),
-            "dataset": c.dataset, "sex": c.sex,
-            "readouts": self.readout_meta,
-            "checks": [{"id": i, "text": t} for i, t in CHECKS                    # none this fly cannot do
-                       if (i not in ("court", "genetics") or self.readouts["pIP10"].size)   # no song cells, no song to lose
-                       and not (c.sex == "female" and i in ("groom", "sound", "wall"))],
-            "odours": [{"id": o.id, "name": o.name, "glomeruli": o.glomeruli, "innate": o.innate, "colour": o.colour,
-                        "note": o.note} for o in ODOURS.values()],
-            "scenarios": [{"id": k, "name": s.name, "description": s.female if c.sex == "female" and s.female else s.description}
-                          for k, s in SCENARIOS.items()],
-            "retina": self.retina.layout(),
-            "profile": self.profile_name,
-            "genetics": self.genetics,
-            "genome": {"levels": [{"level": lv, "label": lb} for lv, lb in wiring.LEVELS],
-                       "rules": {"type_groups": None}},
-            "parts": {"tables": self.parts_list().describe(), "counts": self.parts_counts()},
-            "vfb": vfb.ontology_for(c).summary(c),
-            "settings": self.brain.settings(),
-            "decoder": self.decoder.dn_targets,
-            "columnar_vision": self.columnar_on,
-            "body": self.body_kind, "stride_average": bool(getattr(self.body, "stride_average", False)),
-            "whats_real": self.whats_real(),
-        }, separators=(",", ":")).encode()
+    # ------------------------------------------------------------------ fly 0, as the game's own attributes
+    # One fly's state lives on its FlyAgent (agent.py). These names keep reading and writing fly 0's, so that the
+    # server, the scenarios and every caller written for one fly (game.brain, game.body, game.mode, ...) still work.
+    _FLY_ATTRS = ("brain", "conn", "real_conn", "brain_factory", "_brain_kwargs", "retest_mode", "_retest_handle",
+                  "_survival_cache", "_retest_lock", "_rules_cache", "_survival_token", "genome", "parts_on", "_parts_list",
+                  "_parts_counts", "autopilot", "body", "body_kind", "retina", "columnar_on", "nose", "mouth", "water_cells",
+                  "forelegs", "antennae", "bristles", "decoder", "state", "readouts", "readout_meta", "genetics", "neuronbridge",
+                  "custom_readouts", "user_silenced", "user_modulated", "has_soma", "learning_on", "done", "zaps", "mode",
+                  "wander", "runaway_s", "graded_eps", "since_input", "calms", "hz_shown", "senses_now", "_prev_felt", "driver",
+                  "gf_cooldown", "gf_prev", "still_ticks", "turn_command", "court_left", "sound_left", "bitter_t", "sugar_t",
+                  "eating", "drinking", "song_side", "shock_left", "learned_bias", "smelling")
+
+    def senses(self, dt: float):
+        return self.flies[0].senses(dt)
+
+    def choose_mode(self, m: dict, gf_spikes: int) -> str:
+        return self.flies[0].choose_mode(m, gf_spikes)
+
+    def odour_steering(self) -> tuple[float, str]:
+        return self.flies[0].odour_steering()
+
+    def _sense_events(self):
+        return self.flies[0]._sense_events()
+
+    def learning_summary(self) -> dict | None:
+        return self.flies[0].learning_summary()
+
+    def genome_status(self) -> dict:
+        return self.flies[0].genome_status()
+
+    def parts_arg(self, on: bool):
+        return self.flies[0].parts_arg(on)
+
+    def parts_list(self) -> "partslib.PartsList":
+        return self.flies[0].parts_list()
+
+    def parts_counts(self) -> dict:
+        return self.flies[0].parts_counts()
+
+    def _retest_spec(self, conn) -> dict | None:
+        return self.flies[0]._retest_spec(conn)
+
+    def _survival_key(self, conn) -> tuple:
+        return self.flies[0]._survival_key(conn)
+
+    def _survival_worker(self, conn, token):
+        return self.flies[0]._survival_worker(conn, token)
+
+    def _start_grow(self, level: str, seed: int):
+        return self.flies[0]._start_grow(level, seed)
+
+    def _grow_worker(self, level: str, seed: int):
+        return self.flies[0]._grow_worker(level, seed)
+
+    def _start_rebuild(self, on: bool):
+        return self.flies[0]._start_rebuild(on)
+
+    def _rebuild_worker(self, on: bool):
+        return self.flies[0]._rebuild_worker(on)
+
+    def _swap_brain(self, a: dict):
+        return self.flies[0]._swap_brain(a)
+
+    def _default_brain_factory(self, conn, **extra):
+        return self.flies[0]._default_brain_factory(conn, **extra)
 
     def _has(self, key: str) -> bool:
-        """Whether this fly has the cells of a readout (the female fly has no pIP10 and no TTMn)."""
-        i = self.readouts.get(key)
-        return i is None or i.size > 0
+        return self.flies[0]._has(key)
+
+    def _make_layout(self):
+        return self.flies[0]._make_layout()
 
     def whats_real(self) -> dict:
-        male = getattr(self.real_conn, "sex", "male") != "female"
-        src = "MaleCNS" if male else "FlyWire"
-        return {
-            "wiring": [
-                "Sugar taste neurons → MN9, the proboscis motor neuron. Bitter taste keeps MN9 silent"
-                + (", even on top of sugar." if male else "; on top of sugar only with the published model's settings "
-                   "(fly_brain.py --female), not the game's (MN9 7-13 Hz)."),
-                (("Water taste cells (LB3a, the type whose outputs match the published model's water cells) → Fudog (DNg67), "
-                  "not MN9 (at no rate up to 200 Hz): a thirsty fly tastes water but does not drink." if male else
-                  "Water taste cells (the published model's 18 water cells) → Fudog (DNg67); at the game's 80 Hz not MN9, "
-                  "so a thirsty fly tastes water but does not drink (at 200 Hz they do reach MN9: docs/SCIENCE.md 2.2).")
-                 if self.water_cells else
-                 "Water: this fly's data name no water taste cells (FlyWire types its labellar sugar and water cells as "
-                 "LB3 (122) and LB2d (7), without splitting them by taste), so water tastes of nothing here and she does "
-                 "not drink (docs/SCIENCE.md 9.2)."),
-                "Looming detectors (LC4, LPLC2) → giant fibre DNp01, the escape command.",
-                "A small moving object seen on one side (LC10a, a courtship-chase cell type) → DNa02 on that same side → a turn toward it.",
-                ("Head bristles → MDN, the 'moonwalker' backward-walking neurons. Antennal sensors (Johnston's organ) → "
-                 "aDN1/aDN2 grooming neurons." if male else "In this female brain the head bristles reach the grooming neuron "
-                 "aDN1 (86 Hz) and not MDN (0 Hz): at a wall she grooms instead of backing up (docs/SCIENCE.md 9.4)."),
-                "Odour receptor neurons → projection neurons → a sparse, odour-specific Kenyon-cell code → mushroom body output neurons.",
-                *(["Bitter taste → PPL1 dopamine neurons (the punishment signal for learning)."] if male else []),
-                "Which Kenyon-cell synapses are plastic and which dopamine neurons gate each MBON: read from the wiring (DAN→MBON synapses).",
-                *(["pC1 courtship neurons → pIP10 → wing motor neurons (song), and → DNp13; a female seen as a small moving object → LC10a → DNa02 (the chase)."] if male else []),
-                ("A loud sound → Johnston's organ B neurons → the giant fibre (a startle jump), and wind on the antennae → grooming and backing neurons."
-                 if male else "In this female brain Johnston's organ reaches the giant fibre and the grooming neurons only weakly (5-9 Hz): "
-                 "a clap does not startle her and dust does not make her groom (docs/SCIENCE.md 9.4)."),
-                "Wide-field motion → T4/T5 (" + ("driven column by column from the retina" if self.columnar_on else
-                                                 "driven as whole populations from the retina's motion signal") +
-                ") → HS cells → DNa02 and DNp15 on the same side: the optomotor reflex.",
-                ("Which neurons express fruitless and doublesex, and which are male-specific or dimorphic: the MaleCNS annotation, read from the data. Silencing the fruitless neurons stops the song (pIP10 and its route to the wing motor neurons are fru+) and leaves feeding and escape alone."
-                 if male else "Which neurons express fruitless and doublesex, and which are female-specific or dimorphic: FlyWire's annotation (Schlegel et al. 2024), read from the data. This female brain has no pIP10 and no nerve cord, so no song."),
-                *(["A grown fly (Genome card) keeps the connectome's cell-type wiring rules and nothing else: 9 of the 11 validated reflexes survive on type-level rules, none on class-level rules."] if male else []),
-                f"The parts list (Genome card): which neurons make dopamine, octopamine or serotonin is the {src} transmitter prediction"
-                + ("" if male else ", corrected from FlyWire's literature column (known_nt)") +
-                "; that these act only through slow receptors, and that photoreceptors, L1-L5, the medulla inputs to T4/T5, T4/T5 and HS/VS signal without spikes, is the literature (parts.py cites it).",
-                "Which anatomy-ontology class each cell type is (the fbbt: selector, the ontology line in a neuron's popover, the VFB links): the FlyBase anatomy ontology and Virtual Fly Brain's MaleCNS name synonyms, joined offline by name"
-                + ("" if male else " (for FlyWire's own type names, the classes FlyWire's annotation gives them)") + ". Where the literature-curated class says a neuron's transmitter differs from the prediction, or fills an 'unclear' one, the parts list follows the literature; the receptors each cell type expresses come from the adult single-cell RNA-seq atlases on VFB and set which way a tone pushes that target.",
-            ],
-            "hand_built": [
-                "The retina (which facet sees what) and the feature computations that turn retinal images into LC4/LPLC2/LC10a/T4/T5 rates.",
-                "How smells, wind, touch and dust become firing rates, and which sensory types they drive.",
-                ("How descending-neuron firing becomes movement: the decoder's weights, what wins when commands compete, and that "
-                 "a giant-fibre burst (5 spikes in 50 ms, not one) is the escape command. "
-                 "Speeds and turn rates come from leg physics (NeuroMechFly v2 in MuJoCo; its stepping rhythm, recorded steps and "
-                 "left/right drive are flygym's)." if getattr(self, "body_kind", "drawn") == "physics" else
-                 "How descending-neuron firing becomes movement: speeds, turn rates, the jump (it needs a giant-fibre burst, "
-                 "5 spikes in 50 ms, not one), and what wins when commands compete."),
-                "The walking urge, hunger and thirst, odour-guided steering (innate valence + the learned KC→MBON bias), the female's behaviour.",
-                "Sugar reward → PAM dopamine except PAM-γ3 (the wiring's taste-to-PAM routes give the best-connected PAM-α1 cells about a third of the drive they need; SCIENCE.md 4.5); the 'shock' tool → PPL1.",
-                ("Courtship arousal: tapping the female fires the tarsal taste neurons (wiring), but their route to pC1 is ~8x too weak in this model, so contact also drives pC1 directly."
-                 if male else "Courtship arousal: contact drives pC1 directly (this brain has no tarsal taste neurons)."),
-                "Wind on Johnston's organ is kept weak: at the rates real wind would give, the same neurons drive grooming in this model; there is no wind-steering route, so heading upwind is hand-built.",
-                "Efference copy: the eyes' motion signal is damped while the fly turns on purpose, as in real flies.",
-                "The learning rule's constants (rate, time windows, floor, forgetting).",
-                f"Fixes for runaway loops: mild neuron fatigue and blocking the output of the {self.real_conn.select('class:ALLN').size:,} antennal-lobe local neurons.",
-                "With the parts list on, where APL releases: that its inhibition stays local to the busy part of the mushroom body is the literature (Amin et al. 2020), the rule that turns each lobe's Kenyon-cell activity into APL's release there is the kit's. That dopamine turns APL down through Dop2R is the literature (Zhou et al. 2019).",
-            ],
-            "not_modelled": [
-                "Real neuron shapes and individual properties, hormones, electrical synapses, most neuromodulation, development.",
-                "Genes beyond two transcription factors' expression labels, the transmitter each neuron makes and (with the parts list on) the aminergic receptors its cell type expresses where an adult scRNA-seq cluster exists. Still no ion-channel differences, no peptide signalling (the ontology only names the peptidergic types), no development from the genome.",
-                "Absolute firing rates shouldn't be trusted, only which neurons respond. Nothing here is conscious.",
-                *(["The escape jump with the physics body: the giant fibre fires, but the fly stays on its feet (NeuroMechFly "
-                   "has no jump model)."] if getattr(self, "body_kind", "drawn") == "physics" else []),
-            ],
-        }
+        return self.flies[0].whats_real()
+
+
+def _fly_shim(name: str) -> property:
+    return property(lambda self: getattr(self.flies[0], name), lambda self, v: setattr(self.flies[0], name, v),
+                    doc=f"fly 0's {name} (one fly's state lives on its FlyAgent, agent.py)")
+
+
+for _name in Game._FLY_ATTRS:
+    setattr(Game, _name, _fly_shim(_name))
