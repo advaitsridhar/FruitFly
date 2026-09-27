@@ -46,6 +46,29 @@ def _empty_tick(readouts: dict) -> BrainTick:
     return BrainTick(zero, dict(zero), 0, 0, 0, [], 0.0, (0, 0.0), None, 0, [], None)
 
 
+HOME = (0.0, -12.0, math.pi / 2)             # where a new fly stands (FlyBody.reset's own default)
+PARTNER_HOME = (0.0, 12.0, -math.pi / 2)     # a partner starts across the dish, facing the protagonist
+
+
+@dataclass
+class PoseView:
+    """One fly as the other flies see it at the start of a tick (docs/TWO_FLIES_PLAN.md 5.4, D4): every fly senses
+    the same snapshot, whatever order the flies are ticked in. Positions are real millimetres (the dish is in
+    real mm); ``song`` and ``court`` are the fly's last decoded drives (0..1)."""
+    id: int
+    sex: str
+    x: float
+    y: float
+    h: float
+    v: float
+    wing_l: float
+    wing_r: float
+    song: float
+    court: float
+    jump: bool
+    body_kind: str
+
+
 class FlyAgent:
     """One fly: everything the game keeps per fly. ``game`` holds the shared world and clock (read here through
     :attr:`world`, :attr:`t`, :attr:`events`, :attr:`actions`, :attr:`scenario`, :meth:`say`).
@@ -54,17 +77,38 @@ class FlyAgent:
     process, or a :class:`~virtual_fly.brainio.ProcessBrain` in a child process of its own (``brain_procs``), with
     the same numbers either way. :attr:`brain` is the FlyBrain itself when it is local, else None."""
 
-    def __init__(self, game, id: int, brain, *, sex: str, rng, seed: int, autopilot: bool = True, columnar: bool = True,
-                 body: str = "drawn", stride_average: bool = False, parts_list=None, brain_factory=None,
-                 brain_kwargs: dict | None = None, retest: str = "auto", brain_procs: bool = False):
+    def __init__(self, game, id: int, brain=None, *, conn=None, sex: str, rng, seed: int, autopilot: bool = True,
+                 columnar: bool = True, body: str = "drawn", stride_average: bool = False, parts_list=None,
+                 brain_factory=None, brain_kwargs: dict | None = None, retest: str = "auto", brain_procs: bool = False,
+                 parts=False, pair: bool = False, home: tuple | None = None):
+        """``brain``: a built FlyBrain (the protagonist's, as play.py builds it); or ``brain=None`` with ``conn``: a fly
+        whose brain is built from ``brain_kwargs`` and ``parts`` (False, True or a PartsList), in its own process when
+        ``brain_procs`` is set, else here (a partner, docs/TWO_FLIES_PLAN.md 5.4). ``pair``: this fly shares the dish
+        with another simulated fly (a female then shows her decision neurons, 5.6). ``home``: where a new fly stands."""
         self.game, self.id, self.sex, self.rng, self.seed = game, id, sex, rng, seed
-        self.conn = brain.conn
-        # the genome: the real wiring, and flies grown from its rules (see wiring.py)
-        self.real_conn = brain.conn
-        self.brain_factory = brain_factory or self._default_brain_factory
-        # how a re-test process rebuilds the brain: build_brain(conn, profile, **brain_kwargs, parts=...). Known
-        # for the default factory; a caller with its own factory says so (play.py), or re-tests run in a thread.
-        self._brain_kwargs = brain_kwargs if brain_kwargs is not None else (None if brain_factory else {})
+        self.pair = pair
+        self.home = tuple(home) if home is not None else HOME
+        if brain is None:
+            if conn is None:
+                raise ValueError("a fly needs a brain, or a connectome to build one from")
+            if brain_procs and brain_kwargs is None:
+                raise ValueError("a brain in its own process needs the brain's settings (brain_kwargs)")
+            self.conn = self.real_conn = conn
+            self.brain_factory = brain_factory or self._default_brain_factory
+            self._brain_kwargs = dict(brain_kwargs or {})
+            self.parts_on = bool(parts)
+            self._parts_list = parts if isinstance(parts, partslib.PartsList) else parts_list
+        else:
+            self.conn = brain.conn
+            # the genome: the real wiring, and flies grown from its rules (see wiring.py)
+            self.real_conn = brain.conn
+            self.brain_factory = brain_factory or self._default_brain_factory
+            # how a re-test process rebuilds the brain: build_brain(conn, profile, **brain_kwargs, parts=...). Known
+            # for the default factory; a caller with its own factory says so (play.py), or re-tests run in a thread.
+            self._brain_kwargs = brain_kwargs if brain_kwargs is not None else (None if brain_factory else {})
+            self.parts_on = brain.parts is not None          # the genes as each neuron's parts list (parts.py)
+            # the PartsList to (re)build with: the running brain's, else the one the caller chose (curated policy ...)
+            self._parts_list = brain.parts.parts if brain.parts is not None else parts_list
         if retest not in ("auto", "process", "thread"):
             raise ValueError("retest must be 'auto', 'process' or 'thread'")
         self.retest_mode = retest
@@ -74,17 +118,26 @@ class FlyAgent:
         self._rules_cache: dict = {}
         self._survival_token = None
         self.genome: dict = {"level": "real", "seed": 0, "growing": None, "survival": None, "wiring": None, "rules": None, "error": None}
-        self.parts_on = brain.parts is not None          # the genes as each neuron's parts list (parts.py)
-        # the PartsList to (re)build with: the running brain's, else the one the caller chose (curated policy ...)
-        self._parts_list = brain.parts.parts if brain.parts is not None else parts_list
         self._parts_counts: dict | None = None
-        self._learning_on = brain.plasticity is not None
+        # the readouts this fly reports each tick: the kit's, the decoder's hidden ones and, for a female with a
+        # partner, her decision neurons (FEMALE_READOUTS); the same list, in the same order, in a brain process
+        self._readout_specs: list = [(r[0], r[1]) for r in READOUTS] + list(HIDDEN_READOUTS.items())
         # the brain: here, or in a child process built from this brain's settings (then this one is let go)
-        if brain_procs:
-            self.io = ProcessBrain(self.child_spec(brain), fly=id)
-            del brain
+        if brain is None:
+            if brain_procs:
+                self.io = ProcessBrain(self.child_spec(None), fly=id)
+            else:
+                from .settings import build_brain
+                self.io = LocalBrain(build_brain(self.conn, self.profile_name, **self._brain_kwargs,
+                                                 parts=self.parts_arg(self.parts_on)))
+            self._learning_on = self.io.has_plasticity
         else:
-            self.io = LocalBrain(brain)
+            self._learning_on = brain.plasticity is not None
+            if brain_procs:
+                self.io = ProcessBrain(self.child_spec(brain), fly=id)
+                del brain
+            else:
+                self.io = LocalBrain(brain)
         self.histories: dict[str, list] = {}             # a process brain's readout histories, one value per tick
         self.autopilot = autopilot
         if body == "physics":                          # optional: NeuroMechFly v2 in MuJoCo (virtual_fly/physics.py)
@@ -105,16 +158,16 @@ class FlyAgent:
         self.bristles = Bristles(self.world)
         self.decoder = MotorDecoder(self.conn)
         self.state = InternalState()
-        self.readouts = {r[0]: self.conn.select(r[1]) for r in READOUTS}
-        self.readouts.update({k: self.conn.select(v) for k, v in HIDDEN_READOUTS.items()})
+        self.readouts = {k: self.conn.select(spec) for k, spec in self._readout_specs}
         c = self.conn
+        shown = READOUTS                                  # the bars the page shows
         self.readout_meta = [{"key": r[0], "spec": r[1], "label": r[2], "group": r[3], "max": r[4], "colour": r[5],
                               "genes": genetics.genotype(c, c.select(r[1]))["tags"]}
-                             for r in READOUTS if self.readouts[r[0]].size]      # (the female fly has no pIP10, no TTMn)
+                             for r in shown if self.readouts[r[0]].size]      # (the female fly has no pIP10, no TTMn)
         self.genetics = genetics.summary(c, self.readout_meta)
         self.neuronbridge = genetics.NeuronBridge()
         self.custom_readouts: dict[str, str] = {}
-        for r in READOUTS:
+        for r in shown:
             if self.readouts[r[0]].size:                 # not for cells this fly lacks (/api/history leaves them out)
                 self.add_monitor(r[0], r[1])
         self.user_silenced: set[str] = set()
@@ -154,8 +207,9 @@ class FlyAgent:
         self._learning_on = bool(on)
         self.io.learning(on=self._learning_on)
 
-    def child_spec(self, brain) -> dict:
-        """What a brain process needs to build this brain (as _retest_spec says it for the re-test)."""
+    def child_spec(self, brain=None) -> dict:
+        """What a brain process needs to build this brain (as _retest_spec says it for the re-test): from a built
+        brain's settings, or (``brain=None``, a partner) from this fly's brain_kwargs alone."""
         path = getattr(self.real_conn, "path", None)
         if path is None or not os.path.exists(path) or self.real_conn.meta.get("rewired"):
             raise ValueError("a brain in its own process is built from the connectome's file, and this wiring is not "
@@ -164,11 +218,11 @@ class FlyAgent:
         if self._brain_kwargs is None:
             raise ValueError("a brain in its own process needs the brain's settings (a custom brain_factory without "
                              "brain_kwargs); use brain_procs='off'")
-        kw = {k: v for k, v in brain.settings().items() if k in self._BRAIN_KWARGS}
+        kw = {k: v for k, v in brain.settings().items() if k in self._BRAIN_KWARGS} if brain is not None else {}
         kw.update(self._brain_kwargs)
         kw["parts"] = self.parts_arg(self.parts_on)
         return {"path": str(path), "wiring": None, "profile": self.profile_name, "brain_kwargs": kw,
-                "readouts": [(r[0], r[1]) for r in READOUTS] + list(HIDDEN_READOUTS.items()),
+                "readouts": list(self._readout_specs),
                 "vfb": vfb.injected(), "regions": partslib.injected_region_table()}   # data swapped in at runtime
 
     def add_monitor(self, key: str, spec: str):
@@ -233,7 +287,7 @@ class FlyAgent:
     # ------------------------------------------------------------------ a new fly (the per-fly part of Game.reset_world)
     def reset_state(self):
         """Everything this fly forgets when the player asks for a new fly (its checklist is kept)."""
-        self.body.reset()
+        self.body.reset(*self.home)
         # the senses forget what they were in the middle of
         self.antennae.dust_left = 0.0
         self.antennae.hearing = 0.0
@@ -503,9 +557,25 @@ class FlyAgent:
         g["parts"] = {"on": self.parts_on, "status": parts_status if known else self.io.parts_status()}
         return g
 
+    # ------------------------------------------------------------------ as the other flies see this one
+    def pose_view(self) -> PoseView:
+        """This fly at the start of a tick, for the other flies' senses (a snapshot: D4)."""
+        p = self.body.pose
+        return PoseView(self.id, self.sex, p.x, p.y, p.h, p.v, p.wing_l, p.wing_r, float(self.m.get("song", 0.0)),
+                        float(self.m.get("court", 0.0)), p.jump is not None, self.body_kind)
+
+    @property
+    def can_court(self) -> bool:
+        """Whether the decoder may put this fly in court mode (the wing gesture, the "court" label): the protagonist
+        always (as the single fly always could); a partner only when it has song cells (pIP10): a female partner's
+        pC1 shows as a readout instead (docs/TWO_FLIES_PLAN.md D12)."""
+        return self.id == 0 or self.readouts["pIP10"].size > 0
+
     # ------------------------------------------------------------------ senses (hand-built encoders)
-    def senses(self, dt: float):
-        """Returns (spec -> Hz, per-neuron indices, per-neuron Hz) and fills ``self.senses_now``."""
+    def senses(self, dt: float, others=()):
+        """Returns (spec -> Hz, per-neuron indices, per-neuron Hz) and fills ``self.senses_now``. ``others``: the
+        other flies' start-of-tick poses (PoseView), which the social encoders read (senses/social.py); with none
+        (the single fly) nothing here changes."""
         pose = self.body.pose
         rates: dict[str, float] = {}
         felt: dict = {}
@@ -577,9 +647,9 @@ class FlyAgent:
         self.senses_now = felt
         return rates, col_idx, col_hz
 
-    def sense(self, dt: float):
+    def sense(self, dt: float, others=()):
         """The same as :meth:`senses` (the name the plan uses for one fly's sensing step)."""
-        return self.senses(dt)
+        return self.senses(dt, others)
 
     # ------------------------------------------------------------------ behaviour selection (hand-built)
     def choose_mode(self, m: dict, gf_spikes: int) -> str:
@@ -611,7 +681,7 @@ class FlyAgent:
             if m[name] > (start / 2 if ongoing else start):
                 options.append((weight * m[name] + (0.15 if ongoing else 0.0), name))
         mode = max(options)[1] or "walk"
-        if mode == "walk" and (m["song"] > 0.3 or m["court"] > 0.4):
+        if mode == "walk" and (m["song"] > 0.3 or m["court"] > 0.4) and self.can_court:
             mode = "court"
         return mode
 
@@ -662,9 +732,10 @@ class FlyAgent:
         """Drive the brain with this tick's rates and step it for TICK_MS; the readouts it leaves."""
         return self.advance_done(self.io.advance(*self.advance_input(dt, rates, col_idx, col_hz, seq)))
 
-    def act(self, dt: float, bt: BrainTick):
+    def act(self, dt: float, bt: BrainTick, others=()):
         """Decode the descending neurons, choose a mode, add the hand-built walking urge and steering, move the body,
-        then the resting rule (a walk still for STILL_TICKS reads idle)."""
+        then the resting rule (a walk still for STILL_TICKS reads idle). ``others``: the other flies' start-of-tick
+        poses, which the song gesture faces and the body must not walk into (senses/social.py)."""
         motor_hz, gf = bt.motor_hz, bt.gf
         m = self.decoder.decode(motor_hz, dt)
         self.gf_cooldown -= dt

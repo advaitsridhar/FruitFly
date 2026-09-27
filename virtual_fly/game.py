@@ -32,6 +32,7 @@ from . import genetics
 from . import parts as partslib
 from . import wiring
 from .scenarios import SCENARIOS, ScenarioRunner
+from .senses.social import resolve_overlaps
 from .senses.olfaction import ODOURS
 from .world import World
 
@@ -266,11 +267,19 @@ class MotorDecoder:
 class Game:
     def __init__(self, brain: FlyBrain, autopilot: bool = True, seed: int = 0, columnar: bool = True,
                  profile_name: str = "game", brain_factory=None, parts_list=None, brain_kwargs: dict | None = None,
-                 retest: str = "auto", body: str = "drawn", stride_average: bool = False, brain_procs: str = "auto"):
-        from .agent import FlyAgent                      # (agent.py imports this module's constants)
+                 retest: str = "auto", body: str = "drawn", stride_average: bool = False, brain_procs: str = "auto",
+                 partner: dict | None = None, social=None):
+        """``partner``: a second simulated fly in the dish (docs/TWO_FLIES_PLAN.md 5.4): a dict with its ``conn``
+        (loaded here, for the API and the layout; its brain is built from the file in a process of its own, or here
+        with brain_procs="off"), and optionally ``brain_kwargs`` (default: the protagonist's overrides), ``parts``
+        (False, True or a PartsList), ``autopilot`` (default on: her walking urge, decision 13). ``social``: a
+        senses.social.SocialConfig, or its comma list (default "seen,song,contact,collide")."""
+        from .agent import PARTNER_HOME, FlyAgent          # (agent.py imports this module's constants)
+        from .senses.social import SocialConfig
         if brain_procs not in ("auto", "on", "off"):
             raise ValueError("brain_procs must be 'auto', 'on' or 'off'")
         self.brain_procs = brain_procs                   # auto: in this process for one fly, a process per brain with more
+        self.social = social if isinstance(social, SocialConfig) else SocialConfig.from_list(social)
         self.profile_name = profile_name
         self.rng = random.Random(seed)
         self.seed = seed
@@ -280,12 +289,27 @@ class Game:
         self.world = World(seed)
         self.events = EventLog()
         self.scenario = ScenarioRunner(self)
-        # the flies: one today; fly 0 keeps the game's own random stream (a partner gets its own, docs/TWO_FLIES_PLAN.md 5.1)
+        if partner is not None and body == "physics":
+            raise ValueError("a partner with the physics body is Phase 4's (docs/TWO_FLIES_PLAN.md D10): use the drawn body")
+        procs = brain_procs == "on" or (brain_procs == "auto" and partner is not None)   # a process per brain with two
+        # the flies: fly 0 keeps the game's own random stream and seed; fly k gets random.Random(f"{seed}:fly{k}") and
+        # brain seed + 1000 k, and never draws from World.rng (docs/TWO_FLIES_PLAN.md D11)
         self.flies = [FlyAgent(self, 0, brain, sex=getattr(brain.conn, "sex", "male"), rng=self.rng, seed=seed,
                                autopilot=autopilot, columnar=columnar, body=body, stride_average=stride_average,
                                parts_list=parts_list, brain_factory=brain_factory, brain_kwargs=brain_kwargs, retest=retest,
-                               brain_procs=(brain_procs == "on"))]
+                               brain_procs=procs, pair=partner is not None)]
         del brain                                        # a process brain has been built from it: let it go
+        if partner is not None:
+            k = len(self.flies)
+            pconn = partner["conn"]
+            kw = dict(partner.get("brain_kwargs") if partner.get("brain_kwargs") is not None
+                      else (self.flies[0]._brain_kwargs or {}))
+            kw["seed"] = seed + 1000 * k
+            self.flies.append(FlyAgent(self, k, None, conn=pconn, sex=getattr(pconn, "sex", "male"),
+                                       rng=random.Random(f"{seed}:fly{k}"), seed=seed + 1000 * k,
+                                       autopilot=partner.get("autopilot", True), columnar=columnar, body="drawn",
+                                       parts_list=parts_list, brain_kwargs=kw, retest=retest, brain_procs=procs,
+                                       parts=partner.get("parts", False), pair=True, home=PARTNER_HOME))
         self.layout_json = self._make_layout()
         self.state_json = b"{}"
         self.state_dict: dict = {}
@@ -318,6 +342,9 @@ class Game:
         self.world.hand = None
         self.world.set_stripes(0, 0.0)
         a.reset_state()
+        for b in self.flies[1:]:                         # a partner starts afresh too, at its own place
+            b.reset_brain()
+            b.reset_state()
         self.message, self.message_left = "", 0.0
         self.t = 0.0
         self.scenario.stop(silent=True)
@@ -383,6 +410,9 @@ class Game:
         if kind == "hand_off":
             self.world.hand = None
             return {"ok": True}
+        if kind == "female" and len(self.flies) > 1 and a.get("on", True):
+            return {"ok": False, "error": "a simulated partner is in the dish; the scripted female is for single-fly play "
+                                          "(start the game without --partner to use her)"}
         if kind in ("zap", "silence", "modulate", "watch"):
             spec = str(a.get("spec", "")).strip()
             try:
@@ -590,19 +620,41 @@ class Game:
 
     # ------------------------------------------------------------------ the loop
     def tick(self):
+        """One 25 ms tick of every fly in the dish (docs/TWO_FLIES_PLAN.md 5.4): all flies sense the same start-of-tick
+        snapshot of the others, all brains advance (in lockstep when each has its own process), then all bodies
+        move, then the bookkeeping; with one fly this is exactly the single fly's order."""
         dt = TICK_MS / 1000.0
         self._apply_actions()
         self.scenario.step(dt)
-        a = self.flies[0]
-        rates, col_idx, col_hz = a.senses(dt)
-        bt = a.advance(dt, rates, col_idx, col_hz, self.seq)     # seq: the brain-map sample is drawn as publish will number it
-        a.act(dt, bt)
-        a.bookkeep(dt)
+        flies = self.flies
+        a = flies[0]
+        if len(flies) == 1:
+            rates, col_idx, col_hz = a.senses(dt)
+            bts = [a.advance(dt, rates, col_idx, col_hz, self.seq)]   # seq: the brain-map sample is drawn as publish will number it
+            others = [()]
+        else:
+            from .brainio import advance_all                 # (brainio.py imports this module's constants)
+            snap = [f.pose_view() for f in flies]
+            others = [[s for s in snap if s.id != f.id] for f in flies]
+            inputs = []
+            for f, o in zip(flies, others):
+                rates, col_idx, col_hz = f.senses(dt, o)
+                inputs.append(f.advance_input(dt, rates, col_idx, col_hz, self.seq))
+            bts = [f.advance_done(bt) for f, bt in zip(flies, advance_all([f.io for f in flies], inputs))]
+        for f, bt, o in zip(flies, bts, others):
+            f.act(dt, bt, o)
+        if len(flies) > 1 and self.social.collide:
+            resolve_overlaps(flies)                      # both pushed apart equally (D4; senses/social.py)
+        for f in flies:
+            f.bookkeep(dt)
         self.world.step(dt, (a.body.pose.x, a.body.pose.y), fly_singing=a.m["song"], courted=a.courting > 0)
-        a.after_senses(dt, bt)
+        for f, bt in zip(flies, bts):
+            f.after_senses(dt, bt)
         self.t += dt
         self.message_left -= dt
-        a.watchdog(dt, bt)
+        for f, bt in zip(flies, bts):
+            f.watchdog(dt, bt)
+        bt = bts[0]
         if self.recording is not None and self.record_active:
             self.recording.append({"t": round(self.t, 3), "fly": a.body.to_dict(), "mode": a.mode,
                                    "hz": {k: round(v, 1) for k, v in bt.hz.items() if a._has(k)}, "senses": a.senses_now,

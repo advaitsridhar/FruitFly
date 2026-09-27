@@ -141,7 +141,8 @@ class _Builder:
 
         parts.append(s16(DATASET))
         meta = json.dumps({"source": "synthetic (virtual_fly test suite)", "min_synapses": 5,
-                           "neurons": n, "connections": int(len(post_idx))}).encode()
+                           "neurons": n, "connections": int(len(post_idx)),
+                           **({"sex": "female"} if getattr(self, "sex", "male") == "female" else {})}).encode()
         parts.append(struct.pack("<I", len(meta)) + meta)
         for table in (self.types, SUPERCLASSES, CLASSES, SUBCLASSES, NTS, SIDES, DIMORPHISMS, FRUDSX, NEUROMERES, NERVES):
             parts.append(struct.pack("<H", len(table)) + b"".join(s16(t) for t in table))
@@ -174,9 +175,15 @@ class _Builder:
         return path
 
 
-def build_synthetic(path: Path | str, seed: int = 7) -> Path:
-    """Write the synthetic FLYB file to ``path`` (gzipped when the suffix is ``.gz``)."""
+def build_synthetic(path: Path | str, seed: int = 7, sex: str = "male") -> Path:
+    """Write the synthetic FLYB file to ``path`` (gzipped when the suffix is ``.gz``). ``sex="female"`` writes a
+    female fly for the two-flies tests: ``"sex": "female"`` in the meta and, as FlyWire's brain-only file, no pIP10,
+    no TTMn and no leg taste cells (LgLG1a, LgLG1b, LgLG4). The default file is byte for byte what it always was."""
+    if sex not in ("male", "female"):
+        raise ValueError("sex must be 'male' or 'female'")
+    female = sex == "female"
     b = _Builder(seed)
+    b.sex = sex
     add, both, con = b.add, b.both, b.connect
     S = "sensory"
     ACH, GABA, GLU, DA = "acetylcholine", "gaba", "glutamate", "dopamine"
@@ -210,7 +217,8 @@ def build_synthetic(path: Path | str, seed: int = 7) -> Path:
     lc4 = both("LC4", 8, "visual_projection", "visual", ACH, soma=(250000, 200000, 100000))
     lplc2 = both("LPLC2", 8, "visual_projection", "visual", ACH, soma=(255000, 200000, 105000))
     dnp01 = both("DNp01", 1, "descending_neuron", "descending", ACH, soma=(30000, 230000, 150000))
-    ttmn = both("TTMn", 1, "vnc_motor", "motor", ACH, neuromere="T2", soma=(20000, 300000, 400000))
+    none = {"L": [], "R": []}                                # a cell type this fly does not have
+    ttmn = none if female else both("TTMn", 1, "vnc_motor", "motor", ACH, neuromere="T2", soma=(20000, 300000, 400000))
     lc10a = both("LC10a", 10, "visual_projection", "visual", ACH, frudsx="fru_low", soma=(240000, 190000, 95000))
     lc11 = both("LC11", 4, "visual_projection", "visual", ACH, soma=(245000, 195000, 98000))
     aotu019 = both("AOTU019", 4, "cb_intrinsic", "interneuron", ACH, soma=(120000, 180000, 90000))
@@ -294,16 +302,16 @@ def build_synthetic(path: Path | str, seed: int = 7) -> Path:
         con(sum((lb1[t][side] for t in lb1), []), ppl101[side], 8)     # bitter -> punishment dopamine
 
     # ---------------------------------------------------------------- courtship
-    lglg4 = both("LgLG4", 6, S, "gustatory", ACH, subclass="leg", neuromere="T1", nerve="LN")
-    lglg1a = both("LgLG1a", 2, S, "gustatory", ACH, subclass="leg", neuromere="T1", nerve="LN")
-    lglg1b = both("LgLG1b", 2, S, "gustatory", ACH, subclass="leg", neuromere="T1", nerve="LN")
+    lglg4 = none if female else both("LgLG4", 6, S, "gustatory", ACH, subclass="leg", neuromere="T1", nerve="LN")
+    lglg1a = none if female else both("LgLG1a", 2, S, "gustatory", ACH, subclass="leg", neuromere="T1", nerve="LN")
+    lglg1b = none if female else both("LgLG1b", 2, S, "gustatory", ACH, subclass="leg", neuromere="T1", nerve="LN")
     vab3 = both("vAB3", 2, "ascending_neuron", "interneuron", ACH, neuromere="T1", soma=(30000, 320000, 380000))
     pc1_1a = both("pC1_1a", 4, "cb_intrinsic", "courtship", ACH, dimorphism="male-specific", frudsx="coexpress_high",
                   soma=(100000, 170000, 85000))
     pc1_2a = both("pC1_2a", 1, "cb_intrinsic", "courtship", ACH, dimorphism="sexually dimorphic", frudsx="dsx_high",
                   soma=(102000, 172000, 85000))
-    pip10 = both("pIP10", 1, "descending_neuron", "descending", ACH, frudsx="fru_high", dimorphism="male-specific",
-                 soma=(45000, 230000, 150000))
+    pip10 = none if female else both("pIP10", 1, "descending_neuron", "descending", ACH, frudsx="fru_high",
+                                     dimorphism="male-specific", soma=(45000, 230000, 150000))
     wing_mn = both("MNwm35", 2, "vnc_motor", "motor", ACH, neuromere="T2", soma=(15000, 310000, 410000))
     jo_a = both("JO-A1", 6, S, "mechanosensory", ACH, subclass="auditory", nerve="AN")
     jo_b = both("JO-B1", 6, S, "mechanosensory", ACH, subclass="auditory", nerve="AN")

@@ -107,15 +107,29 @@ _add(Scenario(
              lambda g: g.events.add(g.t, "scenario", f"aversive conditioning finished: test preference {_preference(g, 'banana', 'yeast').get('preference_index', 0):+.2f}")),
     ]))
 
+def _female_enters(game):
+    """The courtship scenario's female: the scripted one in single-fly play; with a simulated partner in the dish
+    (docs/TWO_FLIES_PLAN.md 5.4, D9) the partner is placed where she would have stood, facing wherever its own dice
+    say, and no scripted female is made."""
+    if len(game.flies) > 1:
+        f = game.flies[1]
+        f.body.reset(14.0, 10.0, f.rng.uniform(-math.pi, math.pi))
+    else:
+        game.world.toggle_female(True, 14.0, 10.0)
+
+
 _add(Scenario(
     "courtship", "Courtship",
     "A female enters the dish. The male sees her as a small moving object (LC10a → DNa02, chase), "
     "taps her with a foreleg (pheromone taste → pC1) and sings (pIP10, one wing out).",
     [
         Step("A female enters.", 90.0,
-             lambda g: (g.world.clear("all"), g.world.toggle_female(True, 14.0, 10.0), g.body.reset(-10.0, -8.0, 0.3)),
+             lambda g: (g.world.clear("all"), _female_enters(g), g.body.reset(-10.0, -8.0, 0.3)),
              lambda g: {"pC1_hz": round(g.hz_shown.get("pC1", 0), 1), "song": round(g.decoder.m["song"], 2),
-                        "female_receptive": round(g.world.female.receptive, 2) if g.world.female else 0}),
+                        **({"partner_distance": round(math.hypot(g.flies[1].body.pose.x - g.body.pose.x,
+                                                                  g.flies[1].body.pose.y - g.body.pose.y), 1)}
+                           if len(g.flies) > 1 else
+                           {"female_receptive": round(g.world.female.receptive, 2) if g.world.female else 0})}),
         Step("Done.", 0.0, lambda g: g.events.add(g.t, "scenario", "courtship scenario finished")),
     ],
     female="A second female enters the dish. The fly sees her as a small moving object (LC10a → DNa02, chase); touching "

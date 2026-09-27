@@ -22,6 +22,49 @@ TURN_RATE = math.radians(300)   # rad/s at full steering drive
 JUMP_DIST, JUMP_TIME = 22.0, 0.16   # an escape hop: mm and seconds
 ACCEL_TAU = 0.12        # s, how fast speed follows the drive (inertia + muscle dynamics)
 TURN_TAU = 0.08
+# Two drawn flies cannot walk through each other (the two-flies work, docs/TWO_FLIES_PLAN.md 5.5 channel 4): each
+# body is a capsule along its axis, half-length FLY_CAPSULE_HALF and radius FLY_CAPSULE_R, at the DRAWN scale (the
+# drawn fly is FLY_HALF = 3.6 mm long from the centre, about three times real size). Hand-built, tuned only so that
+# the thoraxes never overlap on screen while a head-on foreleg tap (senses/social.py CONTACT_MM) stays reachable:
+# head to head the centres can come within 2 x (half + radius) = 4.8 mm, and a tap needs under about 5.5 mm.
+FLY_CAPSULE_HALF = 1.2
+FLY_CAPSULE_R = 1.2
+
+
+def capsule_points(x: float, y: float, h: float, half: float = FLY_CAPSULE_HALF) -> tuple:
+    """The two ends of a fly's capsule axis (drawn scale)."""
+    dx, dy = half * math.cos(h), half * math.sin(h)
+    return (x - dx, y - dy), (x + dx, y + dy)
+
+
+def _closest_points(a0, a1, b0, b1) -> tuple:
+    """The closest points of two segments (a0-a1, b0-b1): (distance, point on a, point on b)."""
+    ux, uy = a1[0] - a0[0], a1[1] - a0[1]
+    vx, vy = b1[0] - b0[0], b1[1] - b0[1]
+    wx, wy = a0[0] - b0[0], a0[1] - b0[1]
+    a, b, c = ux * ux + uy * uy, ux * vx + uy * vy, vx * vx + vy * vy
+    d, e = ux * wx + uy * wy, vx * wx + vy * wy
+    den = a * c - b * b
+    s = 0.0 if den < 1e-12 else max(0.0, min(1.0, (b * e - c * d) / den))
+    t = (b * s + e) / c if c > 1e-12 else 0.0
+    if t < 0.0:
+        t = 0.0
+        s = max(0.0, min(1.0, -d / a)) if a > 1e-12 else 0.0
+    elif t > 1.0:
+        t = 1.0
+        s = max(0.0, min(1.0, (b - d) / a)) if a > 1e-12 else 0.0
+    pa = (a0[0] + s * ux, a0[1] + s * uy)
+    pb = (b0[0] + t * vx, b0[1] + t * vy)
+    return math.hypot(pa[0] - pb[0], pa[1] - pb[1]), pa, pb
+
+
+def capsule_overlap(one: tuple, other: tuple, half: float = FLY_CAPSULE_HALF, r: float = FLY_CAPSULE_R) -> tuple:
+    """Two flies' capsules, each (x, y, h): (gap, point on the first's axis, point on the other's). The gap is the
+    distance between the axes minus 2 r: negative means the bodies overlap by that much."""
+    a0, a1 = capsule_points(*one, half=half)
+    b0, b1 = capsule_points(*other, half=half)
+    d, pa, pb = _closest_points(a0, a1, b0, b1)
+    return d - 2.0 * r, pa, pb
 
 
 @dataclass
@@ -67,6 +110,7 @@ class FlyBody:
         self.jump_lock = 0.0
         self.distance = 0.0            # total path length walked (mm)
         self.bumped = False            # did the last step hit the wall or an obstacle?
+        self.bumped_fly = False        # did the last step run into another fly? (the two-flies work; not a wall bump)
 
     def reset(self, x=0.0, y=-12.0, h=math.pi / 2):
         self.pose = Pose(x=x, y=y, h=h)
@@ -85,12 +129,15 @@ class FlyBody:
         p.v, p.w = 0.0, 0.0
         self.jump_lock = 0.8
 
-    def move(self, dt: float, mode: str, drive: dict, wander_yaw: float = 0.0):
+    def move(self, dt: float, mode: str, drive: dict, wander_yaw: float = 0.0, others=()):
         """Advance the body. ``drive`` has forward, yaw (+ = right), backward, halt, feed, groom,
-        song (0..1). ``mode`` is the winning behaviour chosen by the decoder."""
+        song (0..1). ``mode`` is the winning behaviour chosen by the decoder. ``others``: the other flies' capsules
+        (x, y, h) as they stood at the start of the tick; a step into one is refused like a step into the wall,
+        and ``bumped_fly`` says so (docs/TWO_FLIES_PLAN.md 5.5 channel 4; nothing with none)."""
         p = self.pose
         self.jump_lock -= dt
         self.bumped = False
+        self.bumped_fly = False
         p.mode = mode
         if p.jump is not None:
             f = dt / JUMP_TIME
@@ -120,8 +167,12 @@ class FlyBody:
         hx, hy = nx + FLY_HALF * math.cos(p.h), ny + FLY_HALF * math.sin(p.h)
         tx, ty = nx - FLY_HALF * math.cos(p.h), ny - FLY_HALF * math.sin(p.h)
         if not (self.world.blocked(hx, hy, 0) or self.world.blocked(tx, ty, 0) or self.world.blocked(nx, ny)):
-            self.distance += math.hypot(nx - p.x, ny - p.y)
-            p.x, p.y = nx, ny
+            if others and any(capsule_overlap((nx, ny, p.h), o)[0] < 0 for o in others):
+                self.bumped_fly = True                   # another fly is in the way: stop short, as at the wall
+                p.v *= 0.2
+            else:
+                self.distance += math.hypot(nx - p.x, ny - p.y)
+                p.x, p.y = nx, ny
         else:
             self.bumped = True
             p.v *= 0.2
