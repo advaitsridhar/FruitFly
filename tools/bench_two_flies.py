@@ -10,6 +10,10 @@ Real-time factor (RTF) = simulated time / wall time; 1.0 = real time.
   pair     the male and the female brain at the same time, one process each, busy input
   game     game ticks with the drawn body and a scripted female (male, then female protagonist)
   physics  male game ticks with the physics body (needs flygym)
+
+Every row is measured in a fresh child process (``spawn``), so its peak memory is its own: a process's high-water mark
+never falls, and on Linux a child inherits the parent's ``ru_maxrss``, so rows measured one after another in one process
+would all report the largest so far. ``peak_rss_mb`` reads ``VmHWM`` from ``/proc/self/status`` where it exists.
 """
 from __future__ import annotations
 
@@ -33,9 +37,17 @@ BUSY = {"LB3b,LB3c": 120.0, "LC4/R,LPLC2/R": 150.0,
 
 
 def peak_rss_mb() -> float | None:
+    """This process's peak resident memory in MB (its own: not inherited from the parent, see the docstring)."""
+    try:
+        with open("/proc/self/status") as f:
+            for line in f:
+                if line.startswith("VmHWM:"):
+                    return round(int(line.split()[1]) / 1024.0, 1)             # kB
+    except (OSError, ValueError, IndexError):
+        pass
     try:
         import resource
-        return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024.0     # Linux: kB
+        return round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024.0, 1)     # Linux: kB
     except (ImportError, AttributeError):
         return None
 
@@ -63,30 +75,36 @@ def brain_rtf(female: bool, parts: bool, seconds: float = 3.0, backend: str = "a
             "build_s": round(build_s, 2), "peak_rss_mb": peak_rss_mb()}
 
 
-def _pair_child(q, barrier, female, parts, seconds):
+def _child(q, barrier, fn, kwargs):
+    """A row measured in its own process (module level, so that ``spawn`` can import it)."""
     try:
-        q.put(brain_rtf(female, parts, seconds, barrier=barrier))
+        if barrier is not None:
+            kwargs = {**kwargs, "barrier": barrier}
+        q.put(fn(**kwargs))
     except BaseException as e:            # report it, so the parent does not wait for a row that never comes
-        q.put({"error": f"{'female' if female else 'male'} brain: {e!r}"})
+        q.put({"error": f"{fn.__name__}({kwargs}): {e!r}"})
         raise
 
 
-def pair_rtf(parts: bool, seconds: float) -> list[dict]:
+def in_children(jobs: list[tuple], together: bool = False) -> list[dict]:
+    """Run each (function, kwargs) job in a fresh child process and return their rows in arrival order. With
+    ``together`` the children share a barrier, so they start timing at the same moment (the pair rows)."""
     ctx = mp.get_context("spawn")
-    q, barrier = ctx.Queue(), ctx.Barrier(2)
-    procs = [ctx.Process(target=_pair_child, args=(q, barrier, female, parts, seconds)) for female in (False, True)]
+    q = ctx.Queue()
+    barrier = ctx.Barrier(len(jobs)) if together and len(jobs) > 1 else None
+    procs = [ctx.Process(target=_child, args=(q, barrier, fn, kw)) for fn, kw in jobs]
     for p in procs:
         p.start()
     rows, deadline = [], time.monotonic() + 1800
     try:
         while len(rows) < len(procs):
             if time.monotonic() > deadline:
-                raise RuntimeError("pair benchmark: no result after 30 minutes")
+                raise RuntimeError("benchmark: no result after 30 minutes")
             try:
                 row = q.get(timeout=30)
             except queue.Empty:
                 if any(p.exitcode not in (None, 0) for p in procs):   # killed (for example out of memory)
-                    raise RuntimeError(f"a brain process died: exit codes {[p.exitcode for p in procs]}")
+                    raise RuntimeError(f"a benchmark process died: exit codes {[p.exitcode for p in procs]}")
                 continue
             if "error" in row:
                 raise RuntimeError(row["error"])
@@ -97,6 +115,13 @@ def pair_rtf(parts: bool, seconds: float) -> list[dict]:
                 p.terminate()
             p.join(timeout=30)
     return rows
+
+
+def pair_rtf(parts: bool, seconds: float) -> list[dict]:
+    """The male and the female brain at the same time, one process each, timed from a shared barrier."""
+    rows = in_children([(brain_rtf, {"female": female, "parts": parts, "seconds": seconds}) for female in (False, True)],
+                       together=True)
+    return sorted(rows, key=lambda r: r["fly"] != "male")      # male first, whichever finished first
 
 
 def game_rtf(body: str, ticks: int, female: bool = False, parts: bool = False) -> dict:
@@ -164,18 +189,18 @@ def main():
     if "brain" in want:
         for female in (False, True):
             for parts in (False, True):
-                add("brain", brain_rtf(female, parts, args.seconds))
+                add("brain", in_children([(brain_rtf, {"female": female, "parts": parts, "seconds": args.seconds})])[0])
     if "pair" in want:
         for parts in (False, True):
             for row in pair_rtf(parts, args.seconds):
                 add("pair", row)
     if "game" in want:
         for female in (False, True):
-            add("game", game_rtf("drawn", 400, female=female))
+            add("game", in_children([(game_rtf, {"body": "drawn", "ticks": 400, "female": female})])[0])
     if "physics" in want:
         from virtual_fly import physics
         if physics.available():
-            add("game", game_rtf("physics", 80))
+            add("game", in_children([(game_rtf, {"body": "physics", "ticks": 80})])[0])
         else:
             print("physics: flygym is not installed, skipped")
     if args.json:

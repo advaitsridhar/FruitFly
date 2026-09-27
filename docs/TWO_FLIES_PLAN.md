@@ -133,6 +133,41 @@ it in a separate PR first.
 If `git log` shows commits after v2.8.1 that change any of these, re-check them in Phase 0 (4.6) and record the result
 in the progress log. (The neuPrint harvest bot commit described at the top of this section changes none of them.)
 
+### Fresh-clone findings on the owner's machine (Phase 0, 2026-09-27)
+
+Checked on a fresh clone of `origin/main` at `739e791 v2.8.1: fixes for everything a fresh-clone test of v2.8.0 found (#15)` (no
+bot commit on top), WSL2 Ubuntu 24.04, Python 3.12.3, NumPy 2.5.3, numba 0.67.0, pyarrow 25.0.1, mujoco 3.2.7, flygym 1.2.1.
+The full record is in `docs/TWO_FLIES_PROGRESS.md`.
+
+- **Nothing in "Known state of main" differed.** Versions 2.8.1 in both files; `stop_loop`, `_guard` and `OverflowError` present;
+  `GF_BURST = 5`, `STILL_TICKS = 8`, `flywire.BUILD = 6`; the explicit `packages` list; `dev` without Playwright; none of the
+  **new** files existed; no `claude/two-flies-*` branch. The one other `claude/…` remote branch is the merged source of PR #15
+  (its content equals `main`). Facts 1, 2, 4, 5, 6, 7, 8 and 10 were checked directly (below); 3, 9, 11, 12 and 13 by grep and by
+  the runs that exercise them (the parts list was off in every run without `--parts`; the game refused nothing it should accept).
+- Fact 1: the male passes 16/16 with the parts list off (vinegar's MBON11 fragile) and 16/16 with it on (none fragile).
+- Fact 2: the female file loads as 139,262 neurons, 15,091,983 connections, 54,492,922 synapses, build 6, 15 aliases,
+  `LB3a` 18 cells; it was built in 30 s from the two pinned sources (101 MB and 32 MB).
+- Fact 4: `--female --find MN9` prints `MN9  2 neurons  (alias of CB0701)` and `1 types match 'MN9'`; `--info MN9` lists the two
+  `CB0701` cells.
+- Fact 5: `python -m virtual_fly` and `python -m virtual_fly.play` name themselves so in their usage lines.
+- Fact 6: `FLYWIRE_TOKEN` is referenced nowhere in the code or workflows; `NEUPRINT_TOKEN` only in the harvest tool and its
+  workflow; `CLAUDE_CODE_OAUTH_TOKEN` only in the two PR #12 workflows.
+- Fact 8: with the physics extra installed the two flygym tests run, so `python -m pytest -q` gives **438 passed, 0 skipped**
+  (24 s; 449 with the golden-hash test added in Phase 0). 8 warnings, all dm_control's "Setting the shape on a NumPy array has
+  been deprecated in NumPy 2.5": harmless, from the physics extra, not the kit.
+- The female's experiments: 3 of 13 pass with the parts list off, 1 of 13 with it on, and the same 3 are n/a (the two song-motor
+  experiments and the doublesex lesion), as `docs/SCIENCE.md` 9.3 says. They are a comparison against the male's ranges, not a
+  test, and are the Phase 0 baseline for `tools/compare_experiments.py`.
+- "After the fresh-clone fixes" items: 5 holds (the physics game sent a `Ctrl+C` prints "Bye!" and exits with **code 0**,
+  nothing left in its session: the baseline for 5.12 and 8.11); 6 holds (Python 3.12.3, `physics.available()` is true).
+  Items 1-4 and 7 were not re-measured: no commit after v2.8.1 touches them.
+- Versions the plan could not know: NumPy 2.5.3 and numba 0.67.0 (CuPy's NumPy range must be re-read against 2.5 in Phase 2,
+  6.1), pytest 9.1.1, setuptools 84.0.0 in the venv after the physics extra (so the wheel build of 7.1 needs no upgrade),
+  llvmlite 0.49.0, scipy 1.18.1, gymnasium 1.3.0.
+- The three games ran and were checked through the API (a browser look by the owner is still pending): the male game with the
+  scripted female (walking and steering, real time), the female game (dataset `flywire:v783`, the 12-item checklist), the physics
+  game (the loop's own average said 0.2× real time in its first seconds; the benchmark's number is the one to quote).
+
 ---
 
 ## 0. How to use this document (for the human)
