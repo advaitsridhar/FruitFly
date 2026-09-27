@@ -5,7 +5,7 @@ Plan: docs/TWO_FLIES_PLAN.md. Newest session notes first.
 ## Status
 | phase | branch | PR | state | last update |
 |---|---|---|---|---|
-| 0 | claude/two-flies-p0-baseline | #16 | draft PR open, CI green | 2026-09-27 |
+| 0 | claude/two-flies-p0-baseline | #16 | PR ready for review, CI green; waiting for the merge | 2026-09-27 |
 
 ## This machine
 - OS: WSL2 (Ubuntu 24.04.5 LTS) on Windows; the repository lives under the Linux home folder, not `/mnt/c`.
@@ -44,9 +44,9 @@ Plan: docs/TWO_FLIES_PLAN.md. Newest session notes first.
 ## Decisions
 | # (section 10) | question | answer | who | date |
 |---|---|---|---|---|
-| 1 | operating system route | WSL2 (Ubuntu 24.04), Claude Code inside Ubuntu: the machine already matched the default | default, taken in an autonomous session; the owner may override | 2026-09-27 |
-| 2 | Python version | the system python3, 3.12.3 (in the 3.10-3.12 range) | default | 2026-09-27 |
-| 3 | continue before a PR is merged | wait for the merge before the next phase | default | 2026-09-27 |
+| 1 | operating system route | WSL2 (Ubuntu 24.04), Claude Code inside Ubuntu: the machine already matched the default | default, confirmed by the owner ("proceed with the defaults") | 2026-09-27 |
+| 2 | Python version | the system python3, 3.12.3 (in the 3.10-3.12 range) | default, confirmed by the owner ("proceed with the defaults") | 2026-09-27 |
+| 3 | continue before a PR is merged | wait for the merge before the next phase | default, confirmed by the owner ("proceed with the defaults") | 2026-09-27 |
 
 ## Measurements
 All on 2026-09-27, this machine, `nice -n 10`, one job at a time, machine otherwise idle (load average under 1.5).
@@ -73,7 +73,7 @@ reproduce all four files exactly (`tools/compare_experiments.py`).
 ### The female build (plan 4.7)
 - Downloaded 101 MB + 32 MB into `data/flywire-src/`, built `data/flywire-v783.flyb.gz` (44.5 MB) in **30 s**; loads in 0.4 s.
 
-### The games (plan 4.7; checked through the API; the owner's browser look is still pending)
+### The games (plan 4.7; checked through the API, then looked at by the owner in a browser on 2026-09-27: "the games look fine")
 | game | what was seen |
 |---|---|
 | `fly_game.py` | serves at once; with the scripted female added (the `female` action) the male walks and steers ("steering via DNa02/DNg13 + walking urge"), about 60,000 events/s, real time |
@@ -119,14 +119,18 @@ reproduce all four files exactly (`tools/compare_experiments.py`).
   `--compare ../runs/p0-golden-real.json` at the end of every phase.
 
 ## Open issues
-- The owner has not yet looked at the three games in a browser (Phase 0 acceptance criterion 6).
-- The decisions of section 10 for Phase 0 were taken with their defaults in an autonomous session: the owner should confirm or
-  change them when reviewing the PR.
+- **The owner's view of the physics body (2026-09-27, after looking at the three games):** the drawn-body games look fine; the
+  physics body "is less realistic than the other one and barely moves and jumps properly". The owner wants both bodies to stay
+  selectable (the physics body enabled or disabled) and hopes the physics mode performs better by the end. For Phase 4: keep the
+  drawn body the default in every mode and the physics pair opt-in (`--body physics`, as the plan already says); put the record-
+  and-replay at 1x and the offline video first among its deliverables, since live physics stays slower than real time by nature;
+  and note that NeuroMechFly has no jump (a giant-fibre burst is an "escape command" with the legs standing), so a physical jump
+  would be a new hand-built controller: ask the owner before adding one.
 
 ## Next step
-Phase 0: read PR #16's CI result and the automatic review (`gh pr checks 16`, `gh pr view 16 --comments`); fix what they raise;
-when the acceptance criteria hold, mark the PR ready (`gh pr ready 16`) and wait for the owner. Then Phase 1 (plan 5): put
-decisions 4-15 to the owner first.
+Wait for the owner to merge PR #16 (decision 3). Then Phase 1 (plan 5): `git fetch origin`, branch
+`claude/two-flies-p1-two-brains` from `origin/main`, record the owner's answers to decisions 4-15 here, and start with step 1 (5.2,
+`FlyAgent`), checking the golden hashes after every step.
 
 ## Session notes
 ### 2026-09-27
@@ -139,6 +143,8 @@ decisions 4-15 to the owner first.
   `tests/test_golden_single_fly.py` + `tests/golden_single_fly.json`; ARCHITECTURE.md's module tree lists them.
 - Benchmark run twice (`../runs/p0-bench-first-run.json`, then `../runs/p0-bench.json` with the per-row processes); real-data
   golden hashes saved; SCIENCE.md 9.6 written; pushed; draft PR #16 opened; CI green.
+- The owner looked at the three games in a browser ("look fine"; the physics body's realism: see Open issues) and confirmed
+  decisions 1-3; PR #16 marked ready for review.
 - An adversarial review (four lenses, each finding checked by two refuters) confirmed 9 small points, all fixed: `--compare`
   now names saved hashes a run did not recompute (and fails on them unless the run was narrowed); the experiment comparer
   ignores the integrator's name in the settings (a `--backend cupy` run must compare clean in Phase 2); the benchmark refuses
