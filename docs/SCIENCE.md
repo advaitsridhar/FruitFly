@@ -2266,8 +2266,8 @@ The female fly's speed had not been measured anywhere. Measured on 2026-09-27 wi
 `tools/bench_two_flies.py` (a hand-run tool added for the two-flies work, `docs/TWO_FLIES_PLAN.md`):
 game profile, `dt` 0.5 ms, the compiled (numba) integrator, busy input (sugar `LB3b,LB3c` 120 Hz,
 looming `LC4/R,LPLC2/R` 150 Hz, four vinegar glomeruli 80 Hz, `prefix:JO-B` 100 Hz), 3 simulated seconds
-after 300 ms of warm-up, each row in its own process at `nice 10` on an otherwise idle 16-core laptop
-(Intel i9-14900HX under WSL2, Python 3.12.3, NumPy 2.5.3, numba 0.67.0). Real-time factor = simulated
+after 300 ms of warm-up, each row in its own process at `nice 10` on an otherwise idle laptop (Intel
+i9-14900HX; WSL2 shows it 16 cores and 32 threads; Python 3.12.3, NumPy 2.5.3, numba 0.67.0). Real-time factor = simulated
 time / wall time; 0.5 ms per step is real time. Peak memory is each process's own high-water mark.
 
 | brain (busy input) | ms per step | real-time factor | events per second | peak memory |
@@ -2288,12 +2288,14 @@ time / wall time; 0.5 ms per step is real time. Peak memory is each process's ow
 **What this shows.** The female brain is no slower than the male's: with the parts list off she is
 slightly faster per step (fewer events per second, 141,675 against 160,781, under the same input); with
 it on she is slightly slower (her graded cells release more quanta: 265,713 events per second against
-215,625). Two brains side by side cost each about 25-40 % more per step than alone (they share memory
-bandwidth, not cores). Her game tick is shorter than his, but her process is twice as large, because her
-file keeps every connection (15.1 million against his 6.3 million). Over two runs of the tool the male's
-parts-off brain row varied from 0.14 to 0.20 ms per step, so the first decimal is the precision. These
-are one machine's numbers on one day. The game's own header saturates at "real time" (`Game.loop`
-averages `min(1, budget/used)`), so a speed above real time can only be read from this tool.
+215,625). Two brains side by side cost each more per step than alone, by 11-39 % in this run (they share
+memory bandwidth, not cores), which is within the run-to-run spread: a first run of the tool put the pair
+rows 22-23 % lower and the male's parts-off brain row at 0.20 ms instead of 0.14, so treat the first
+decimal of a millisecond as the precision and the pair cost as "some tens of per cent", not a number. Her
+game tick is shorter than his, but her process is twice as large, because her file keeps every connection
+(15.1 million against his 6.3 million). These are one machine's numbers on one day. The game's own header
+saturates at "real time" (`Game.loop` averages `min(1, budget/used)`), so a speed above real time can only
+be read from this tool.
 
 ---
 

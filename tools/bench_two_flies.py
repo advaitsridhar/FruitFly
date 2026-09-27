@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import multiprocessing as mp
 import os
 import platform
@@ -30,6 +31,8 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+KINDS = ("brain", "pair", "game", "physics")     # the rows --only can choose
 
 # Busy input (the names resolve on both flies; the female reaches LB3b,LB3c through her aliases)
 BUSY = {"LB3b,LB3c": 120.0, "LC4/R,LPLC2/R": 150.0,
@@ -173,11 +176,23 @@ def machine() -> dict:
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--only", default="brain,pair,game,physics")
+    ap.add_argument("--only", default=",".join(KINDS), help="comma list of " + ", ".join(KINDS) + " (default: all)")
     ap.add_argument("--seconds", type=float, default=3.0, help="simulated seconds per brain measurement")
     ap.add_argument("--json", metavar="FILE")
     args = ap.parse_args()
-    want = set(args.only.split(","))
+    # refuse bad values before anything is loaded (the kit's rule for every option: one line, exit code 2)
+    want = {s.strip() for s in args.only.split(",") if s.strip()}
+    unknown = sorted(want - set(KINDS))
+    if unknown or not want:
+        ap.error(f"--only: unknown kind{'s' if len(unknown) > 1 else ''} {', '.join(unknown) or '(empty)'}; choose from {', '.join(KINDS)}")
+    if not math.isfinite(args.seconds) or args.seconds <= 0:
+        ap.error(f"--seconds must be more than 0, not {args.seconds:g}")
+    if args.json:
+        if Path(args.json).is_dir():
+            ap.error(f"--json {args.json} is a folder; give a file name")
+        folder = Path(args.json).resolve().parent
+        if not folder.is_dir():
+            ap.error(f"--json: the folder {folder} does not exist; make it first, so the results are not lost at the end")
     from virtual_fly import fastbrain
     fastbrain.warm_up()                  # compile or load the kernels once, before any child starts
     out = {"when": time.strftime("%Y-%m-%d %H:%M:%S"), "machine": machine(), "rows": []}

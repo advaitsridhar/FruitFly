@@ -100,19 +100,22 @@ reproduce all four files exactly (`tools/compare_experiments.py`).
 | game, female, drawn, 400 ticks | 4.28 | 5.7 / 6.9 ms | 2.9 s | 1,624 MB |
 | game, male, physics, 80 ticks | 0.216 | 112 / 147 ms | 3.5 s | 1,509 MB |
 
-- **The pair rows are the Phase 1 number:** two busy brains side by side run at 2.6-2.8x real time (parts off) and 1.5-1.6x
-  (parts on) on this CPU, well above the 0.7x target of plan 3.3, before any pipe or lockstep cost.
+- **The pair rows are the Phase 1 number:** two busy brains side by side run at 2.6-3.4x real time (parts off, both runs) and
+  1.4-1.6x (parts on) on this CPU, well above the 0.7x target of plan 3.3, before any pipe or lockstep cost.
 - The plan's script measured memory with `ru_maxrss`, which never falls within a process and which Linux hands to spawned
   children, so the first run reported the parent's high-water mark on every pair row (853 MB). The committed script runs every
-  row in its own child and reads `VmHWM`; the first run's timings (`../runs/p0-bench-first-run.json`) were close to the second's
-  except the male parts-off brain row (0.203 there, 0.138 here): treat the first decimal of ms per step as the precision.
+  row in its own child and reads `VmHWM`. The first run's timings (`../runs/p0-bench-first-run.json`) differ from the second's
+  by up to 23 % on the pair rows (male 0.156 → 0.192, female 0.146 → 0.178 ms per step, parts off) and the male parts-off
+  brain row read 0.203 there against 0.138 here: treat the first decimal of ms per step as the precision, and the pair's
+  cost over a lone brain (11-39 % in the second run, −23 % to +33 % in the first) as within the run-to-run spread.
 - Physics: 0.22x real time here (the plan's reference machine: 0.086-0.113), 112 ms per tick.
 
 ### Golden hashes (plan 4.9)
 - Synthetic (`tests/golden_single_fly.json`): nine configurations, made with Python 3.12.3, NumPy 2.5.3, numba 0.67.0; a second
   run reproduces every hash (the test passes in normal mode; a determinism test runs one configuration twice).
 - Real data (`../runs/p0-golden-real.json`, not committed): `tools/golden_hashes.py --save` wrote 18 hashes (male and female,
-  the same nine configurations; 400 ticks took 2.5-4.5 s each, the 80 physics ticks about 10 s), same versions. Rerun with
+  the same nine configurations; 400 ticks took 2.5-4.5 s each with the walking urge, 1.0-1.3 s without it, the 80 physics
+  ticks about 10 s), same versions. Rerun with
   `--compare ../runs/p0-golden-real.json` at the end of every phase.
 
 ## Open issues
@@ -135,4 +138,9 @@ decisions 4-15 to the owner first.
 - Written: `tools/bench_two_flies.py` (from the plan), `tools/golden_hashes.py` (holds the shared CONFIGS), `tools/compare_experiments.py`,
   `tests/test_golden_single_fly.py` + `tests/golden_single_fly.json`; ARCHITECTURE.md's module tree lists them.
 - Benchmark run twice (`../runs/p0-bench-first-run.json`, then `../runs/p0-bench.json` with the per-row processes); real-data
-  golden hashes saved; SCIENCE.md 9.6 written; pushed; draft PR #16 opened.
+  golden hashes saved; SCIENCE.md 9.6 written; pushed; draft PR #16 opened; CI green.
+- An adversarial review (four lenses, each finding checked by two refuters) confirmed 9 small points, all fixed: `--compare`
+  now names saved hashes a run did not recompute (and fails on them unless the run was narrowed); the experiment comparer
+  ignores the integrator's name in the settings (a `--backend cupy` run must compare clean in Phase 2); the benchmark refuses
+  a bad `--only`, `--seconds` or `--json` folder before loading; the pair-cost sentence in SCIENCE.md 9.6 now states the
+  measured range and the run-to-run spread.

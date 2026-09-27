@@ -127,14 +127,21 @@ def main(argv=None) -> int:
         elif old[key] != h:
             differ.append(key)
     same = [k for k in hashes if k in old and old[k] == hashes[k]]
-    print(f"{len(same)} unchanged, {len(differ)} changed, {len(missing)} not in {args.compare}")
+    not_run = [k for k in old if k not in hashes]        # saved, but this run made no hash for it (skipped, or narrowed)
+    narrowed = bool(args.only) or set(flies) != {"male", "female"}
+    print(f"{len(same)} unchanged, {len(differ)} changed, {len(missing)} not in {args.compare}, "
+          f"{len(not_run)} saved but not run{' (the run was narrowed with --flies or --only)' if narrowed and not_run else ''}")
     for k in differ:
         print(f"  CHANGED  {k}: {old[k]} -> {hashes[k]}")
     for k in missing:
         print(f"  MISSING  {k}: {hashes[k]} (not in the saved file)")
+    for k in not_run:
+        print(f"  NOT RUN  {k}: {old[k]} (saved, but not checked by this run"
+              f"{'' if narrowed else ': a skipped configuration, for example the physics body without flygym'})")
     if saved.get("versions") != versions():
         print(f"  versions differ: saved {saved.get('versions')} / now {versions()}")
-    return 1 if differ or missing else 0
+    # a full run that could not check a saved hash is a failure too: the safety net has a hole in it
+    return 1 if differ or missing or (not_run and not narrowed) else 0
 
 
 if __name__ == "__main__":

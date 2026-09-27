@@ -6,8 +6,9 @@
 The four Phase 0 runs (male and female, parts list off and on; docs/TWO_FLIES_PLAN.md, 4.7) are the baseline: after
 every later phase the same commands are run again and their numbers must be identical. This prints every readout whose
 mean or per-seed rates differ, every experiment whose ok, fragile or n/a state differs, and any after-stimulus
-activity that differs; it ignores ``wall_s``. Exit code 0 when nothing differs, 1 when something does, 2 on a usage
-error (a missing or unreadable file).
+activity that differs, and any brain setting that differs (except the integrator's name, ``backend``: the CPU and GPU
+integrators are meant to give the same spikes, so a run with ``--backend cupy`` compares clean); it ignores ``wall_s``.
+Exit code 0 when nothing differs, 1 when something does, 2 on a usage error (a missing or unreadable file).
 """
 from __future__ import annotations
 
@@ -16,6 +17,8 @@ import sys
 from pathlib import Path
 
 IGNORED = ("wall_s",)                                    # wall time differs from run to run and means nothing
+# brain settings that do not change a result: the integrator (numpy, numba and, from Phase 2, cupy give the same spikes)
+SETTINGS_IGNORED = ("backend",)
 
 
 def _load(path: str) -> dict:
@@ -63,8 +66,12 @@ def compare(old: dict, new: dict) -> list[str]:
             for key in ("hz", "per_seed", "ok", "seeds_out", "lo", "hi", "sd"):
                 if u.get(key) != v.get(key):
                     diffs.append(f"{name} / {label}: {key} {u.get(key)!r} -> {v.get(key)!r}")
-    if old.get("settings") != new.get("settings"):
-        diffs.append(f"settings differ: {old.get('settings')!r} -> {new.get('settings')!r}")
+    so, sn = old.get("settings") or {}, new.get("settings") or {}
+    for key in sorted(set(so) | set(sn)):
+        if key in SETTINGS_IGNORED:
+            continue
+        if so.get(key) != sn.get(key):
+            diffs.append(f"settings: {key} {so.get(key)!r} -> {sn.get(key)!r}")
     return diffs
 
 
