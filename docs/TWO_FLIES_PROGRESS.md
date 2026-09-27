@@ -5,7 +5,7 @@ Plan: docs/TWO_FLIES_PLAN.md. Newest session notes first.
 ## Status
 | phase | branch | PR | state | last update |
 |---|---|---|---|---|
-| 0 | claude/two-flies-p0-baseline | #? | in progress | 2026-09-27 |
+| 0 | claude/two-flies-p0-baseline | #16 | draft PR open, CI pending | 2026-09-27 |
 
 ## This machine
 - OS: WSL2 (Ubuntu 24.04.5 LTS) on Windows; the repository lives under the Linux home folder, not `/mnt/c`.
@@ -117,8 +117,9 @@ reproduce all four files exactly (`tools/compare_experiments.py`).
   change them when reviewing the PR.
 
 ## Next step
-Phase 0: after the benchmark (`../runs/p0-bench.json`) and the real-data golden hashes (`../runs/p0-golden-real.json`), write the
-female's speed table into docs/SCIENCE.md section 9, commit, push, open the draft PR (plan 4.10), check CI.
+Phase 0: read PR #16's CI result and the automatic review (`gh pr checks 16`, `gh pr view 16 --comments`); fix what they raise;
+when the acceptance criteria hold, mark the PR ready (`gh pr ready 16`) and wait for the owner. Then Phase 1 (plan 5): put
+decisions 4-15 to the owner first.
 
 ## Session notes
 ### 2026-09-27
@@ -129,4 +130,5 @@ female's speed table into docs/SCIENCE.md section 9, commit, push, open the draf
 - pytest, the four baseline experiment runs, the female build, the three games and the `Ctrl+C` check done (measurements above).
 - Written: `tools/bench_two_flies.py` (from the plan), `tools/golden_hashes.py` (holds the shared CONFIGS), `tools/compare_experiments.py`,
   `tests/test_golden_single_fly.py` + `tests/golden_single_fly.json`; ARCHITECTURE.md's module tree lists them.
-- Benchmark started (`../runs/p0-bench.log`).
+- Benchmark run twice (`../runs/p0-bench-first-run.json`, then `../runs/p0-bench.json` with the per-row processes); real-data
+  golden hashes saved; SCIENCE.md 9.6 written; pushed; draft PR #16 opened.
