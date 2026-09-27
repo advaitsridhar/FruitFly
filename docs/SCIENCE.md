@@ -2388,7 +2388,37 @@ compensating gain was added (it would be hand-built, and it would decide the res
 
 ### 10.4 The pair experiments (provisional)
 
-(measured in this phase: see the progress log until this subsection is written from the final JSON files)
+`python fly_brain.py --female --pair-experiments` runs six new experiments (`experiments.PAIR`, tag `pair`) that are
+**not** among the 16 validated ones or the 11 of the re-test: their direction comes from the literature, their
+ranges from this measurement (five seeds, game profile, parts list off and on, real connectome; lo = the smallest
+per-seed value, hi = the largest), so passing them says "as measured", not "as a fly". Hz per cell over 400 ms
+after 100 ms of the stimulus; per seed, parts list off / on.
+
+| experiment | stimulus | readout | parts list off, seeds 0-4 | parts list on | range |
+|---|---|---|---|---|---|
+| F1 she hears song | `prefix:JO-A,prefix:JO-B` at 70 Hz (`SONG_MAX_HZ`) | vpoEN, pC2l (38), DNp37, DNp13 | 0 on every seed | 0 on every seed | 0-0 each |
+| | | DNp01 | 20, 19, 19, 16, 18 | 11, 7, 10, 9, 8 | 7-20 |
+| F2 pC1 drives the plate-opening command | `prefix:pC1_` at 80 Hz | DNp37 (vpoDN) | 72, 75, 73, 86, 76 | 73, 74, 74, 85, 77 | 72-86 |
+| F3 pC2l drives the extrusion command | the 38 pC2l cells at 80 Hz | DNp13 | 111, 107, 109, 113, 109 | 113, 105, 109, 113, 109 | 105-113 |
+| F4 cVA | `ORN_DA1` at 80 Hz | DA1_lPN | 99-101 | 99-101 | 99-102 |
+| | | aSP-g, pC1d, pC1e | 0 | 0 | 0-0 each |
+| F5 SAG to pC1 | `AN_SMP_2` at 60 Hz | pC1 (a-e) | 32.8, 25.0, 27.2, 28.6, 32.2 | 15.8, 15.4, 11.6, 11.4, 13.4 | 11-33 |
+| | | DNp37 | 45, 34, 40, 37, 41 | 24, 20, 18, 17, 20 | 17-45 |
+| M1 song does not startle him (male) | `prefix:JO-A,prefix:JO-B` at 70 Hz | DNp01 | 25, 21, 19, 20, 19 | the same | 19-25; bursts in 0.50 % / 0.80 % of 50 ms windows (10.3) |
+
+**What this shows.** The two motor commands are reachable from inside her brain: pC1 to DNp37 (382 synapses from
+pC1a alone, 26 % of its input) carries at 80 Hz, and the pC2l cells to DNp13 (974 synapses) carry even better;
+SAG's 872 synapses onto pC1 reach both pC1 and, through it, DNp37; cVA's receptor neurons reach their projection
+neurons (DA1_lPN, 5,556 synapses) but not the aSP-g or pC1d/e cells beyond them. What does not carry is the
+input she would need from him: song stops at Johnston's organ and the giant fibre (F1; 10.3), and cVA stops at the
+projection neurons (F4). So in this data a simulated male can be heard and smelt by her, but neither reaches the
+neurons whose activity would be her decision. Every female experiment leaves her brain calm one second after the
+stimulus. The same experiments run on the male as comparisons (he has vpoEN, DNp13, DA1_lPN and the pC2l type
+names): his F1 DNp01 is fragile against her range (seed 0 at 25 Hz), his F3 DNp13 reads 0 Hz and his F4 DA1_lPN
+207 Hz, outside her ranges, and F2 and F5 cannot be done on him (no DNp37, no SAG).
+
+Hand-built, still: the stimulus rates (80 Hz, 60 Hz, and 70 Hz from 10.3). Not modelled: the sex peptide's own
+route (uterine sensory neurons, absent in FlyWire), mating status. Cost: about a minute for the six on either fly.
 
 ### 10.5 What the female does next to him (provisional)
 

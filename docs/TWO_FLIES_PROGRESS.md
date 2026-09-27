@@ -167,6 +167,14 @@ So in this data his song reaches her Johnston's organ and her giant fibre (never
 (2022) found under-detected in FlyWire v274 look under-detected in v783 too. Reported as measured; no compensating gain
 (decision 15).
 
+### Phase 1: the pair experiments (plan 5.9 item 2; commit `468f757`; `../runs/p1-pair-{female,male}[-parts].json`)
+Five seeds, game profile, parts off and on. Ranges set from the measurement (provisional). Female: F1 (song at 70 Hz):
+vpoEN, pC2l, DNp37, DNp13 all 0 on every seed, DNp01 7-20; F2 (pC1 80 Hz): DNp37 72-86; F3 (pC2l 80 Hz): DNp13 105-113;
+F4 (ORN_DA1 80 Hz): DA1_lPN 99-102, aSP-g/pC1d/pC1e 0; F5 (SAG 60 Hz): pC1 11-33, DNp37 17-45. Male M1 (song 70 Hz): DNp01 19-25.
+Summary lines: female 13/14 readouts, 5/6 experiments (M1 on her reads 18.4 / 9.0 Hz, below his range); male 5/7, 2/4 (F2, F5 n/a on him;
+F1 fragile, F3 DNp13 0 Hz, F4 DA1_lPN 207 Hz as comparisons). `--pair-experiments` refuses the 12 modes that run no experiments (exit 2)
+and matches `--only` against the pair list. Written into docs/SCIENCE.md 10.4.
+
 ### Golden hashes (plan 4.9)
 - Synthetic (`tests/golden_single_fly.json`): nine configurations, made with Python 3.12.3, NumPy 2.5.3, numba 0.67.0; a second
   run reproduces every hash (the test passes in normal mode; a determinism test runs one configuration twice).
