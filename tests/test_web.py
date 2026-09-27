@@ -78,3 +78,17 @@ def test_the_why_line_wraps_to_two_lines_and_keeps_its_full_text_as_a_tooltip():
     js = (WEB / "panels.js").read_text(encoding="utf-8")
     update = js[js.index("class WhyPanel"):js.index("class KeyNeurons")]
     assert "drv.title = why" in update
+
+
+def test_the_two_fly_controls_exist_and_no_verdict_is_written():
+    # two flies (docs/TWO_FLIES_PLAN.md 5.8): a fly menu in the header, a second brain canvas kept alive beside the first
+    # (a WebGL context is never created and destroyed on a focus switch), and her decision neurons are shown as readouts,
+    # never called acceptance or rejection anywhere on the page
+    ids = set(_ids())
+    assert {"focusSel", "brain", "brain2", "brainOverlay", "brainOverlay2", "realOther"} <= ids
+    text = (WEB / "index.html").read_text(encoding="utf-8") + "".join(js.read_text(encoding="utf-8") for js in sorted(WEB.glob("*.js")))
+    assert not re.search(r"accept(ance|ed)|reject(ion|ed)", text, re.I)
+    css = (WEB / "style.css").read_text(encoding="utf-8")
+    assert _rule(css, "#brain2") and "display: block" in _rule(css, "#brain2") and "display: none" in _rule(css, "#brain[hidden], #brain2[hidden], #brainOverlay[hidden], #brainOverlay2[hidden]")
+    js = (WEB / "app.js").read_text(encoding="utf-8")
+    assert "setActionFly" in js and "posesOf" in js and "flyPose(" not in js and "femalePose(" not in js

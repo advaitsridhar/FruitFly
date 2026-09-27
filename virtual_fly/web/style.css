@@ -22,6 +22,8 @@ header .stats .w6 { min-width: 6ch; } header .stats .w7 { min-width: 7ch; } head
 .linkbtn { background: none; border: 1px solid var(--line); border-radius: 999px; padding: 4px 11px; cursor: pointer; color: var(--ink); white-space: nowrap; }
 .linkbtn:hover { border-color: var(--accent); }
 .linkbtn.round { width: 28px; height: 28px; padding: 0; flex: none; }
+/* two flies: the header's fly menu (which fly the panels follow); hidden until the state lists flies */
+header select.focus { background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 999px; padding: 3px 8px; font: inherit; font-size: 13px; }
 
 /* ---------------------------------------------------------------- layout */
 main { display: grid; grid-template-columns: minmax(0, 1fr) 400px; gap: 14px; padding: 12px 16px 16px; height: calc(100% - 50px); }
@@ -134,6 +136,11 @@ body.dragging, body.dragging * { cursor: grabbing !important; }
 #brain { background: #06090d; border-radius: 8px; display: block; width: 100%; height: 330px; cursor: grab; touch-action: none; }
 #brain.drag { cursor: grabbing; }
 #brainOverlay { position: absolute; inset: 0; width: 100%; height: 330px; pointer-events: none; }
+/* two flies: a second brain map, one canvas pair per fly, only the focused one shown (never re-created on a switch) */
+#brain2 { background: #06090d; border-radius: 8px; display: block; width: 100%; height: 330px; cursor: grab; touch-action: none; }
+#brain2.drag { cursor: grabbing; }
+#brainOverlay2 { position: absolute; inset: 0; width: 100%; height: 330px; pointer-events: none; }
+#brain[hidden], #brain2[hidden], #brainOverlay[hidden], #brainOverlay2[hidden] { display: none; }
 .brainbtns { position: absolute; right: 6px; top: 6px; display: flex; gap: 4px; }
 .legend { display: flex; flex-wrap: wrap; gap: 3px 10px; font-size: 11.5px; color: var(--muted); margin-top: 6px; }
 .legend i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; }

@@ -56,7 +56,7 @@ const HIST = 240;   // samples kept per readout (6 s at 40 ticks/s)
 export class KeyNeurons {
   constructor(L) {
     this.L = L; this.rows = {}; this.hist = {}; this.customKeys = ""; this.lastSpark = 0;
-    this.box = $("rows");
+    this.box = $("rows"); this.box.innerHTML = "";     // (rebuilt for another fly when the focus changes)
     const groups = new Map();
     for (const r of L.readouts) { if (!groups.has(r.group)) groups.set(r.group, []); groups.get(r.group).push(r); }
     for (const [g, rs] of groups) {
@@ -83,8 +83,8 @@ export class KeyNeurons {
   }
   removeRow(key) { const r = this.rows[key]; if (!r) return; r.els.forEach((e) => e.remove()); delete this.rows[key]; delete this.hist[key]; }
   async seed() {
-    const keys = this.L.readouts.map((r) => r.key);
-    const h = await getJSON(`api/history?keys=${encodeURIComponent(keys.join(","))}&n=${HIST}`);
+    const keys = this.L.readouts.map((r) => r.key), fly = this.L.fly_id ? `&fly=${this.L.fly_id}` : "";
+    const h = await getJSON(`api/history?keys=${encodeURIComponent(keys.join(","))}&n=${HIST}${fly}`);
     if (!h || !h.history) return;
     for (const k of keys) { const arr = h.history[k]; if (!arr) continue; const H = this.hist[k]; if (!H || H.n > 40) continue; for (const v of arr) this.push(H, v); }
   }
@@ -249,10 +249,7 @@ export class ScenariosPanel {
 export class LabPanel {
   constructor(L) {
     this.L = L;
-    const dl = $("typelist"), frag = document.createDocumentFragment();
-    for (const t of L.types || []) { const o = document.createElement("option"); o.value = t; frag.appendChild(o); }
-    dl.appendChild(frag);
-    this.baseOptions = dl.innerHTML;
+    const dl = $("typelist");
     const search = debounce(async (q) => {
       if (q.length < 2) { if (dl.innerHTML !== this.baseOptions) dl.innerHTML = this.baseOptions; return; }
       const r = await getJSON(`api/types?q=${encodeURIComponent(q)}&limit=40`);
@@ -264,18 +261,29 @@ export class LabPanel {
     }, 180);
     for (const id of ["spec", "traceFrom", "traceTo"]) $(id).addEventListener("input", (e) => search(e.target.value.trim().replace(/^prefix:|\/[LRM]$/g, "")));
     $("spec").addEventListener("keydown", (e) => { if (e.key === "Enter") this.zap(); });
-    const pr = $("presets"); pr.innerHTML = "";
-    for (const p of L.presets || []) {
-      const b = document.createElement("button"); b.textContent = p.spec; b.title = p.label;
-      b.onclick = () => { $("spec").value = p.spec; $("hz").value = p.hz; this.zap(); };
-      pr.appendChild(b);
-    }
+    this.relayout(L);
     $("zapBtn").onclick = () => this.zap();
     $("silenceBtn").onclick = () => this.silence();
     $("modBtn").onclick = () => this.modulate();
     $("watchBtn").onclick = () => this.watch();
     this.silKey = ""; this.modKey = "";
     if (L.vfb && L.vfb.available) this.wireOntology();
+  }
+  /** The parts that depend on which fly is in focus (two flies: app.js setFocus): the zap presets its cells allow and
+   *  the type list of its connectome. The inputs and their listeners are wired once. */
+  relayout(L) {
+    this.L = L;
+    const dl = $("typelist"), frag = document.createDocumentFragment();
+    dl.innerHTML = "";
+    for (const t of L.types || []) { const o = document.createElement("option"); o.value = t; frag.appendChild(o); }
+    dl.appendChild(frag);
+    this.baseOptions = dl.innerHTML;
+    const pr = $("presets"); pr.innerHTML = "";
+    for (const p of L.presets || []) {
+      const b = document.createElement("button"); b.textContent = p.spec; b.title = p.label;
+      b.onclick = () => { $("spec").value = p.spec; $("hz").value = p.hz; this.zap(); };
+      pr.appendChild(b);
+    }
   }
   // Virtual Fly Brain's anatomy ontology: type a class name, pick one, and `fbbt:<class>` becomes the population
   wireOntology() {
@@ -394,7 +402,17 @@ export class PathwayPanel {
 // ================================================================= 8b. Genetics
 export class GeneticsPanel {
   constructor(L, lab) {
-    this.lab = lab; this.G = L.genetics || {}; this.buttons = {}; this.sex = L.sex || "male";
+    this.lab = lab;
+    this.render(L);
+    $("lineBtn").onclick = () => this.neuronsOfLine();
+    $("lineName").addEventListener("keydown", (e) => { if (e.key === "Enter") this.neuronsOfLine(); });
+    $("linesBtn").onclick = () => this.linesFor();
+    $("linesSpec").addEventListener("keydown", (e) => { if (e.key === "Enter") this.linesFor(); });
+  }
+  /** Another fly's layout in focus (two flies: app.js setFocus): its genes, transmitters and ontology rows. */
+  relayout(L) { this.render(L); }
+  render(L) {
+    this.G = L.genetics || {}; this.buttons = {}; this.sex = L.sex || "male";
     const rows = $("geneRows"); rows.innerHTML = "";
     for (const g of this.G.expression || []) {
       const info = el("div", "g");
@@ -417,12 +435,9 @@ export class GeneticsPanel {
       ? ` ${unclear.toLocaleString()} neurons have no confident transmitter prediction (labelled "unclear"); each keeps its predicted transmitter's sign (${(unclear - inhibitory).toLocaleString()} excitatory, ${inhibitory.toLocaleString()} inhibitory).`
       : ` ${unclear.toLocaleString()} neurons have no confident transmitter prediction and count as excitatory.`));
     this.renderVfb(L.vfb);
-    $("lineBtn").onclick = () => this.neuronsOfLine();
-    $("lineName").addEventListener("keydown", (e) => { if (e.key === "Enter") this.neuronsOfLine(); });
-    $("linesBtn").onclick = () => this.linesFor();
-    $("linesSpec").addEventListener("keydown", (e) => { if (e.key === "Enter") this.linesFor(); });
-    if (this.sex === "female") for (const id of ["lineBtn", "linesBtn"]) {       // NeuronBridge knows MaleCNS bodies only
-      $(id).disabled = true; $(id).title = "NeuronBridge matches MaleCNS neurons only, not the female fly's FlyWire cells";
+    for (const id of ["lineBtn", "linesBtn"]) {       // NeuronBridge knows MaleCNS bodies only
+      $(id).disabled = this.sex === "female";
+      $(id).title = this.sex === "female" ? "NeuronBridge matches MaleCNS neurons only, not the female fly's FlyWire cells" : "";
     }
   }
   // what the anatomy ontology (via Virtual Fly Brain) says about the transmitters, where it differs from the prediction

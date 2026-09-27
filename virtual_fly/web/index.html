@@ -11,6 +11,7 @@
 <header>
   <h1>🪰 Virtual Fly</h1>
   <span class="sub" id="sub">loading the nervous system…</span>
+  <select id="focusSel" class="focus" hidden title="Two flies in the dish: which one the panels, the eye inset, the brain map and the camera follow"></select>
   <div class="stats">
     <span id="stSpsBox" title="spikes per second in the whole brain">brain <b id="stSps" class="num w7">0</b> <span id="stSpsUnit">spikes/s</span></span>
     <span title="how fast the brain runs compared with real time">sim speed <b id="stRtf" class="num w8">–</b></span>
@@ -49,7 +50,7 @@
     <div class="controls" id="controls">
       <label class="toggle" title="Real flies start walking on their own. This model has no spontaneous activity, so a hand-built 'urge to walk' stands in for it."><input type="checkbox" id="autopilot" checked> walking urge</label>
       <label class="toggle" title="Synaptic plasticity at the Kenyon-cell → MBON synapses"><input type="checkbox" id="learnToggle"> learning</label>
-      <label class="toggle" title="Add a scripted female fly to the dish (she has no brain)"><input type="checkbox" id="femaleToggle"> ♀ female</label>
+      <label class="toggle" id="femaleLabel" title="Add a scripted female fly to the dish (she has no brain)"><input type="checkbox" id="femaleToggle"> <span id="femaleText">♀ female</span></label>
       <span class="sep"></span>
       <button class="btn" id="pauseBtn" title="Space">Pause</button>
       <span class="menuwrap">
@@ -97,6 +98,8 @@
       <div class="brainwrap">
         <canvas id="brain"></canvas>
         <canvas id="brainOverlay"></canvas>
+        <canvas id="brain2" hidden></canvas>
+        <canvas id="brainOverlay2" hidden></canvas>
         <div class="brainbtns">
           <button class="mini" id="brainView" title="Switch between the flat front view and 3-D">3-D</button>
           <button class="mini on" id="brainSpin" title="Slowly rotate the brain">spin</button>
@@ -296,6 +299,8 @@
   <ul id="realHand"></ul>
   <h4>Not in the model at all</h4>
   <ul id="realNot"></ul>
+  <h4 id="realOtherHead" hidden>The other fly, from its own connectome</h4>
+  <ul id="realOther" hidden></ul>
 </dialog>
 
 <dialog id="keysDlg">
@@ -305,7 +310,8 @@
     <tr><td><kbd>1</kbd>–<kbd>9</kbd>, <kbd>0</kbd></td><td>pick a tool (in toolbar order)</td></tr>
     <tr><td><kbd>Space</kbd></td><td>pause / resume</td></tr>
     <tr><td><kbd>C</kbd></td><td>clap (a loud sound)</td></tr>
-    <tr><td><kbd>F</kbd></td><td>add / remove the female</td></tr>
+    <tr><td><kbd>F</kbd></td><td>add / remove the scripted female (single-fly play; with <code>--partner</code> the female is simulated and always there)</td></tr>
+    <tr><td><kbd>Tab</kbd> in the header's fly menu</td><td>with two flies, choose which fly the panels follow</td></tr>
     <tr><td><kbd>S</kbd></td><td>toggle the "sees" overlay</td></tr>
     <tr><td><kbd>E</kbd></td><td>toggle the eye (retina) inset</td></tr>
     <tr><td><kbd>W</kbd></td><td>toggle the walking urge</td></tr>
