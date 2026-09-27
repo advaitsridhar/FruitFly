@@ -167,6 +167,13 @@ identical, all tests green), then step 2 (5.3, the `BrainIO` seam).
 ### 2026-09-27 (Phase 1)
 - PR #16 merged by Claude on the owner's go-ahead (squash). Branch `claude/two-flies-p1-two-brains` from `origin/main`.
 - The owner answered decisions 4-15 with the defaults ("defaults"); recorded above.
+- Steps 1-2 done (`89d6f78`, `ae3d656`), then an adversarial review of the seam (four lenses, two refuters per finding) confirmed nine
+  points, all fixed in `2903e39` with a regression test each: the lockstep barrier releases every brain's lock when one child dies;
+  the paused loop survives a dead child; a killed child reports its real exit code; the tick that resets a runaway brain publishes
+  post-reset numbers as v2.8.1 did; a rebuild that fails in the child leaves the game usable; a request that times out stops the
+  child instead of desynchronising the pipe; the scenario measure asks for the cheap number; one tautological test assertion
+  removed. 471 tests; 18 real golden hashes unchanged.
+- Steps 3-5 (the N-fly tick, the partner, the social encoders, her readouts) in progress.
 
 ### 2026-09-27
 - Read the plan; machine facts gathered (4.1, 4.3); no missing system packages (4.4).
