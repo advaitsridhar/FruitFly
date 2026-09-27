@@ -29,7 +29,7 @@ from . import retest as retestlib
 from . import vfb
 from . import wiring
 from .experiments import survival as survival_report
-from .game import (CHECKS, COURTSHIP_HZ, COURTSHIP_SECS, COURTSHIP_SPEC, GF_BURST, HIDDEN_READOUTS,
+from .game import (CHECKS, COURTSHIP_HZ, COURTSHIP_SECS, COURTSHIP_SPEC, FEMALE_READOUTS, GF_BURST, HIDDEN_READOUTS,
                    PHEROMONE_GRNS, READOUTS, REWARD_HZ, REWARD_SPEC, SHOCK_HZ, SHOCK_SPEC, SOUND_HZ, SOUND_SPEC,
                    STILL_TICKS, TICK_MS, ZAP_PRESETS, InternalState, MotorDecoder)
 from .scenarios import SCENARIOS
@@ -124,6 +124,8 @@ class FlyAgent:
         # the readouts this fly reports each tick: the kit's, the decoder's hidden ones and, for a female with a
         # partner, her decision neurons (FEMALE_READOUTS); the same list, in the same order, in a brain process
         self._readout_specs: list = [(r[0], r[1]) for r in READOUTS] + list(HIDDEN_READOUTS.items())
+        if pair and sex == "female":                     # her decision neurons, watched (5.6; never a verdict)
+            self._readout_specs += [(r[0], r[1]) for r in FEMALE_READOUTS]
         # the brain: here, or in a child process built from this brain's settings (then this one is let go)
         if brain is None:
             if brain_procs:
@@ -162,7 +164,7 @@ class FlyAgent:
         self.state = InternalState()
         self.readouts = {k: self.conn.select(spec) for k, spec in self._readout_specs}
         c = self.conn
-        shown = READOUTS                                  # the bars the page shows
+        shown = READOUTS + (FEMALE_READOUTS if pair and sex == "female" else [])   # the bars the page shows
         self.readout_meta = [{"key": r[0], "spec": r[1], "label": r[2], "group": r[3], "max": r[4], "colour": r[5],
                               "genes": genetics.genotype(c, c.select(r[1]))["tags"]}
                              for r in shown if self.readouts[r[0]].size]      # (the female fly has no pIP10, no TTMn)

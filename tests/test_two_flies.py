@@ -391,3 +391,48 @@ def test_whats_real_lists_the_channels_only_with_a_partner(conn, fconn):
     off = pair(conn, fconn, social=SocialConfig(song=False, cva=True, mating="virgin", touch=True)).whats_real()
     j = " ".join(off["hand_built"])
     assert "Song:" not in j and "cVA:" in j and "virgin" in j and "Touch:" in j
+
+
+# ------------------------------------------------------------------ her decision neurons (game.FEMALE_READOUTS)
+from virtual_fly.game import FEMALE_READOUTS, READOUTS  # noqa: E402
+
+FEMALE_KEYS = [r[0] for r in FEMALE_READOUTS]
+
+
+def test_a_female_with_a_partner_watches_her_decision_neurons(conn, fconn):
+    g = pair(conn, fconn)
+    f0, f1 = g.flies
+    assert set(FEMALE_KEYS) <= set(f1.readouts) and not (set(FEMALE_KEYS) & set(f0.readouts))
+    present = [k for k in FEMALE_KEYS if f1.readouts[k].size]
+    assert set(present) == {"vpoEN", "DNp37", "DNp13", "SAG"}                             # what the synthetic female has
+    meta = {m["key"]: m for m in f1.readout_meta}
+    assert set(present) <= set(meta) and all(meta[k]["group"] == "Her decisions" for k in present)
+    assert [m["key"] for m in f1.readout_meta if m["key"] not in FEMALE_KEYS] == [r[0] for r in READOUTS if f1.readouts[r[0]].size]
+    assert not (set(FEMALE_KEYS) & {m["key"] for m in f0.readout_meta})
+    assert set(present) <= set(f1.brain.monitors) and not (set(FEMALE_KEYS) & set(f0.brain.monitors))
+    g.tick()
+    assert set(present) <= set(f1.bt.hz) and "DNp37" in f1.hz_shown and "DNp37" not in f0.bt.hz
+    text = " ".join(r[2] + r[3] for r in FEMALE_READOUTS).lower()
+    assert "acceptance" not in text and "rejection" not in text
+
+
+def test_a_female_without_a_partner_does_not_get_them(conn, fconn):
+    single = Game(build_brain(fconn, "game", seed=0), autopilot=False, seed=1)             # the female protagonist alone
+    assert not (set(FEMALE_KEYS) & set(single.readouts)) and not (set(FEMALE_KEYS) & {m["key"] for m in single.readout_meta})
+    male_alone = Game(build_brain(conn, "game", seed=0), autopilot=False, seed=1)
+    assert not (set(FEMALE_KEYS) & set(male_alone.readouts))
+    # a female protagonist with a male partner does get them; her male partner does not
+    g = Game(build_brain(fconn, "game", seed=0), autopilot=False, seed=1, brain_procs="off", partner={"conn": conn})
+    assert set(FEMALE_KEYS) <= set(g.flies[0].readouts) and g.flies[1].sex == "male" and not (set(FEMALE_KEYS) & set(g.flies[1].readouts))
+    assert g.flies[1].can_court and g.flies[0].can_court                                 # D12 is a partner's rule: fly 0 always may
+
+
+def test_her_decision_neurons_travel_to_her_brain_process(conn, fconn):
+    g = pair(conn, fconn, procs="auto")
+    try:
+        g.tick()
+        f1 = g.flies[1]
+        assert isinstance(f1.io, ProcessBrain) and {"vpoEN", "DNp37", "DNp13", "SAG"} <= set(f1.bt.hz)
+        assert "DNp37" in f1.histories and len(f1.histories["DNp37"]) == 1
+    finally:
+        g.close()

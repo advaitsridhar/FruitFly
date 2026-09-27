@@ -324,6 +324,17 @@ def build_synthetic(path: Path | str, seed: int = 7, sex: str = "male") -> Path:
         con(jo_a[side] + jo_b[side], pc1_1a[side], 5)
         con(jo_b[side], dnp01[side], 30)                     # a loud sound startles: JO-B -> giant fibre
         con(jo_a[side], dnp01[side], 5)
+    if female:                                               # her decision neurons (the two-flies work, game.FEMALE_READOUTS):
+        vpoen = both("vpoEN", 2, "cb_intrinsic", "courtship", ACH, soma=(104000, 174000, 86000))      # song -> vpoEN -> vpoDN
+        dnp37 = both("DNp37", 1, "descending_neuron", "descending", ACH, soma=(47000, 231000, 150000))  # vaginal plate opening
+        dnp13 = both("DNp13", 1, "descending_neuron", "descending", ACH, soma=(46000, 232000, 150000))  # ovipositor extrusion
+        sag = both("AN_SMP_2", 1, "ascending_neuron", "interneuron", ACH, soma=(35000, 300000, 380000))  # mating status
+        for side in "LR":
+            con(jo_a[side] + jo_b[side], vpoen[side], 8)
+            con(vpoen[side], dnp37[side] + dnp13[side], 30)
+            con(pc1_1a[side], dnp37[side], 40)
+            con(pc1_1a[side], dnp13[side], 20)
+            con(sag[side], pc1_1a[side], 40)
 
     # ---------------------------------------------------------------- neuromodulators (the parts list, parts.py)
     # an octopaminergic neuron onto the HS cells and one T4a column (Suver et al. 2012), and a serotonergic

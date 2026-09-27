@@ -81,6 +81,22 @@ HIDDEN_READOUTS = {   # used by the decoder but not shown as bars
     "DNa03L": "DNa03/L", "DNa03R": "DNa03/R", "DNp15L": "DNp15/L", "DNp15R": "DNp15/R",
 }
 BUILTIN_KEYS = {r[0] for r in READOUTS} | set(HIDDEN_READOUTS)   # a 'watch' may never shadow these
+# The female's decision neurons, watched for a female fly that shares the dish with another simulated fly (the
+# two-flies work, docs/TWO_FLIES_PLAN.md 5.6; FlyWire's own type names, so her file needs no rebuild; the names in
+# the papers come from FlyWire's annotation columns: DNp37 is vpoDN, AN_SMP_2 is SAG, the seven pC2l types carry
+# "Nojima 2021: pC2l" except one unlabelled SIP200f cell, left out by its body id). Readouts, never a verdict: song
+# drives both the plate-opening and the extrusion command, and what extrusion means depends on a mating status this
+# model does not have (3.2). A single female fly (male or female play without a partner) does not get them.
+FEMALE_READOUTS = [
+    ("vpoEN", "vpoEN", "song-tuned input to vpoDN", "Her decisions", 60, "#f4a6d7"),
+    ("pC2l", "AVLP567,AVLP568,AVLP569,AVLP570,CL313,SIP200f,SIP201f,!body:720575940610359758",
+     "pulse-song detectors (pC2l)", "Her decisions", 60, "#f4a6d7"),
+    ("DNp37", "DNp37", "vaginal plate opening command (vpoDN)", "Her decisions", 60, "#ff7fc8"),
+    ("DNp13", "DNp13", "ovipositor extrusion command", "Her decisions", 60, "#ff7fc8"),
+    ("DNp55", "DNp55", "a strong vpoEN target (role unknown)", "Her decisions", 60, "#f4a6d7"),
+    ("oviDN", "oviDNa_a,oviDNa_b,oviDNb", "egg laying", "Her decisions", 60, "#d9a3ff"),
+    ("SAG", "AN_SMP_2", "mating status (SAG)", "Her decisions", 60, "#d9a3ff"),
+]
 
 # The antennal-lobe local neurons are silenced in the game (outputs blocked, like tetanus toxin).
 BASELINE_SILENCED = "class:ALLN"
