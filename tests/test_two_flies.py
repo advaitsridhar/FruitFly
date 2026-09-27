@@ -80,7 +80,7 @@ def test_the_partner_is_its_own_fly(conn, fconn):
     assert f1.autopilot and g.autopilot is False                                           # her walking urge, on (decision 13)
     assert set(g.state_dict) == set()                                                      # nothing published yet
     g.tick()
-    assert "flies" not in g.state_dict                                                     # (the state's flies list: step 6)
+    assert [e["id"] for e in g.state_dict["flies"]] == [0, 1]                              # the state's flies list (5.7)
 
 
 def test_the_partner_walks_on_its_own_and_the_protagonist_sees_it_only_through_the_world(conn, fconn):
@@ -573,3 +573,165 @@ def test_each_fly_has_its_own_checklist_and_new_fly_keeps_both(conn, fconn):
     assert g.action({"type": "reset"})["ok"] is True
     g.tick()
     assert "smell" in f0.done and "feed" in f1.done and "feed" not in f0.done
+
+
+# ------------------------------------------------------------------ the per-fly API and state (plan 5.7)
+import threading  # noqa: E402
+import urllib.error  # noqa: E402
+import urllib.request  # noqa: E402
+from http.server import ThreadingHTTPServer  # noqa: E402
+
+from virtual_fly import server as S  # noqa: E402
+
+FLY_ENTRY_KEYS = {"id", "sex", "dataset", "fly", "mode", "driver", "senses", "retina", "hz", "motor", "spikes", "sps", "graded_eps",
+                  "stims", "calms", "state", "learning", "silenced", "baseline", "modulated", "custom", "genome", "done"}
+STATE_KEYS_ONE = {"seq", "t", "rtf", "speed", "fly", "world", "autopilot", "paused", "senses", "retina", "hz", "motor", "driver", "mode",
+                  "spikes", "sps", "stims", "calms", "msg", "silenced", "baseline", "modulated", "custom", "done", "state", "learning",
+                  "events", "event_seq", "scenario", "recording", "genome", "graded_eps"}
+
+
+@pytest.fixture
+def served_pair(conn, fconn):
+    """(game, base url): the synthetic pair behind a live server."""
+    g = pair(conn, fconn)
+    for _ in range(3):
+        g.tick()
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), S.make_handler(g))
+    srv.daemon_threads = True
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    try:
+        yield g, f"http://127.0.0.1:{srv.server_address[1]}"
+    finally:
+        srv.shutdown()
+        srv.server_close()
+
+
+def _get(base, path):
+    req = urllib.request.Request(base + path)
+    try:
+        with urllib.request.urlopen(req, timeout=10) as r:
+            return r.status, json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        return e.code, json.loads(e.read())
+
+
+def _post(base, payload):
+    data = payload if isinstance(payload, bytes) else json.dumps(payload).encode()
+    req = urllib.request.Request(base + "/api/action", data=data, method="POST", headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=10) as r:
+        return json.loads(r.read())
+
+
+def test_the_state_lists_both_flies_and_the_single_fly_is_unchanged(conn, fconn):
+    g = pair(conn, fconn)
+    g.tick()
+    st = g.state_dict
+    assert set(st) == STATE_KEYS_ONE | {"flies"} and len(st["flies"]) == 2
+    for e in st["flies"]:
+        assert set(e) == FLY_ENTRY_KEYS
+    f0, f1 = st["flies"]
+    assert (f0["id"], f0["sex"], f1["id"], f1["sex"]) == (0, "male", 1, "female") and f1["dataset"] == fconn.dataset
+    assert f0["fly"] == st["fly"] and f0["mode"] == st["mode"] and f0["hz"] == st["hz"] and f0["done"] == st["done"]
+    assert f1["mode"] in ("idle", "walk", "court", "backward", "feed", "groom", "escape") and "DNp37" in f1["hz"] and "DNp37" not in f0["hz"]
+    assert f1["retina"].keys() == {"L", "R"} and f1["learning"] is not None and f1["genome"]["level"] == "real"
+    assert json.loads(g.state_json)["flies"][1]["id"] == 1
+    single = Game(build_brain(conn, "game", seed=0), autopilot=False, seed=1)
+    single.tick()
+    assert set(single.state_dict) == STATE_KEYS_ONE                                       # no new key with one fly
+
+
+def test_recording_frames_carry_every_fly_and_the_dish(conn, fconn):
+    g = pair(conn, fconn)
+    assert g.action({"type": "record", "on": True})["ok"] is True
+    for _ in range(3):
+        g.tick()
+    frame = g.recording[-1]
+    assert set(frame) == {"t", "fly", "mode", "hz", "senses", "sps", "flies", "world"}
+    assert [f["id"] for f in frame["flies"]] == [0, 1] and set(frame["flies"][1]) == {"id", "fly", "mode", "hz", "senses", "sps"}
+    assert set(frame["world"]) == {"food", "obstacles", "odours", "wind", "stripes", "tool"}
+    single = Game(build_brain(conn, "game", seed=0), autopilot=False, seed=1)
+    single.action({"type": "record", "on": True})
+    single.tick()
+    assert set(single.recording[-1]) == {"t", "fly", "mode", "hz", "senses", "sps"}
+
+
+def test_per_fly_actions_reach_their_fly(conn, fconn):
+    g = pair(conn, fconn)
+    f0, f1 = g.flies
+    r = g.action({"type": "zap", "spec": "MDN", "hz": 80, "secs": 5, "fly": 1})
+    assert r == {"ok": True, "n": 4}
+    for _ in range(6):
+        g.tick()
+    assert f1.hz_shown["MDN"] > 20 and f0.hz_shown["MDN"] < 5 and f1.zaps and not f0.zaps
+    her = [e for e in g.state_dict["flies"] if e["id"] == 1][0]
+    assert her["hz"]["MDN"] > 20 and g.state_dict["hz"]["MDN"] < 5
+    zap_events = [e for e in g.events.items if e["text"].startswith("zap MDN")]
+    assert zap_events and zap_events[-1]["fly"] == 1
+    assert g.action({"type": "silence", "spec": "MN9", "fly": 1})["ok"] is True
+    assert g.action({"type": "watch", "spec": "DNa02", "key": "hers", "fly": 1})["ok"] is True
+    assert g.action({"type": "autopilot", "on": False, "fly": 1})["ok"] is True
+    assert g.action({"type": "state", "hunger": 0.1, "fly": 1})["ok"] is True
+    assert g.action({"type": "place_fly", "x": 3.0, "y": 4.0, "fly": 1})["ok"] is True
+    g.tick()
+    assert "MN9" in f1.user_silenced and "MN9" not in f0.user_silenced and "hers" in f1.custom_readouts and "hers" not in f0.custom_readouts
+    assert f1.autopilot is False and f1.state.hunger == pytest.approx(0.1, abs=0.01) and f0.state.hunger > 0.5
+    assert abs(f1.body.pose.x - 3.0) < 1.0 and abs(f1.body.pose.y - 4.0) < 1.0
+    assert g.action({"type": "unwatch", "key": "hers"})["ok"] is False                     # fly 0 has no such watch
+    assert g.action({"type": "unwatch", "key": "hers", "fly": 1})["ok"] is True
+    # a per-fly spec is checked against that fly's connectome: the female has no pIP10
+    assert g.action({"type": "zap", "spec": "pIP10", "fly": 1})["ok"] is False
+    assert g.action({"type": "zap", "spec": "pIP10", "fly": 0})["ok"] is True and g.action({"type": "zap", "spec": "pIP10"})["ok"] is True
+
+
+def test_a_bad_fly_field_is_refused_and_queues_nothing(served_pair):
+    g, base = served_pair
+    while not g.actions.empty():
+        g.actions.get()
+    for bad in ('"1"', "1.5", "true", "Infinity", "1e400", "7", "-1", '"a"', "[1]"):
+        r = _post(base, f'{{"type": "zap", "spec": "MDN", "fly": {bad}}}'.encode())
+        assert r["ok"] is False and ("whole number" in r["error"] or "no fly" in r["error"]), (bad, r)
+    assert g.actions.empty()
+    assert _post(base, {"type": "zap", "spec": "MDN", "fly": None})["ok"] is True          # null: fly 0
+    assert _post(base, {"type": "zap", "spec": "pIP10", "fly": 1})["ok"] is False           # not in her connectome
+    assert _post(base, {"type": "tool", "tool": "hand", "fly": 1})["ok"] is True            # a world action: fly ignored
+
+
+def test_every_per_fly_endpoint_takes_fly(served_pair, fconn):
+    g, base = served_pair
+    code, lay = _get(base, "/api/layout?fly=1")
+    assert code == 200 and lay["sex"] == "female" and lay["dataset"] == fconn.dataset
+    groups = {r["group"] for r in lay["readouts"]}
+    assert "Her decisions" in groups and {r["id"] for r in lay["checks"]} == {r["id"] for r in lay["checks"]} - {"groom", "sound", "wall", "court", "genetics"}
+    code, lay0 = _get(base, "/api/layout")
+    assert code == 200 and lay0["sex"] == "male" and lay0 == json.loads(g.layout_json)
+    code, h = _get(base, "/api/history?fly=1&keys=DNp37,MDN")
+    assert code == 200 and set(h["history"]) == {"DNp37", "MDN"} and len(h["history"]["DNp37"]) == 3
+    code, h0 = _get(base, "/api/history?keys=DNp37")
+    assert code == 200 and h0["history"] == {}                                             # he has no such readout
+    code, t = _get(base, "/api/types?fly=1&q=pIP")
+    assert code == 200 and t["types"] == []                                                # not in her connectome
+    code, t = _get(base, "/api/types?q=pIP")
+    assert code == 200 and t["types"] and t["types"][0]["type"] == "pIP10"
+    code, l = _get(base, "/api/learning?fly=1")
+    assert code == 200 and l["learning"] is not None
+    code, pr = _get(base, "/api/parts?fly=1")
+    assert code == 200 and pr["on"] is False and "counts" in pr
+    code, d = _get(base, "/api/decoder?fly=1")
+    assert code == 200 and "MDN" in d["targets"] and "pIP10" not in d["targets"]
+    code, gn = _get(base, "/api/genome?fly=1")
+    assert code == 200 and gn["level"] == "real"
+    code, ge = _get(base, "/api/genes?fly=1")
+    assert code == 200 and "expression" in ge
+    i = int(fconn.select("MDN")[0])
+    code, n = _get(base, f"/api/neuron?fly=1&index={i}")
+    assert code == 200 and n["neuron"]["type"] == "MDN"
+    code, pa = _get(base, "/api/partners?fly=1&spec=MN9")
+    assert code == 200 and pa["n"] == fconn.count("MN9")
+    code, tr = _get(base, "/api/trace?fly=1&from=LC10a/L&to=DNa02/L&hops=3")
+    assert code == 200 and "paths" in tr
+    code, rec = _get(base, "/api/recording?fly=1")
+    assert code == 200 and rec["settings"]["seed"] == g.seed + 1000
+    for path in ("/api/layout?fly=2", "/api/history?fly=x", "/api/neuron?fly=-1&index=0", "/api/types?fly=1.0&q=a"):
+        code, err = _get(base, path)
+        assert code == 404 and err["ok"] is False and "no fly" in err["error"], path
+    assert _get(base, "/api/state")[1]["flies"][1]["sex"] == "female"

@@ -377,11 +377,27 @@ class Game:
         self.message, self.message_left = text, secs
 
     # ------------------------------------------------------------------ input from the browser
+    # the actions that act on one fly (docs/TWO_FLIES_PLAN.md 5.7): they take an optional "fly": k (default 0)
+    PER_FLY = ("zap", "silence", "unsilence", "modulate", "watch", "unwatch", "learning", "grow", "parts", "state",
+               "place_fly", "calm", "autopilot", "dust", "shock", "sound")
+
     def action(self, a: dict) -> dict:
         kind = a.get("type")
         fields = ACTIONS.get(kind) if isinstance(kind, str) else None
         if fields is None:
             return {"ok": False, "error": "the action needs a 'type'" if kind is None else f"unknown action type {kind!r}"}
+        # "fly": which fly an action is for. Checked before the numeric fields and unlike them: only a JSON whole number
+        # (not text, not a fraction, not true/false), since it names a fly and nothing else
+        raw_fly = a.get("fly")
+        if raw_fly is None:
+            a.pop("fly", None)                               # null: fly 0
+            fly = self.flies[0]
+        elif type(raw_fly) is not int:
+            return {"ok": False, "error": f"'fly' must be a whole number, not {raw_fly!r}"}
+        elif not 0 <= raw_fly < len(self.flies):
+            return {"ok": False, "error": f"no fly {raw_fly}"}
+        else:
+            fly = self.flies[raw_fly]
         for f, (num, required) in fields.items():            # checked here, so a bad field is refused, not queued
             if a.get(f) is None:
                 if required:
@@ -438,7 +454,7 @@ class Game:
         if kind in ("zap", "silence", "modulate", "watch"):
             spec = str(a.get("spec", "")).strip()
             try:
-                n = len(self.conn.select(spec))
+                n = len(fly.conn.select(spec))                # that fly's cells (her pIP10: none)
             except (ValueError, KeyError) as e:
                 return {"ok": False, "error": str(e)}
             if n == 0:
@@ -448,12 +464,12 @@ class Game:
         if kind == "watch":
             explicit = str(a.get("key") or "").strip()
             key = (explicit or a["spec"])[:24]
-            if key in self.flies[0].builtin_keys:            # the decoder and the page read these; a rewire would steer the body
+            if key in fly.builtin_keys:                      # the decoder and the page read these; a rewire would steer the body
                 if explicit:
                     return {"ok": False, "error": f"'{key}' is a built-in readout; pick another name for the watch."}
                 key = f"watch:{a['spec']}"[:24]
             a["key"] = key
-        if kind == "unwatch" and (a.get("key") in self.flies[0].builtin_keys or a.get("key") not in self.custom_readouts):
+        if kind == "unwatch" and (a.get("key") in fly.builtin_keys or a.get("key") not in fly.custom_readouts):
             return {"ok": False, "error": f"'{a.get('key')}' is not a custom watch."}
         if kind == "scenario" and a.get("id") is not None and not isinstance(a["id"], str):
             return {"ok": False, "error": f"'id' must be a scenario id ({', '.join(SCENARIOS)}), not {a['id']!r}"}
@@ -463,22 +479,22 @@ class Game:
             level = str(a.get("level", "type")).strip().lower()
             if not wiring.valid_level(level):
                 return {"ok": False, "error": wiring.LEVEL_ERROR}
-            if self.genome["growing"]:
+            if fly.genome["growing"]:
                 return {"ok": False, "error": "a fly is already being grown; wait for it"}
             try:
                 a["level"], a["seed"] = level, 1 if a.get("seed") is None else int(a["seed"])    # null: the default
             except (TypeError, ValueError):
                 return {"ok": False, "error": "seed must be a whole number"}
-            self.genome.update(growing={"level": level, "seed": a["seed"], "t0": time.time()}, error=None)   # claimed now, one at a time
+            fly.genome.update(growing={"level": level, "seed": a["seed"], "t0": time.time()}, error=None)   # claimed now, one at a time
         if kind == "parts":
             if not isinstance(a.get("on"), bool):
                 return {"ok": False, "error": "'on' must be true or false"}
-            if self.genome["growing"]:
+            if fly.genome["growing"]:
                 return {"ok": False, "error": "the brain is being rebuilt; wait for it"}
-            if a["on"] == self.parts_on:
+            if a["on"] == fly.parts_on:
                 return {"ok": False, "error": f"the parts list is already {'on' if a['on'] else 'off'}"}
-            self.genome.update(growing={"level": self.genome["level"], "seed": self.genome["seed"], "reason": "parts",
-                                        "parts": a["on"], "t0": time.time()}, error=None)                 # claimed now
+            fly.genome.update(growing={"level": fly.genome["level"], "seed": fly.genome["seed"], "reason": "parts",
+                                       "parts": a["on"], "t0": time.time()}, error=None)                 # claimed now
         self.actions.put(a)
         return {"ok": True, **({"n": a["n"]} if "n" in a else {})}
 
@@ -494,6 +510,11 @@ class Game:
     def _apply(self, a: dict):
         kind = a.get("type")
         w = self.world
+        f = self.flies[a.get("fly", 0)]                  # the fly a per-fly action is for (checked in action(); default 0)
+        many = len(self.flies) > 1
+
+        def ev(kind_, text):                             # a per-fly event names its fly when there is more than one
+            self.events.add(self.t, kind_, text, **({"fly": f.id} if many else {}))
         if kind == "tool":
             w.tool = a.get("tool", "lure")
         elif kind == "drop":
@@ -513,77 +534,77 @@ class Game:
         elif kind == "remove":
             w.remove(int(a["id"]))
         elif kind == "dust":
-            x, y = float(a.get("x", self.body.pose.x)), float(a.get("y", self.body.pose.y))
-            if math.hypot(x - self.body.pose.x, y - self.body.pose.y) < 20:
-                self.antennae.puff_dust(1.5)
+            x, y = float(a.get("x", f.body.pose.x)), float(a.get("y", f.body.pose.y))
+            if math.hypot(x - f.body.pose.x, y - f.body.pose.y) < 20:
+                f.antennae.puff_dust(1.5)
                 self.say("Dust on the antennae!", 1.5)
         elif kind == "sound":
-            self.sound_left = float(a.get("secs", 0.3))
-            self.events.add(self.t, "world", "a loud sound (Johnston's organ B neurons)")
+            f.sound_left = float(a.get("secs", 0.3))
+            ev("world", "a loud sound (Johnston's organ B neurons)")
             self.say("Clap! Johnston's organ hears it.", 1.5)
         elif kind == "shock":
-            self.shock_left = float(a.get("secs", 1.0))
-            self.events.add(self.t, "learning", "Electric shock: PPL1 punishment dopamine driven directly (hand-built)")
+            f.shock_left = float(a.get("secs", 1.0))
+            ev("learning", "Electric shock: PPL1 punishment dopamine driven directly (hand-built)")
             self.say("Shock! Punishment dopamine pairs with whatever it smells now.", 2.5)
         elif kind == "zap":
-            self.zaps = [z for z in self.zaps if z[0] != a["spec"]]
-            self.zaps.append([a["spec"], float(a.get("hz", 60)), float(a.get("secs", 2.0))])
-            self.done.add("zap")
+            f.zaps = [z for z in f.zaps if z[0] != a["spec"]]
+            f.zaps.append([a["spec"], float(a.get("hz", 60)), float(a.get("secs", 2.0))])
+            f.done.add("zap")
             self.say(f"Zapping {a['spec']} ({a['n']} neurons) at {float(a.get('hz', 60)):g} Hz", 2.0)
-            self.events.add(self.t, "lab", f"zap {a['spec']} at {float(a.get('hz', 60)):g} Hz for {float(a.get('secs', 2.0)):g} s")
+            ev("lab", f"zap {a['spec']} at {float(a.get('hz', 60)):g} Hz for {float(a.get('secs', 2.0)):g} s")
         elif kind == "silence":
-            n = self.flies[0].io.silence(a["spec"])
-            self.user_silenced.add(a["spec"])
-            self.done.add("silence")
+            n = f.io.silence(a["spec"])
+            f.user_silenced.add(a["spec"])
+            f.done.add("silence")
             if a["spec"].startswith(("gene:", "dimorphism:")):
-                self.done.add("genetics")
+                f.done.add("genetics")
             self.say(f"Silenced {a['spec']} ({n} neurons): they still fire, but nothing hears them.", 3.0)
-            self.events.add(self.t, "lab", f"silenced {a['spec']} ({n} neurons)")
+            ev("lab", f"silenced {a['spec']} ({n} neurons)")
         elif kind == "unsilence":
-            for spec in list(self.user_silenced):
+            for spec in list(f.user_silenced):
                 if a.get("spec") in (None, "", spec):
-                    self.flies[0].io.unsilence(spec)
-                    self.user_silenced.discard(spec)
+                    f.io.unsilence(spec)
+                    f.user_silenced.discard(spec)
             self.say("Silencing removed.", 2.0)
         elif kind == "modulate":
             factor = float(a.get("factor", 1.0))
-            n = self.flies[0].io.modulate(a["spec"], factor)
+            n = f.io.modulate(a["spec"], factor)
             if abs(factor - 1.0) < 1e-6:
-                self.user_modulated.pop(a["spec"], None)
+                f.user_modulated.pop(a["spec"], None)
             else:
-                self.user_modulated[a["spec"]] = factor
+                f.user_modulated[a["spec"]] = factor
             self.say(f"Output of {a['spec']} ({n} neurons) scaled x{factor:g}.", 3.0)
-            self.events.add(self.t, "lab", f"modulate {a['spec']} x{factor:g}")
+            ev("lab", f"modulate {a['spec']} x{factor:g}")
         elif kind == "watch":
             key = a["key"]                                   # validated in action()
-            if key in self.flies[0].builtin_keys:
+            if key in f.builtin_keys:
                 raise ValueError(f"'{key}' is a built-in readout")
-            if key in self.custom_readouts:
-                self.flies[0].remove_monitor(key)
-            self.custom_readouts[key] = a["spec"]
-            self.readouts[key] = self.conn.select(a["spec"])
-            self.hz_shown[key] = 0.0
-            self.flies[0].add_monitor(key, a["spec"])
+            if key in f.custom_readouts:
+                f.remove_monitor(key)
+            f.custom_readouts[key] = a["spec"]
+            f.readouts[key] = f.conn.select(a["spec"])
+            f.hz_shown[key] = 0.0
+            f.add_monitor(key, a["spec"])
         elif kind == "unwatch":
             key = a.get("key")
-            if key in self.custom_readouts:
-                del self.custom_readouts[key]
-                self.readouts.pop(key, None)
-                self.hz_shown.pop(key, None)
-                self.flies[0].remove_monitor(key)
+            if key in f.custom_readouts:
+                del f.custom_readouts[key]
+                f.readouts.pop(key, None)
+                f.hz_shown.pop(key, None)
+                f.remove_monitor(key)
         elif kind == "clear":
             w.clear(a.get("what", "all"))
         elif kind == "reset":
             self.reset_world()
             self.say("New fly, fresh brain.", 2.0)
         elif kind == "autopilot":
-            self.autopilot = bool(a.get("on", True))
+            f.autopilot = bool(a.get("on", True))
         elif kind == "pause":
             self.paused = bool(a.get("on", False))
         elif kind == "speed":
             self.speed = max(0.1, min(3.0, float(a.get("value", 1.0))))
         elif kind == "calm":
-            self.flies[0].reset_brain()
+            f.reset_brain()
             self.say("Brain reset to rest.", 2.0)
         elif kind == "wind":
             w.set_wind(a.get("angle"), a.get("speed"))
@@ -597,14 +618,14 @@ class Game:
             w.toggle_female(bool(a.get("on", True)), a.get("x"), a.get("y"))
             self.events.add(self.t, "world", "a female fly enters" if w.female else "the female leaves")
         elif kind == "learning":
-            io = self.flies[0].io
+            io = f.io
             if io.has_plasticity:
                 if a.get("forget"):
                     io.learning(forget=True)
-                    self.events.add(self.t, "learning", "all KC→MBON synapses reset to their original strength")
+                    ev("learning", "all KC→MBON synapses reset to their original strength")
                     self.say("Memories erased.", 2.0)
                 if "on" in a:
-                    self.learning_on = bool(a["on"])         # (the setter tells the brain)
+                    f.learning_on = bool(a["on"])            # (the setter tells the brain)
         elif kind == "scenario":
             if a.get("id"):
                 self.scenario.start(a["id"])
@@ -628,17 +649,17 @@ class Game:
                     io.record("stop")
                 self.events.add(self.t, "system", f"recording stopped ({len(self.recording or [])} frames)")
         elif kind == "grow":
-            self._start_grow(a["level"], a["seed"])
+            f._start_grow(a["level"], a["seed"])
         elif kind == "parts":
-            self._start_rebuild(a["on"])
+            f._start_rebuild(a["on"])
         elif kind == "_swap_brain":
-            self._swap_brain(a)
+            f._swap_brain(a)                                 # (the worker that made it put its fly's id in)
         elif kind == "state":
             for k in ("hunger", "thirst"):
                 if k in a:
-                    setattr(self.state, k, max(0.0, min(1.0, float(a[k]))))
+                    setattr(f.state, k, max(0.0, min(1.0, float(a[k]))))
         elif kind == "place_fly":
-            self.body.reset(float(a["x"]), float(a["y"]), float(a.get("h", self.body.pose.h)))
+            f.body.reset(float(a["x"]), float(a["y"]), float(a.get("h", f.body.pose.h)))
 
     # ------------------------------------------------------------------ the loop
     def tick(self):
@@ -678,15 +699,24 @@ class Game:
             f.watchdog(dt, bt)
         bt = bts[0]
         if self.recording is not None and self.record_active:
-            self.recording.append({"t": round(self.t, 3), "fly": a.body.to_dict(), "mode": a.mode,
-                                   "hz": {k: round(v, 1) for k, v in bt.hz.items() if a._has(k)}, "senses": a.senses_now,
-                                   "sps": int(a.sps)})
-        self.publish(bt, a.hz_shown, a.sps)
+            frame = {"t": round(self.t, 3), "fly": a.body.to_dict(), "mode": a.mode,
+                     "hz": {k: round(v, 1) for k, v in bt.hz.items() if a._has(k)}, "senses": a.senses_now,
+                     "sps": int(a.sps)}
+            if len(flies) > 1:                           # with two flies: every fly, and a small snapshot of the dish
+                frame["flies"] = [{"id": f.id, "fly": f.body.to_dict(), "mode": f.mode,
+                                   "hz": {k: round(v, 1) for k, v in b.hz.items() if f._has(k)}, "senses": f.senses_now,
+                                   "sps": int(f.sps)} for f, b in zip(flies, bts)]
+                w = self.world.to_dict()
+                frame["world"] = {k: w[k] for k in ("food", "obstacles", "odours", "wind", "stripes", "tool")}
+            self.recording.append(frame)
+        self.publish(bt, a.hz_shown, a.sps, bts)
 
     # ------------------------------------------------------------------ publishing
-    def publish(self, bt, hz, sps):
+    def publish(self, bt, hz, sps, bts=None):
         """The state the page reads, from this tick's BrainTick ``bt`` (its spike sample, stimulus count, silenced
-        specs, learning summary and parts status were taken from the brain after it stepped)."""
+        specs, learning summary and parts status were taken from the brain after it stepped). ``bts``: every fly's
+        BrainTick; with two or more flies the state gains a ``flies`` list (docs/TWO_FLIES_PLAN.md 5.7), the top level
+        keeps mirroring fly 0, and with one fly nothing is added."""
         a = self.flies[0]
         w = self.world.to_dict()
         if len(w["puffs"]) > 300:
@@ -718,6 +748,8 @@ class Game:
             "recording": None if self.recording is None else {"frames": len(self.recording), "spikes": self.record_spikes,
                                                               "active": self.record_active},
         }
+        if len(self.flies) > 1 and bts is not None:
+            state["flies"] = [f.state_entry(b) for f, b in zip(self.flies, bts)]
         self.seq += 1
         self.state_dict = state
         self.state_json = json.dumps(state, separators=(",", ":")).encode()
@@ -744,8 +776,9 @@ class Game:
                 if self.paused:
                     self._apply_actions()
                     self.graded_eps = 0.0
-                    a = self.flies[0]                        # keep the page in sync: the brain's state without a step
-                    self.publish(a.io.peek(TICK_MS / 1000.0, self.seq, a.readouts), self.hz_shown, 0)
+                    # keep the page in sync: every brain's state without a step
+                    peeks = [f.io.peek(TICK_MS / 1000.0, self.seq, f.readouts) for f in self.flies]
+                    self.publish(peeks[0], self.hz_shown, 0, peeks)
                     time.sleep(0.05)
                     continue
                 self.tick()

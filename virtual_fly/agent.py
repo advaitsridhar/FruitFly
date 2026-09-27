@@ -298,6 +298,13 @@ class FlyAgent:
     def say(self, text: str, secs: float = 3.0):
         self.game.say(text, secs)
 
+    def event(self, kind: str, text: str, **extra):
+        """Log an event of this fly's; with more than one fly in the dish it carries ``fly`` (its id), so the page can
+        tell whose it is; with one fly the event is exactly what it always was."""
+        if len(self.game.flies) > 1:
+            extra.setdefault("fly", self.id)
+        self.game.events.add(self.game.t, kind, text, **extra)
+
     # ------------------------------------------------------------------ a new fly (the per-fly part of Game.reset_world)
     def reset_state(self):
         """Everything this fly forgets when the player asks for a new fly (its checklist is kept)."""
@@ -367,7 +374,7 @@ class FlyAgent:
 
     def _start_grow(self, level: str, seed: int):
         self.genome.update(growing={"level": level, "seed": seed, "t0": time.time()}, error=None)
-        self.events.add(self.t, "genome", f"growing a fly: {level} wiring, seed {seed}")
+        self.event("genome", f"growing a fly: {level} wiring, seed {seed}")
         self.say(f"Growing a fly from its {level} wiring rules…", 4.0)
         threading.Thread(target=self._grow_worker, args=(level, seed), daemon=True).start()
 
@@ -376,7 +383,7 @@ class FlyAgent:
             conn2, rules = wiring.grow_level(self.real_conn, level, seed, rules_cache=self._rules_cache)
             brain2 = self._build_or_ship(conn2, self.parts_arg(self.parts_on))
             cmp = wiring.compare(self.real_conn, conn2) if conn2 is not self.real_conn else None
-            self.actions.put({"type": "_swap_brain", "brain": brain2, "conn": conn2, "level": level, "seed": seed,
+            self.actions.put({"type": "_swap_brain", "fly": self.id, "brain": brain2, "conn": conn2, "level": level, "seed": seed,
                               "rules": rules.summary() if rules is not None else None, "wiring": cmp,
                               "parts": self.parts_on, "reason": "grow"})
         except Exception as e:                       # a bad level, or out of memory: report, keep the old fly
@@ -387,14 +394,14 @@ class FlyAgent:
         """Rebuild the current fly's brain with the parts list on or off (same wiring), in the background."""
         self.genome.update(growing={"level": self.genome["level"], "seed": self.genome["seed"], "reason": "parts",
                                     "parts": on, "t0": time.time()}, error=None)
-        self.events.add(self.t, "genome", f"rebuilding the brain with the parts list {'on' if on else 'off'}")
+        self.event("genome", f"rebuilding the brain with the parts list {'on' if on else 'off'}")
         self.say("Giving each neuron its parts…" if on else "Back to identical neurons…", 4.0)
         threading.Thread(target=self._rebuild_worker, args=(on,), daemon=True).start()
 
     def _rebuild_worker(self, on: bool):
         try:
             brain2 = self._build_or_ship(self.conn, self.parts_arg(on))
-            self.actions.put({"type": "_swap_brain", "brain": brain2, "conn": self.conn, "level": self.genome["level"],
+            self.actions.put({"type": "_swap_brain", "fly": self.id, "brain": brain2, "conn": self.conn, "level": self.genome["level"],
                               "seed": self.genome["seed"], "rules": self.genome["rules"], "wiring": self.genome["wiring"],
                               "parts": on, "reason": "parts"})
         except Exception as e:
@@ -441,7 +448,7 @@ class FlyAgent:
                 self.io.swap(ship["wiring"], ship["parts"], self.user_silenced, self.user_modulated, self.learning_on)
             except Exception as e:                       # a bad level, or out of memory, in the child: keep the old fly
                 self.genome.update(growing=None, error=str(e))
-                self.events.add(self.t, "genome", f"the brain could not be rebuilt: {e}")
+                self.event("genome", f"the brain could not be rebuilt: {e}")
                 self.say(f"Error: {e}", 4.0)
                 print("error rebuilding the brain in its process", repr(e))
                 return
@@ -457,19 +464,19 @@ class FlyAgent:
         if a.get("reason") == "parts":
             if self.parts_on:
                 c = self.parts_counts()
-                self.events.add(self.t, "genome", f"parts list on: {c['modulatory_neurons']:,} modulatory neurons act through slow "
+                self.event("genome", f"parts list on: {c['modulatory_neurons']:,} modulatory neurons act through slow "
                                 f"tones on {c['modulated_targets']:,} targets, {c['graded_neurons']:,} cells transmit graded signals")
                 self.say("Each neuron now has its parts. Testing the reflexes…", 4.0)
                 self.done.add("parts")
             else:
-                self.events.add(self.t, "genome", "parts list off: every neuron is the same machine again")
+                self.event("genome", "parts list off: every neuron is the same machine again")
                 self.say("Every neuron is the same machine again. Testing the reflexes…", 4.0)
         elif level == "real":
-            self.events.add(self.t, "genome", "back to the real wiring")
+            self.event("genome", "back to the real wiring")
             self.say("The real wiring is back.", 3.0)
         else:
             w = a["wiring"] or {}
-            self.events.add(self.t, "genome", f"a fly grown from its {level} wiring rules (seed {seed}): "
+            self.event("genome", f"a fly grown from its {level} wiring rules (seed {seed}): "
                             f"{w.get('edges_grown', 0):,} connections, {100 * w.get('shared_connections_fraction', 0):.0f}% shared with the real wiring")
             self.say(f"A new fly, grown from its {level} wiring rules. Testing its reflexes…", 4.0)
             self.done.add("genome")
@@ -558,7 +565,7 @@ class FlyAgent:
                 ok = sum(1 for r in rows if r["ok"]); tested = sum(1 for r in rows if r["ok"] is not None)
                 self.genome["survival"] = {"running": False, "results": rows, "ok": ok, "tested": tested,
                                            "secs": round(time.time() - t0, 1), "where": where}
-                self.events.add(self.t, "genome", f"reflex survival: {ok} of {tested} experiments pass on this wiring")
+                self.event("genome", f"reflex survival: {ok} of {tested} experiments pass on this wiring")
         except Exception as e:
             if self._survival_token is token:
                 self.genome["survival"] = {"running": False, "results": [], "error": str(e)}
@@ -690,8 +697,8 @@ class FlyAgent:
                         felt["pheromone"] = True
                     elif not self._said_no_leg_taste:    # said once, not every tick
                         self._said_no_leg_taste = True
-                        self.events.add(self.t, "sense", "taps the other fly, but leg taste is not wired in this brain "
-                                        "(no LgLG1a/LgLG1b cells)", fly=self.id)
+                        self.event("sense", "taps the other fly, but leg taste is not wired in this brain "
+                                   "(no LgLG1a/LgLG1b cells)")
                     if self.contact_pc1:                 # the kit's hand-built pC1 arousal, as for the scripted female
                         self.court_left = COURTSHIP_SECS
         if cfg.song and self.has_sound_cells:            # channel 2: the other fly's song on Johnston's organ
@@ -729,10 +736,10 @@ class FlyAgent:
                 self.done.add("escape")
             if self.body_kind == "physics":                # NeuroMechFly has no jump model
                 self.say("Giant fibre fired: the escape command (the physics body cannot jump)", 1.5)
-                self.events.add(self.t, "behaviour", "escape command (giant fibre DNp01 burst; the physics body has no jump)")
+                self.event("behaviour", "escape command (giant fibre DNp01 burst; the physics body has no jump)")
             else:
                 self.say("Giant fibre fired: escape jump!", 1.5)
-                self.events.add(self.t, "behaviour", "escape jump (giant fibre DNp01 burst)")
+                self.event("behaviour", "escape jump (giant fibre DNp01 burst)")
             return "escape"
         # strongest command wins (a hand-built stand-in for the nerve cord's own arbitration).
         # A behaviour starts above its threshold and continues until its drive falls to half of it.
@@ -893,7 +900,7 @@ class FlyAgent:
                         f.amount -= 14.0 * dt
                         self.eating = 1.0
                         if "feed" not in self.done:
-                            self.events.add(self.t, "behaviour", "eating: sugar taste → MN9, proboscis out")
+                            self.event("behaviour", "eating: sugar taste → MN9, proboscis out")
                         self.done.add("feed")
                     elif f.kind == "water":
                         f.amount -= 10.0 * dt
@@ -920,16 +927,16 @@ class FlyAgent:
             self.done.add("lure")
         if m["song"] > 0.3 and self.world.female is not None:
             if "court" not in self.done:
-                self.events.add(self.t, "behaviour", "courtship song: pC1 → pIP10, one wing out")
+                self.event("behaviour", "courtship song: pC1 → pIP10, one wing out")
             self.done.add("court")
         elif m["song"] > 0.3 and any(o.sex == "female" for o in self._others):   # sung at a simulated female (D9: no scripted one)
             if "court" not in self.done:
-                self.events.add(self.t, "behaviour", "courtship song: pC1 → pIP10, one wing out", fly=self.id)
+                self.event("behaviour", "courtship song: pC1 → pIP10, one wing out")
             self.done.add("court")
         if self.io.has_plasticity and self.bt.learn[0] and "learn" not in self.done \
                 and self.bt.learn[1] > 0.002:
             self.done.add("learn")
-            self.events.add(self.t, "learning", "KC→MBON synapses depressed: the fly has learned something about this odour")
+            self.event("learning", "KC→MBON synapses depressed: the fly has learned something about this odour")
         courting = 1.0 if mode == "court" else 0.0
         self.state.step(dt, self.eating, self.drinking, courting)
         self.courting = courting
@@ -979,7 +986,7 @@ class FlyAgent:
             self.calms += 1
             self.runaway_s = 0.0
             self.say("Runaway firing (a known flaw of this simple model: the smell centre, or with the parts list the optic lobe). Brain calmed.", 4.0)
-            self.events.add(self.t, "system", "runaway firing: brain reset to rest")
+            self.event("system", "runaway firing: brain reset to rest")
         self.sps = sps
 
     _prev_felt: dict = {}
@@ -990,9 +997,9 @@ class FlyAgent:
                           ("dust", "dust on the antennae"), ("shock", "electric shock"), ("reward", "sugar reward → PAM dopamine (hand-built)"),
                           ("sound", "hears a loud sound"), ("courting", "courtship arousal: pC1 driven after tapping the female (hand-built)")):
             if key in f and key not in p:
-                self.events.add(self.t, "sense", text)
+                self.event("sense", text)
         if f.get("smell") and f.get("smell") != p.get("smell"):
-            self.events.add(self.t, "sense", f"smells {ODOURS[f['smell']].name}")
+            self.event("sense", f"smells {ODOURS[f['smell']].name}")
         self._prev_felt = dict(f)
 
     # ------------------------------------------------------------------ what the page shows
@@ -1007,6 +1014,26 @@ class FlyAgent:
                 "events": info["events"], "learned_bias": round(self.learned_bias, 3), "smelling": self.smelling,
                 "mbon": {t: {"strength": round(v["strength"], 3), "now": round(v["now"], 3), "valence": v["valence"],
                              "dopamine": round(v["dopamine"], 3)} for t, v in info["mbon"].items()}}
+
+    # ------------------------------------------------------------------ what the page shows of this fly
+    def state_entry(self, bt: BrainTick) -> dict:
+        """This fly's entry in the state's ``flies`` list (two or more flies; docs/TWO_FLIES_PLAN.md 5.7): the per-fly
+        fields the single fly publishes at the top level, from this tick's BrainTick. ``mode`` takes the same values
+        as the top level, ``idle`` included; the learning summary comes with the tick for every fly."""
+        return {"id": self.id, "sex": self.sex, "dataset": self.conn.dataset,
+                "fly": self.body.to_dict(), "mode": self.mode, "driver": self.driver, "senses": self.senses_now,
+                "retina": self.retina.images_b64(),
+                "hz": {k: round(v, 1) for k, v in self.hz_shown.items() if self._has(k)},
+                "motor": {k: round(v, 3) for k, v in self.decoder.m.items()},
+                "spikes": bt.spikes_shown, "sps": int(self.sps), "graded_eps": int(self.graded_eps), "stims": bt.stims,
+                "calms": self.calms, "state": self.state.to_dict(), "learning": self.learning_summary(bt),
+                "silenced": sorted(self.user_silenced), "baseline": sorted(set(bt.silenced_specs) - self.user_silenced),
+                "modulated": self.user_modulated, "custom": self.custom_readouts,
+                "genome": self.genome_status(bt.parts_status, known=True), "done": sorted(self.done)}
+
+    def layout_json(self) -> bytes:
+        """This fly's layout (``GET /api/layout?fly=k``); fly 0's is the game's own ``layout_json``, made once."""
+        return self._make_layout()
 
     # ------------------------------------------------------------------ static data for the browser
     def _make_layout(self):

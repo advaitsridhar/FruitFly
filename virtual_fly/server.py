@@ -52,7 +52,6 @@ WEB_DIR = Path(__file__).resolve().parent / "web"
 
 
 def make_handler(game):
-    conn = game.conn
 
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
@@ -88,7 +87,6 @@ def make_handler(game):
             self.end_headers()
 
         def do_GET(self):
-            conn = game.conn                          # a grown fly swaps the wiring in
             url = urllib.parse.urlparse(self.path)
             path, q = url.path, urllib.parse.parse_qs(url.query)
             get = lambda k, d=None: q.get(k, [d])[0]
@@ -97,10 +95,16 @@ def make_handler(game):
                     return self._send(200, (WEB_DIR / "index.html").read_bytes(), "text/html; charset=utf-8")
                 if path == "/api/state":
                     return self._send(200, game.state_json, "application/json")
-                if path == "/api/layout":
-                    return self._send(200, game.layout_json, "application/json")
                 if path == "/api/stream":
                     return self._stream()
+                # every endpoint that reads one fly takes ?fly=k (default 0, the protagonist; docs/TWO_FLIES_PLAN.md 5.7)
+                raw = get("fly", "0")
+                if not (isinstance(raw, str) and raw.isdigit() and int(raw) < len(game.flies)):
+                    return self._error(f"no fly {raw}", 404)
+                fly = game.fly(int(raw))
+                conn = fly.conn                           # a grown fly swaps the wiring in
+                if path == "/api/layout":
+                    return self._send(200, game.layout_json if fly.id == 0 else fly.layout_json(), "application/json")
                 if path == "/api/types":
                     text = get("q", "")
                     hits = conn.find_types(text, limit=int(get("limit", 50))) if text else []
@@ -119,7 +123,7 @@ def make_handler(game):
                         if not 0 <= i < conn.n:
                             return self._error("index out of range", 404)
                     info = conn.info(i)
-                    info["rate_hz"], parts_role = game.fly(0).io.neuron(i)
+                    info["rate_hz"], parts_role = fly.io.neuron(i)
                     info["inputs"] = conn.inputs_of(f"index:{i}", top=8)
                     info["outputs"] = conn.outputs_of(f"index:{i}", top=8)
                     info["genes"] = genetics.genes_of(conn, i)
@@ -161,7 +165,7 @@ def make_handler(game):
                         for name in p.nodes:
                             node = tg.index.get(name)
                             members = np.flatnonzero(tg.node_of_neuron == node) if node is not None else []
-                            members = [int(m) for m in members if game.has_soma[m]][:1]
+                            members = [int(m) for m in members if fly.has_soma[m]][:1]
                             pts.append(members[0] if members else None)
                         soma_paths.append(pts)
                     return self._json({"ok": True, "from": src, "to": dst, "secs": round(time.time() - t0, 2),
@@ -170,28 +174,28 @@ def make_handler(game):
                 if path == "/api/history":
                     keys = [k for k in get("keys", "").split(",") if k]
                     n = int(get("n", 400))
-                    bin_ms, out = game.fly(0).history(keys, n)
+                    bin_ms, out = fly.history(keys, n)
                     return self._json({"ok": True, "bin_ms": bin_ms, "history": out})
                 if path == "/api/learning":
-                    info = game.fly(0).io.learning_summary() if game.fly(0).io.has_plasticity else None
+                    info = fly.io.learning_summary() if fly.io.has_plasticity else None
                     if info is None:
                         return self._json({"ok": True, "learning": None})
                     return self._json({"ok": True, "learning": info["mbon"], "settings": info["settings"],
                                        "depressed_fraction": info["depressed_fraction"]})
                 if path == "/api/genome":
-                    return self._json({"ok": True, "levels": [{"level": lv, "label": lb} for lv, lb in wiring.LEVELS], **game.genome_status()})
+                    return self._json({"ok": True, "levels": [{"level": lv, "label": lb} for lv, lb in wiring.LEVELS], **fly.genome_status()})
                 if path == "/api/genes":
-                    return self._json({"ok": True, **game.genetics})
+                    return self._json({"ok": True, **fly.genetics})
                 if path == "/api/parts":
-                    return self._json({"ok": True, "on": game.parts_on, "tables": game.parts_list().describe(),
-                                       "counts": game.parts_counts(), "status": game.fly(0).io.parts_status()})
+                    return self._json({"ok": True, "on": fly.parts_on, "tables": fly.parts_list().describe(),
+                                       "counts": fly.parts_counts(), "status": fly.io.parts_status()})
                 if path == "/api/lines":
                     spec = get("spec", "").strip()
                     if not spec:
                         return self._error("spec is required")
                     try:
                         n = max(1, min(8, int(get("n", "4"))))
-                        return self._json({"ok": True, **game.neuronbridge.lines_for(conn, spec, max_neurons=n)})
+                        return self._json({"ok": True, **fly.neuronbridge.lines_for(conn, spec, max_neurons=n)})
                     except ValueError as e:
                         return self._error(str(e))
                     except genetics.NeuronBridgeError as e:
@@ -201,20 +205,20 @@ def make_handler(game):
                     if not line:
                         return self._error("line is required")
                     try:
-                        return self._json({"ok": True, **game.neuronbridge.neurons_for_line(conn, line)})
+                        return self._json({"ok": True, **fly.neuronbridge.neurons_for_line(conn, line)})
                     except ValueError as e:
                         return self._error(str(e))
                     except genetics.NeuronBridgeError as e:
                         return self._error(str(e), 502)
                 if path == "/api/decoder":
-                    return self._json({"ok": True, "targets": game.decoder.dn_targets})
+                    return self._json({"ok": True, "targets": fly.decoder.dn_targets})
                 if path == "/api/recording":
                     rec = game.recording or []
-                    body = json.dumps({"frames": rec, "settings": game.fly(0).io.settings()}).encode()
+                    body = json.dumps({"frames": rec, "settings": fly.io.settings()}).encode()
                     return self._send(200, body, "application/json",
                                       {"Content-Disposition": "attachment; filename=fly-session.json"})
                 if path == "/api/spikes":
-                    t_ms, idx = game.fly(0).io.record("arrays")     # (read under the brain's lock: the game thread appends to it)
+                    t_ms, idx = fly.io.record("arrays")     # (read under the brain's lock: the game thread appends to it)
                     buf = io.BytesIO()
                     np.savez_compressed(buf, time_ms=t_ms, neuron=idx, body_id=conn.body_id[idx] if idx.size else idx)
                     return self._send(200, buf.getvalue(), "application/octet-stream",
