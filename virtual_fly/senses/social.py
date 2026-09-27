@@ -116,6 +116,46 @@ def distance(a, b) -> float:
     return math.hypot(a.x - b.x, a.y - b.y)
 
 
+# ---------------------------------------------------------------------------------------------- the encoders
+def song_rate(pose, others) -> float:
+    """Channel 2, what this fly hears: the loudest other fly's song (its decoded song, 0..1) times the falloff with
+    the real centre-to-centre distance, times SONG_MAX_HZ, as a steady Poisson rate on every JO-A/JO-B cell
+    (decision 7: a steady drive while it sings). A fly never hears itself (it is not among ``others``).
+    Hand-built."""
+    best = 0.0
+    for o in others:
+        if o.song > 0.0:
+            best = max(best, min(1.0, o.song) * falloff(distance(pose, o)) * SONG_MAX_HZ)
+    return best
+
+
+def touching(pose, others, reach: float = CONTACT_MM):
+    """Channel 3: the first other fly whose centre is within ``reach`` (drawn scale) of one of this fly's foreleg
+    tips (body.Pose.forelegs, the single fly's rule for the scripted female), or None. Hand-built."""
+    for o in others:
+        for (lx, ly) in pose.forelegs:
+            if math.hypot(lx - o.x, ly - o.y) < reach:
+                return o
+    return None
+
+
+def cva_rate(pose, others) -> float:
+    """Channel 5 (off by default): the male pheromone cVA reaching this fly's ORN_DA1 from the nearest male within
+    CVA_MM (real centre-to-centre mm), fading straight to nothing at that distance. Hand-built, provisional."""
+    best = 0.0
+    for o in others:
+        if o.sex != "female":
+            d = distance(pose, o)
+            if d < CVA_MM:
+                best = max(best, CVA_MAX_HZ * (1.0 - d / CVA_MM))
+    return best
+
+
+def nearest(pose, others):
+    """The other fly closest to this one, or None."""
+    return min(others, key=lambda o: distance(pose, o)) if others else None
+
+
 # ---------------------------------------------------------------------------------------------- collisions (channel 4)
 def resolve_overlaps(flies):
     """After every fly has moved: any two drawn bodies still overlapping (each refused to step into the other's
@@ -151,4 +191,4 @@ def capsules_of(others) -> list:
 
 __all__ = ["SocialConfig", "CHANNELS", "DEFAULT_CHANNELS", "SONG_MAX_HZ", "SONG_NEAR_MM", "SONG_FAR_MM", "CONTACT_MM",
            "CVA_MM", "CVA_MAX_HZ", "SAG_SPEC", "SAG_HZ", "FLY_CAPSULE_HALF", "FLY_CAPSULE_R", "falloff", "distance",
-           "resolve_overlaps", "capsules_of", "capsule_points"]
+           "song_rate", "touching", "cva_rate", "nearest", "resolve_overlaps", "capsules_of", "capsule_points"]

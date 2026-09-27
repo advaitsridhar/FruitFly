@@ -179,3 +179,215 @@ def test_the_options_are_checked(conn, fconn):
     with pytest.raises(ValueError, match="social channel"):
         Game(build_brain(conn, "game", seed=0), partner={"conn": fconn}, social="seen,sogn")
     assert TICK_MS == 25.0
+
+
+# ------------------------------------------------------------------ the social encoders (senses/social.py)
+from virtual_fly.body import FLY_CAPSULE_HALF, FLY_CAPSULE_R, capsule_overlap  # noqa: E402
+from virtual_fly.game import COURTSHIP_SPEC, PHEROMONE_GRNS  # noqa: E402
+from virtual_fly.senses import social  # noqa: E402
+from virtual_fly.senses.mechano import SOUND  # noqa: E402
+from virtual_fly.senses.social import SocialConfig  # noqa: E402
+
+GOLDEN = __import__("json").loads((Path(__file__).with_name("golden_single_fly.json")).read_text())["hashes"]
+PHEROMONE_SPEC = next(iter(PHEROMONE_GRNS))
+
+
+def place(fly, x, y, h):
+    fly.body.reset(x, y, h)
+
+
+def test_the_social_config_reads_the_list():
+    cfg = SocialConfig.from_list(None)
+    assert cfg.names() == ["seen", "song", "contact", "collide"] and cfg.mating == "none" and not cfg.cva
+    cfg = SocialConfig.from_list("song, cva,mating:virgin")
+    assert cfg.names() == ["song", "cva", "mating:virgin"] and not cfg.seen and not cfg.collide
+    for bad in ("sogn", "mating", "mating:maybe", "seen:on"):
+        with pytest.raises(ValueError, match="social channel"):
+            SocialConfig.from_list(bad)
+    assert SocialConfig().contact_pc1_for("male") and not SocialConfig().contact_pc1_for("female")
+    assert SocialConfig(contact_pc1=True).contact_pc1_for("female")
+    assert social.falloff(3.0) == 1.0 and social.falloff(10.5) == pytest.approx(0.5) and social.falloff(16.0) == 0.0
+
+
+def test_each_fly_sees_the_other_and_not_itself(conn, fconn):
+    g = pair(conn, fconn)
+    f0, f1 = g.flies
+    place(f0, 0.0, 0.0, 0.0)
+    place(f1, 10.0, 0.0, math.pi)
+    g.tick()
+    flies_seen = [o for o in f0.retina.objects(f0.body.pose, [f1.pose_view()]) if o.kind == "fly"]
+    assert len(flies_seen) == 1 and (flies_seen[0].x, flies_seen[0].y, flies_seen[0].r, flies_seen[0].h) == (f1.body.pose.x, f1.body.pose.y, 1.6, 2.2)
+    assert [o for o in f1.retina.objects(f1.body.pose, [f0.pose_view()]) if o.kind == "fly"][0].x == f0.body.pose.x
+    assert [o for o in f0.retina.objects(f0.body.pose) if o.kind == "fly"] == []          # nothing with no others
+    off = pair(conn, fconn, social=SocialConfig(seen=False))
+    off.tick()
+    assert "small" not in off.flies[0].senses_now or off.flies[0].senses_now.get("small") == ""
+
+
+def test_the_contact_channel_tastes_a_female_and_arouses_a_male_toucher(conn, fconn):
+    g = pair(conn, fconn)
+    f0, f1 = g.flies
+    place(f0, 0.0, 0.0, 0.0)                    # nose to nose, 5 mm apart: both flies' foreleg tips reach the other's centre
+    place(f1, 5.0, 0.0, math.pi)
+    g.tick()
+    assert f0.senses_now["touches_fly"] == 1 and f0.senses_now["pheromone"] is True and f0.senses_now["courting"] is True
+    assert f0.rates_now[PHEROMONE_SPEC] == PHEROMONE_GRNS[PHEROMONE_SPEC] and f0.rates_now[COURTSHIP_SPEC] > 0
+    assert f0.court_left > 0 and f0.contact_pc1                                          # a male toucher: the kit's arousal
+    assert f1.senses_now["touches_fly"] == 0 and "pheromone" not in f1.senses_now and "courting" not in f1.senses_now
+    assert PHEROMONE_SPEC not in f1.rates_now and COURTSHIP_SPEC not in f1.rates_now   # she touched a male, and has no leg taste
+    assert f1.court_left == 0 and not f1.contact_pc1
+    # the arousal stands for her pheromone: touching a male never gives it, whatever the switch says
+    g2 = pair(conn, fconn, social=SocialConfig(contact_pc1=True))
+    place(g2.flies[0], 0.0, 0.0, 0.0)
+    place(g2.flies[1], 5.0, 0.0, math.pi)
+    g2.tick()
+    assert g2.flies[1].court_left == 0 and COURTSHIP_SPEC not in g2.flies[1].rates_now and g2.flies[0].court_left > 0
+    # the switch: a female touching a female may be given the arousal
+    ff2 = Game(build_brain(fconn, "game", seed=0), autopilot=False, seed=1, brain_procs="off", partner={"conn": fconn},
+               social=SocialConfig(contact_pc1=True))
+    place(ff2.flies[0], 0.0, 0.0, 0.0)
+    place(ff2.flies[1], 5.0, 0.0, math.pi)
+    ff2.tick()
+    assert ff2.flies[0].court_left > 0 and ff2.flies[1].court_left > 0 and COURTSHIP_SPEC in ff2.flies[1].rates_now
+    # a female touching a female: no leg taste cells in her file, said once in the event log
+    ff = Game(build_brain(fconn, "game", seed=0), autopilot=False, seed=1, brain_procs="off", partner={"conn": fconn})
+    place(ff.flies[0], 0.0, 0.0, 0.0)
+    place(ff.flies[1], 5.0, 0.0, math.pi)
+    for _ in range(3):
+        ff.tick()
+    said = [e for e in ff.events.items if "not wired in this brain" in e["text"]]
+    assert len(said) == 2 and {e["fly"] for e in said} == {0, 1} and PHEROMONE_SPEC not in ff.flies[0].rates_now
+    assert ff.flies[0].court_left == 0                                                    # a female toucher: no arousal by default
+    # out of reach: nothing
+    g3 = pair(conn, fconn)
+    place(g3.flies[0], 0.0, 0.0, 0.0)
+    place(g3.flies[1], 9.0, 0.0, math.pi)
+    g3.tick()
+    assert "touches_fly" not in g3.flies[0].senses_now and PHEROMONE_SPEC not in g3.flies[0].rates_now
+
+
+def test_the_song_channel_fades_with_distance_and_never_reaches_the_singer(conn, fconn):
+    for d, share in ((3.0, 1.0), (10.5, 0.5), (16.0, 0.0)):
+        g = pair(conn, fconn, social=SocialConfig(collide=False))
+        f0, f1 = g.flies
+        place(f0, 0.0, 0.0, 0.0)
+        place(f1, d, 0.0, math.pi)
+        f0.m["song"] = 0.8                          # the male sang last tick (his decoded song, as the snapshot carries it)
+        g.tick()
+        want = 0.8 * social.SONG_MAX_HZ * share
+        if want:
+            assert f1.rates_now[SOUND] == pytest.approx(want) and f1.senses_now["hears_song"] == round(want, 1)
+        else:
+            assert SOUND not in f1.rates_now and "hears_song" not in f1.senses_now
+        assert SOUND not in f0.rates_now and "hears_song" not in f0.senses_now         # he does not hear himself
+    g = pair(conn, fconn, social=SocialConfig(song=False))
+    g.flies[0].m["song"] = 1.0
+    place(g.flies[0], 0.0, 0.0, 0.0)
+    place(g.flies[1], 3.0, 0.0, math.pi)
+    g.tick()
+    assert SOUND not in g.flies[1].rates_now
+
+
+def test_every_channel_off_leaves_the_brains_input_free_of_social_terms(conn, fconn):
+    cfg = SocialConfig(seen=False, song=False, contact=False, collide=False)
+    g = pair(conn, fconn, social=cfg)
+    f0, f1 = g.flies
+    f0.m["song"] = 1.0
+    for _ in range(3):
+        place(f0, 0.0, 0.0, 0.0)
+        place(f1, 3.0, 0.0, math.pi)
+        g.tick()
+    for f in (f0, f1):
+        assert not ({SOUND, PHEROMONE_SPEC, COURTSHIP_SPEC, "ORN_DA1", social.SAG_SPEC} & set(f.rates_now))
+        assert not ({"touches_fly", "hears_song", "pheromone", "courting", "smells_cva", "virgin_drive"} & set(f.senses_now))
+        assert not f.body.bumped_fly
+    assert [o for o in f0.retina.objects(f0.body.pose, [f1.pose_view()]) if o.kind == "fly"]   # objects() itself lists them ...
+    g.tick()
+    assert "small" not in f0.senses_now                                                   # ... but the senses never ask for them
+
+
+def test_the_bodies_do_not_overlap_yet_a_head_on_tap_still_lands(conn, fconn, monkeypatch):
+    g = pair(conn, fconn)
+    f0, f1 = g.flies
+    f0.autopilot = f1.autopilot = False
+    for f in (f0, f1):
+        m = f.decoder.m
+        monkeypatch.setattr(f.decoder, "decode", lambda hz, dt, m=m: {**{k: 0.0 for k in m}, "forward": 1.0})
+    place(f0, -7.0, 0.0, 0.0)
+    place(f1, 7.0, 0.0, math.pi)
+    tapped, bumped, gaps = [], [], []
+    for _ in range(80):
+        g.tick()
+        gap = capsule_overlap((f0.body.pose.x, f0.body.pose.y, f0.body.pose.h), (f1.body.pose.x, f1.body.pose.y, f1.body.pose.h))[0]
+        gaps.append(gap)
+        tapped.append("touches_fly" in f0.senses_now and "touches_fly" in f1.senses_now)
+        bumped.append((f0.body.bumped_fly, f0.body.bumped, f1.body.bumped_fly, f1.body.bumped))
+    assert min(gaps) >= -1e-6, min(gaps)                                                # never inside each other
+    assert min(gaps) < 0.5                                                              # they came right up to each other
+    assert any(tapped), "a head-on foreleg tap must still be reachable through the capsules"
+    assert any(b[0] and not b[1] for b in bumped) and any(b[2] and not b[3] for b in bumped)   # a fly bump, not a wall bump
+    d = math.hypot(f0.body.pose.x - f1.body.pose.x, f0.body.pose.y - f1.body.pose.y)
+    assert 2 * (FLY_CAPSULE_HALF + FLY_CAPSULE_R) - 1e-6 <= d < 5.5                    # stopped nose to nose, within a tap's reach
+
+
+def test_pushing_overlapping_flies_apart_is_the_same_whichever_comes_first(conn, fconn):
+    outcomes = []
+    for order in ((0, 1), (1, 0)):
+        g = pair(conn, fconn)
+        f0, f1 = g.flies
+        place(f0, 0.0, 0.0, 0.2)
+        place(f1, 1.0, 0.6, -0.9)                                                          # well inside each other
+        before = capsule_overlap((0.0, 0.0, 0.2), (1.0, 0.6, -0.9))[0]
+        assert before < 0
+        social.resolve_overlaps([g.flies[i] for i in order])
+        after = capsule_overlap((f0.body.pose.x, f0.body.pose.y, f0.body.pose.h), (f1.body.pose.x, f1.body.pose.y, f1.body.pose.h))[0]
+        assert after >= -1e-6
+        outcomes.append(((f0.body.pose.x, f0.body.pose.y), (f1.body.pose.x, f1.body.pose.y)))
+        # symmetric: both moved by the same amount
+        assert math.hypot(f0.body.pose.x, f0.body.pose.y) == pytest.approx(math.hypot(f1.body.pose.x - 1.0, f1.body.pose.y - 0.6))
+    assert outcomes[0] == outcomes[1]
+    # far apart: untouched
+    g = pair(conn, fconn)
+    social.resolve_overlaps(g.flies)
+    assert (g.flies[0].body.pose.x, g.flies[0].body.pose.y) == HOME[:2] and (g.flies[1].body.pose.x, g.flies[1].body.pose.y) == PARTNER_HOME[:2]
+
+
+def test_the_song_gesture_faces_the_partner(conn, fconn):
+    g = pair(conn, fconn)
+    f0, f1 = g.flies
+    place(f0, 0.0, -12.0, math.pi / 2)
+    place(f1, 10.0, -12.0, math.pi / 2)                                                   # to his right
+    g.tick()
+    assert f0.song_side == 1.0
+    place(f1, -10.0, -12.0, math.pi / 2)                                                  # to his left
+    g.tick()
+    assert f0.song_side == -1.0
+
+
+def test_contact_pc1_changes_nothing_on_the_single_fly_path(conn, fconn):
+    from tools.golden_hashes import run_hash
+    for flag in (True, False):
+        assert run_hash(conn, "courtship_scenario", game_kwargs={"social": SocialConfig(contact_pc1=flag)}) == GOLDEN["courtship_scenario"]
+    # a female protagonist tapping the scripted female gets the arousal whatever the switch says (D7)
+    for flag in (True, False):
+        g = Game(build_brain(fconn, "game", seed=0), autopilot=False, seed=1, social=SocialConfig(contact_pc1=flag))
+        g.action({"type": "female", "on": True, "x": 0.0, "y": -7.0})                     # right in front of her forelegs
+        g.tick()
+        assert g.flies[0].court_left > 0 and COURTSHIP_SPEC in g.flies[0].rates_now
+
+
+def test_whats_real_lists_the_channels_only_with_a_partner(conn, fconn):
+    single = Game(build_brain(conn, "game", seed=0), autopilot=False, seed=1).whats_real()
+    both = pair(conn, fconn).whats_real()
+    joined = " ".join(both["hand_built"] + both["not_modelled"])
+    for word in ("Seen:", "Song:", "Contact:", "Collide:", "hand-built", "drawn scale", "real centre-to-centre mm", "provisional",
+                 "walking urge"):
+        assert word in joined, word
+    assert not any(w in joined.lower() for w in ("acceptance", "rejection"))
+    assert not any(l.startswith(("Seen:", "Song:", "Contact:", "Collide:")) for l in single["hand_built"])
+    assert any("the female's behaviour" in l for l in single["hand_built"])
+    assert any("scripted female's behaviour" in l for l in both["hand_built"])
+    assert "Two simulated flies" in joined
+    off = pair(conn, fconn, social=SocialConfig(song=False, cva=True, mating="virgin", touch=True)).whats_real()
+    j = " ".join(off["hand_built"])
+    assert "Song:" not in j and "cVA:" in j and "virgin" in j and "Touch:" in j

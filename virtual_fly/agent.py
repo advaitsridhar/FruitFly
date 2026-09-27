@@ -34,7 +34,9 @@ from .game import (CHECKS, COURTSHIP_HZ, COURTSHIP_SECS, COURTSHIP_SPEC, GF_BURS
                    STILL_TICKS, TICK_MS, ZAP_PRESETS, InternalState, MotorDecoder)
 from .scenarios import SCENARIOS
 from .senses.mechano import Antennae, Bristles
+from .senses.mechano import SOUND
 from .senses.olfaction import ODOURS, Nose
+from .senses import social
 from .senses.taste import WATER_GRNS, Forelegs, Mouth
 from .senses.vision import Retina
 from .world import ARENA_R, FLY_HALF, wrap
@@ -173,6 +175,12 @@ class FlyAgent:
         self.user_silenced: set[str] = set()
         self.user_modulated: dict[str, float] = {}
         self.has_soma = ~np.isnan(self.conn.soma[:, 0])
+        # the social channels (senses/social.py): which cells this fly has for each, looked up once
+        self.has_leg_taste = any(self.conn.select(spec).size for spec in PHEROMONE_GRNS)
+        self.has_sound_cells = self.conn.select(SOUND).size > 0
+        self.has_cva_cells = self.conn.select("ORN_DA1").size > 0
+        self.has_sag_cells = self.conn.select(social.SAG_SPEC).size > 0
+        self._said_no_leg_taste = False
         # build the input index and the cell-type graph now (a second or two), so that the first
         # pathway trace or neuron lookup from the browser does not stall behind the game loop
         self.conn.col_ptr
@@ -571,6 +579,13 @@ class FlyAgent:
         pC1 shows as a readout instead (docs/TWO_FLIES_PLAN.md D12)."""
         return self.id == 0 or self.readouts["pIP10"].size > 0
 
+    @property
+    def contact_pc1(self) -> bool:
+        """Whether tapping a simulated partner drives this fly's pC1 directly (the kit's hand-built arousal): by the
+        social config, else on for a male and off for a female toucher (decision 14). The scripted-female path of
+        single-fly play does not read this (D7)."""
+        return self.game.social.contact_pc1_for(self.sex)
+
     # ------------------------------------------------------------------ senses (hand-built encoders)
     def senses(self, dt: float, others=()):
         """Returns (spec -> Hz, per-neuron indices, per-neuron Hz) and fills ``self.senses_now``. ``others``: the
@@ -584,8 +599,11 @@ class FlyAgent:
             for spec, hz in r.items():
                 rates[spec] = max(rates.get(spec, 0.0), hz)
 
-        # eyes: render the retina, derive feature-detector rates (+ columnar T4/T5 when enabled)
-        vis, col_idx, col_hz = self.retina.look(pose, dt, turn_command=self.turn_command)
+        cfg = self.game.social
+        # eyes: render the retina, derive feature-detector rates (+ columnar T4/T5 when enabled); another simulated
+        # fly is a small dark object to it, as the scripted female is (channel 1)
+        vis, col_idx, col_hz = self.retina.look(pose, dt, turn_command=self.turn_command,
+                                                others=others if (others and cfg.seen) else ())
         add(vis)
         f = self.retina.features.felt
         if "loom" in f:
@@ -602,6 +620,8 @@ class FlyAgent:
         if self.forelegs.touching_female:
             felt["pheromone"] = True
             self.court_left = COURTSHIP_SECS
+        if others:                                   # the other simulated flies (senses/social.py; hand-built encoders)
+            self._social_senses(dt, others, rates, felt)
         if self.court_left > 0:                      # hand-built: contact with the female arouses pC1
             rates[COURTSHIP_SPEC] = max(rates.get(COURTSHIP_SPEC, 0.0), COURTSHIP_HZ * min(1.0, self.court_left / 1.0))
             felt["courting"] = True
@@ -625,8 +645,9 @@ class FlyAgent:
             felt["wind"] = round(math.degrees(self.antennae.wind_bearing))
         if self.antennae.dust_left > 0:
             felt["dust"] = True
-        # touch and proprioception
-        add(self.bristles.rates(pose, dt, self.body.bumped, self.t))
+        # touch and proprioception (a bump into another fly counts only with the touch channel on: channel 9)
+        bumped = self.body.bumped or bool(others and cfg.touch and getattr(self.body, "bumped_fly", False))
+        add(self.bristles.rates(pose, dt, bumped, self.t))
         if self.bristles.touch_left > 0:
             felt["touch"] = True
         # neuromodulatory signals the wiring does not carry (hand-built, labelled)
@@ -646,6 +667,40 @@ class FlyAgent:
             felt["zap"] = ", ".join(f"{z[0]} {z[1]:g} Hz" for z in self.zaps)
         self.senses_now = felt
         return rates, col_idx, col_hz
+
+    def _social_senses(self, dt: float, others, rates: dict, felt: dict):
+        """What the other simulated flies do to this fly's sensory neurons (senses/social.py, docs/TWO_FLIES_PLAN.md
+        5.5): hand-built encoders, each with a switch; the rates merge with the fly's own by maximum, as every sense
+        does. Only called when there are other flies."""
+        cfg, pose = self.game.social, self.body.pose
+        if cfg.contact:                                  # channel 3: a foreleg tip on the other fly
+            touched = social.touching(pose, others)
+            if touched is not None:
+                felt["touches_fly"] = touched.id
+                if touched.sex == "female":              # these leg taste cells answer female pheromone (hand-built rule)
+                    if self.has_leg_taste:
+                        for spec, hz in PHEROMONE_GRNS.items():
+                            rates[spec] = max(rates.get(spec, 0.0), hz)
+                        felt["pheromone"] = True
+                    elif not self._said_no_leg_taste:    # said once, not every tick
+                        self._said_no_leg_taste = True
+                        self.events.add(self.t, "sense", "taps the other fly, but leg taste is not wired in this brain "
+                                        "(no LgLG1a/LgLG1b cells)", fly=self.id)
+                    if self.contact_pc1:                 # the kit's hand-built pC1 arousal, as for the scripted female
+                        self.court_left = COURTSHIP_SECS
+        if cfg.song and self.has_sound_cells:            # channel 2: the other fly's song on Johnston's organ
+            hz = social.song_rate(pose, others)
+            if hz > 0.0:
+                rates[SOUND] = max(rates.get(SOUND, 0.0), hz)
+                felt["hears_song"] = round(hz, 1)
+        if cfg.cva and self.has_cva_cells:               # channel 5 (off by default): a male's cVA on ORN_DA1
+            hz = social.cva_rate(pose, others)
+            if hz > 0.0:
+                rates["ORN_DA1"] = max(rates.get("ORN_DA1", 0.0), hz)
+                felt["smells_cva"] = round(hz, 1)
+        if cfg.mating == "virgin" and self.sex == "female" and self.has_sag_cells:   # channel 6 (off): "virgin" as a tonic SAG drive
+            rates[social.SAG_SPEC] = max(rates.get(social.SAG_SPEC, 0.0), social.SAG_HZ)
+            felt["virgin_drive"] = True
 
     def sense(self, dt: float, others=()):
         """The same as :meth:`senses` (the name the plan uses for one fly's sensing step)."""
@@ -792,7 +847,16 @@ class FlyAgent:
             self.song_side = 1.0 if bearing < 0 else -1.0
             d = math.hypot(fx - self.body.pose.x, fy - self.body.pose.y)
             drive["abdomen"] = 1.0 if (m["court"] > 0.5 and d < 6.0) else 0.0
-        self.body.move(dt, mode, drive, wander_yaw)
+        elif others:                                 # the same hand-built gestures, toward the nearest simulated fly
+            o = social.nearest(self.body.pose, others)
+            bearing = wrap(math.atan2(o.y - self.body.pose.y, o.x - self.body.pose.x) - self.body.pose.h)
+            self.song_side = 1.0 if bearing < 0 else -1.0
+            drive["abdomen"] = 1.0 if (m["court"] > 0.5 and social.distance(self.body.pose, o) < 6.0) else 0.0
+        capsules = social.capsules_of(others) if (others and self.game.social.collide) else ()   # channel 4
+        if capsules:
+            self.body.move(dt, mode, drive, wander_yaw, others=capsules)
+        else:
+            self.body.move(dt, mode, drive, wander_yaw)
         self.turn_command = wander_yaw if mode in ("walk", "court") else 0.0   # voluntary part only
         # nothing moves the legs: say "resting", not "walking". The drawn body is judged by how it moves; the physics body
         # by what it is told to do (its stepping drive, as a speed against the same 0.05 mm/s), since MuJoCo's thorax
@@ -995,6 +1059,52 @@ class FlyAgent:
         return i is None or i.size > 0
 
     def whats_real(self) -> dict:
+        out = self._whats_real_one()
+        if len(self.game.flies) > 1:
+            self._whats_real_pair(out)
+        return out
+
+    def _whats_real_pair(self, out: dict):
+        """What the two-flies work adds, each line a hand-built encoder with a switch (senses/social.py); with one fly
+        nothing here is shown, so the single fly's text is unchanged."""
+        cfg = self.game.social
+        hb = out["hand_built"]
+        for i, line in enumerate(hb):                     # the scripted female is single-fly play's; here the partner has a brain
+            if "the female's behaviour" in line:
+                hb[i] = line.replace("the female's behaviour", "the scripted female's behaviour (single-fly play only: here the "
+                                     "other fly has a brain of its own)")
+        hb.append("Two simulated flies reach each other only through the world, never synapse to synapse; each channel below "
+                  "is a hand-built encoder with a switch (--social), and what its sensory neurons do next is the wiring.")
+        if cfg.seen:
+            hb.append("Seen: the other fly is a small dark object to the retina (radius 1.6 mm, height 2.2 mm at the drawn scale, "
+                      "as the scripted female was); the detectors that turn it into LC10a/LC11/LC4/LPLC2 rates are the kit's.")
+        if cfg.song:
+            hb.append(f"Song: the singer's decoded song drives the hearer's Johnston's organ (JO-A/JO-B) at up to {social.SONG_MAX_HZ:g} Hz "
+                      f"per cell, full within {social.SONG_NEAR_MM:g} mm and fading to nothing at {social.SONG_FAR_MM:g} mm (real "
+                      f"centre-to-centre mm; provisional, no source). {social.SONG_MAX_HZ:g} Hz is a hand-built calibration taken "
+                      "from the male connectome and the burst rule, provisional until the sweep (docs/TWO_FLIES_PLAN.md 5.9).")
+        if cfg.contact:
+            hb.append(f"Contact: a foreleg tip within {social.CONTACT_MM:g} mm (drawn scale) of the other fly tastes it: a toucher's leg "
+                      "taste cells (LgLG1a/LgLG1b, when its file has them) fire when the touched fly is female, and a male toucher's "
+                      "pC1 is also driven directly (the kit's hand-built arousal, switchable: contact_pc1); a female toucher's is not.")
+        if cfg.collide:
+            hb.append(f"Collide: each drawn body is a capsule (half-length {social.FLY_CAPSULE_HALF:g} mm, radius "
+                      f"{social.FLY_CAPSULE_R:g} mm, drawn scale) the other cannot walk into; any overlap is pushed apart equally.")
+        if cfg.cva:
+            hb.append(f"cVA: a male's pheromone reaches the other fly's ORN_DA1 at up to {social.CVA_MAX_HZ:g} Hz within "
+                      f"{social.CVA_MM:g} mm (real centre-to-centre mm, Taisz et al. 2023); the rate is provisional.")
+        if cfg.mating != "none":
+            hb.append(f"Mating status: {cfg.mating}: " + (f"a steady {social.SAG_HZ:g} Hz drive on her SAG neurons (AN_SMP_2), provisional"
+                                                          if cfg.mating == "virgin" else "her SAG neurons (AN_SMP_2) silenced") + ".")
+        if cfg.touch:
+            hb.append("Touch: bumping into the other fly reaches the head bristles as a wall bump does.")
+        if any(f.sex == "female" for f in self.game.flies):
+            hb.append("Her walking is the hand-built walking urge; her brain changes it only through the decoder's thresholds "
+                      "(her walking descending neurons stay near 0 Hz in this data: docs/TWO_FLIES_PLAN.md D5).")
+        out["not_modelled"].append("Between the two flies: female song, the male pheromone 7-T, kicking and wing flicking, "
+                                   "copulation; her decision neurons (DNp37, DNp13) are shown as readouts and never read as a verdict.")
+
+    def _whats_real_one(self) -> dict:
         male = getattr(self.real_conn, "sex", "male") != "female"
         src = "MaleCNS" if male else "FlyWire"
         return {

@@ -310,6 +310,12 @@ class Game:
                                        autopilot=partner.get("autopilot", True), columnar=columnar, body="drawn",
                                        parts_list=parts_list, brain_kwargs=kw, retest=retest, brain_procs=procs,
                                        parts=partner.get("parts", False), pair=True, home=PARTNER_HOME))
+            if self.social.mating == "mated":                # channel 6 (off by default): a mated female's SAG is silent
+                from .senses.social import SAG_SPEC
+                for f in self.flies:
+                    if f.sex == "female" and f.conn.count(SAG_SPEC):
+                        f.io.silence(SAG_SPEC)
+                        f.user_silenced.add(SAG_SPEC)       # shown as silenced, as the lab's own silencing is
         self.layout_json = self._make_layout()
         self.state_json = b"{}"
         self.state_dict: dict = {}
