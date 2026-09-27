@@ -142,6 +142,31 @@ AVLP569 142 (the pC2l types), vpoEN → DNp13 275, AN_SMP_2 → pC1 872. All as 
   p99 8.75-9.35, mean 7.10-7.19; process brain p50 7.56-7.81, p99 9.98-10.11, mean 7.66-7.87. The pipe costs about **0.6 ms per
   tick** (p50 +0.65, p99 +0.99, mean +0.62): under the plan's 1 ms line, so pipes stay and no shared memory is used.
 
+### Phase 1: the song level (plan 5.9 item 1, decision 6; 2026-09-27)
+`tools/song_startle.py` (new): the sound cells `prefix:JO-A,prefix:JO-B` driven at 10-100 Hz, 5 s per rate and seed after
+100 ms, seeds 0-4, game profile, the giant fibre `DNp01` binned into 25 ms ticks, windows of two ticks; a burst is
+`game.GF_BURST` = 5 or more spikes. Share of windows with a burst (largest window in brackets), male, parts off / on:
+
+| JO-A/B Hz | 40 | 50 | 60 | 70 | 80 | 90 | 100 |
+|---|---|---|---|---|---|---|---|
+| parts off | 0 % (4) | 0.20 % (5) | 0.10 % (5) | **0.50 % (5)** | 1.21 % (6) | 3.12 % (6) | 6.73 % (7) |
+| parts on | 0 % (4) | 0.20 % (5) | 0.10 % (5) | **0.80 % (5)** | 2.21 % (6) | 4.42 % (6) | 10.15 % (6) |
+| GF Hz per cell (off / on) | 14.0 / 14.0 | 16.8 / 16.8 | 19.4 / 19.4 | 22.6 / 23.2 | 25.7 / 26.4 | 27.9 / 29.0 | 31.0 / 32.2 |
+
+**`SONG_MAX_HZ` = 70 Hz** by the rule (the highest swept rate under 1 % in both settings; 80 Hz crosses it). At 70 Hz every burst
+window holds exactly 5 spikes (the threshold), 5 of 995 windows with the parts list off and 8 with it on. Under the same drive
+the female's giant fibre never bursts: largest window 4 (parts off) or 3 (parts on) at 100 Hz, 0 % at every rate; her GF mean
+reaches 21.2 / 13.1 Hz per cell at 100 Hz. (`../runs/p1-startle-male.json`, `../runs/p1-startle-female.json`; 114 s.)
+
+### Phase 1: what the sweep does to each fly's readouts (plan 5.9 item 1; `fly_brain.py --sweep`, 5 seeds, `../runs/p1-song-*.json`)
+Male (parts off and on alike): DNp01 4.2 → 28.0 Hz per cell from 10 to 100 Hz; pC1 0.0 and vpoEN 0.0 at every rate.
+Female, parts off: DNp01 0.0 → 26.5 Hz per cell; **vpoEN, pC2l (38 cells), DNp37 and DNp13 stay at 0.0 Hz at every rate up to
+100 Hz**; DNp55 0 → 4.8 Hz (from 60 Hz on). Parts on: DNp01 0 → 15.8; the four decision readouts 0.0 throughout; DNp55 0 → 4.8.
+So in this data his song reaches her Johnston's organ and her giant fibre (never to a burst) but not her song-tuned neurons
+(vpoEN), her pulse-song detectors (pC2l) or the two motor commands (DNp37, DNp13): the Johnston's-organ synapses Baker et al.
+(2022) found under-detected in FlyWire v274 look under-detected in v783 too. Reported as measured; no compensating gain
+(decision 15).
+
 ### Golden hashes (plan 4.9)
 - Synthetic (`tests/golden_single_fly.json`): nine configurations, made with Python 3.12.3, NumPy 2.5.3, numba 0.67.0; a second
   run reproduces every hash (the test passes in normal mode; a determinism test runs one configuration twice).

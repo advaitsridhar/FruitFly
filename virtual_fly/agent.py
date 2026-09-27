@@ -1084,7 +1084,8 @@ class FlyAgent:
             hb.append(f"Song: the singer's decoded song drives the hearer's Johnston's organ (JO-A/JO-B) at up to {social.SONG_MAX_HZ:g} Hz "
                       f"per cell, full within {social.SONG_NEAR_MM:g} mm and fading to nothing at {social.SONG_FAR_MM:g} mm (real "
                       f"centre-to-centre mm; provisional, no source). {social.SONG_MAX_HZ:g} Hz is a hand-built calibration taken "
-                      "from the male connectome and the burst rule, provisional until the sweep (docs/TWO_FLIES_PLAN.md 5.9).")
+                      "from the male connectome and the burst rule: the loudest steady drive at which fewer than 1 % of 50 ms "
+                      "windows make his giant fibre burst (measured over five seeds, parts list off and on; docs/SCIENCE.md).")
         if cfg.contact:
             hb.append(f"Contact: a foreleg tip within {social.CONTACT_MM:g} mm (drawn scale) of the other fly tastes it: a toucher's leg "
                       "taste cells (LgLG1a/LgLG1b, when its file has them) fire when the touched fly is female, and a male toucher's "

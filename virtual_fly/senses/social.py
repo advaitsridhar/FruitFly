@@ -32,9 +32,11 @@ from ..body import FLY_CAPSULE_HALF, FLY_CAPSULE_R, capsule_overlap, capsule_poi
 # ---------------------------------------------------------------------------------------------- the constants
 # Song. Hand-built calibration taken from the male connectome and the burst rule: the loudest steady JO-A/JO-B
 # drive at which fewer than 1 % of 50 ms windows hold GF_BURST or more DNp01 spikes (docs/TWO_FLIES_PLAN.md 5.9
-# item 1, decision 6). PROVISIONAL PLACEHOLDER until that sweep has run (step 8): 60 Hz is the kit's own
-# COURTSHIP_HZ, chosen only so that the channel does something measurable meanwhile.
-SONG_MAX_HZ = 60.0
+# item 1, decision 6). Measured with tools/song_startle.py on 2026-09-27 (game profile, seeds 0-4, 5 s per rate,
+# 10-100 Hz in steps of 10): 70 Hz gives 0.50 % of windows a burst with the parts list off and 0.80 % with it on
+# (every burst window exactly 5 spikes); 80 Hz gives 1.21 % and 2.21 %. The female's giant fibre never bursts under
+# the same drive (largest window 4). See docs/SCIENCE.md, the two-flies section.
+SONG_MAX_HZ = 70.0
 # The song's reach, in REAL centre-to-centre millimetres: full within SONG_NEAR_MM, fading to nothing at
 # SONG_FAR_MM (hand-built, provisional, no source: decision 8).
 SONG_NEAR_MM, SONG_FAR_MM = 6.0, 15.0
