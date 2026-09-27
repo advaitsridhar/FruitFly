@@ -119,6 +119,14 @@ def tick_fields(brain, has_soma, readouts: dict, spikes, counts, live, dt: float
                      len(brain.stim), sorted(brain.silenced), brain.parts_status())
 
 
+def status_fields(brain) -> dict:
+    """The BrainTick fields that describe the brain's state rather than its tick (the learning summary, the parts
+    status, the stimulus count, the silenced specs), read from the brain as it is now: after the watchdog has reset
+    it, the frame of that tick publishes these post-reset values, as the single fly always did."""
+    return {"learning": _learning(brain.plasticity, brain.conn), "parts_status": brain.parts_status(),
+            "stims": len(brain.stim), "silenced_specs": sorted(brain.silenced)}
+
+
 class LocalBrain:
     """A fly's brain in this process: the calls go straight to the :class:`~virtual_fly.brain.FlyBrain`."""
 
@@ -249,6 +257,15 @@ class LocalBrain:
     def learning_summary(self) -> dict | None:
         return _learning(self._brain.plasticity, self._brain.conn)
 
+    def depressed_fraction(self):
+        """The share of plastic synapses that have been depressed (0 without plasticity): what a scenario's
+        measure reads every tick, so only that number, not the whole learning summary."""
+        pl = self._brain.plasticity
+        return pl.depressed_fraction() if pl is not None else 0
+
+    def status_fields(self) -> dict:
+        return status_fields(self._brain)
+
     def neuron(self, i: int):
         b = self._brain
         return (float(b.spike_count[i]) / max(b.window_ms, 1) * 1000.0,
@@ -355,6 +372,10 @@ class _ChildBrain:
             return None if b.parts is None else (b.parts.parts, b.parts.counts)
         if cmd == "learning_summary":
             return _learning(b.plasticity, b.conn)
+        if cmd == "depressed_fraction":
+            return LocalBrain(b).depressed_fraction()
+        if cmd == "status_fields":
+            return status_fields(b)
         if cmd == "neuron":
             return LocalBrain(b).neuron(args[0])
         if cmd == "fingerprint":
@@ -438,6 +459,7 @@ class ProcessBrain:
     parent_histories = True     # the FlyAgent keeps the readout histories from the ticks
     brain = None
     START_TIMEOUT = 600.0       # the child loads the connectome and builds the brain (seconds to minutes on a slow disk)
+    REQUEST_TIMEOUT = 300.0     # any later request (a swap rebuilds the brain: seconds); a child slower than this is stopped
 
     def __init__(self, spec: dict, fly: int = 0):
         warm_up_once()
@@ -460,14 +482,18 @@ class ProcessBrain:
     # ------------------------------------------------------------------ the pipe
     def _dead(self, why: str = "") -> RuntimeError:
         self.closed = True
+        self.proc.join(timeout=1.0)               # a child that has just died is reaped first, so its exit code is known
         return RuntimeError(f"the brain process of fly {self.fly} stopped (exit code {self.proc.exitcode}){why}")
 
-    def _recv(self, timeout: float = 300.0):
-        """The next message, or a RuntimeError naming the fly and the exit code if the child has died: never a hang."""
+    def _recv(self, timeout: float | None = None):
+        """The next message, or a RuntimeError naming the fly and the exit code if the child has died: never a hang.
+        A child that does not answer within ``timeout`` (REQUEST_TIMEOUT by default) is stopped and the brain marked
+        closed, so that its late answer can never be taken for a later request's."""
+        timeout = self.REQUEST_TIMEOUT if timeout is None else timeout
         deadline = time.monotonic() + timeout
         while True:
             try:
-                if self._pipe.poll(0.5):
+                if self._pipe.poll(max(0.0, min(0.5, deadline - time.monotonic()))):
                     return self._pipe.recv()
             except (EOFError, OSError, BrokenPipeError):
                 raise self._dead(": its pipe closed") from None
@@ -476,7 +502,11 @@ class ProcessBrain:
                     continue
                 raise self._dead()
             if time.monotonic() > deadline:
-                raise RuntimeError(f"the brain process of fly {self.fly} did not answer within {timeout:g} s")
+                self.closed = True
+                if self.proc.is_alive():
+                    self.proc.terminate()
+                raise RuntimeError(f"the brain process of fly {self.fly} did not answer within {timeout:g} s: "
+                                   "it was stopped")
 
     def _send(self, msg):
         if self.closed:
@@ -574,6 +604,12 @@ class ProcessBrain:
     def learning_summary(self) -> dict | None:
         return self._request("learning_summary")
 
+    def depressed_fraction(self):
+        return self._request("depressed_fraction")
+
+    def status_fields(self) -> dict:
+        return self._request("status_fields")
+
     def neuron(self, i: int):
         return self._request("neuron", i)
 
@@ -614,7 +650,23 @@ class ProcessBrain:
 
 def advance_all(brains, inputs) -> list:
     """Send every brain its tick's input, then wait for every answer: the lockstep barrier of the two-flies game.
-    ``inputs`` holds one (dt, rates, col_idx, col_hz, seq, readouts, want_learned) per brain."""
-    for io, args in zip(brains, inputs):
-        io.send_advance(*args)
-    return [io.recv_advance() for io in brains]
+    ``inputs`` holds one (dt, rates, col_idx, col_hz, seq, readouts, want_learned) per brain.
+
+    If one brain fails (its child died, or a send or receive raised), the others are still received: every brain
+    that was sent its input gets its answer read (or its failure raised and swallowed), so no lock stays held and no
+    answer stays in a pipe to be taken for the next tick's. A local brain among them steps too, so every brain that
+    was sent has advanced by the same tick. The first failure is then raised."""
+    sent, ticks = [], []
+    try:
+        for io, args in zip(brains, inputs):
+            io.send_advance(*args)
+            sent.append(io)
+        while sent:
+            ticks.append(sent.pop(0).recv_advance())
+        return ticks
+    finally:
+        for io in sent:                           # sent but not yet received: let their answers and locks go
+            try:
+                io.recv_advance()
+            except Exception:                     # the failure that stopped the barrier, or a second dead child
+                pass

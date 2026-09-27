@@ -194,9 +194,9 @@ class FlyAgent:
             h.clear()
 
     def depressed_fraction(self) -> float:
-        """The share of plastic synapses that have been depressed (0 without plasticity), for the scenarios' measures."""
-        info = self.io.learning_summary() if self.io.has_plasticity else None
-        return info["depressed_fraction"] if info else 0
+        """The share of plastic synapses that have been depressed (0 without plasticity), for the scenarios' measures:
+        read live, as the single fly always read it, and only that number (a scenario measures every tick)."""
+        return self.io.depressed_fraction() if self.io.has_plasticity else 0
 
     # ------------------------------------------------------------------ the shared world, read as the code always did
     @property
@@ -369,7 +369,14 @@ class FlyAgent:
                 self.runaway_s = 0.0
         else:                                            # the child rebuilds and re-applies the lab's changes itself
             ship = a["brain"]
-            self.io.swap(ship["wiring"], ship["parts"], self.user_silenced, self.user_modulated, self.learning_on)
+            try:
+                self.io.swap(ship["wiring"], ship["parts"], self.user_silenced, self.user_modulated, self.learning_on)
+            except Exception as e:                       # a bad level, or out of memory, in the child: keep the old fly
+                self.genome.update(growing=None, error=str(e))
+                self.events.add(self.t, "genome", f"the brain could not be rebuilt: {e}")
+                self.say(f"Error: {e}", 4.0)
+                print("error rebuilding the brain in its process", repr(e))
+                return
             self.conn = a["conn"]
             for h in self.histories.values():
                 h.clear()
@@ -818,6 +825,10 @@ class FlyAgent:
         self.runaway_s = self.runaway_s + dt if sps > 150000 else 0.0
         if (self.runaway_s > 1.5 and self.since_input > 0.5) or self.runaway_s > 4.0:
             self.reset_brain()
+            # the frame published at the end of this tick describes the brain after the reset (its learning traces
+            # and events cleared, its tones gone), as it always did: refresh the fields the tick's answer carried
+            for k, v in self.io.status_fields().items():
+                setattr(bt, k, v)
             self.calms += 1
             self.runaway_s = 0.0
             self.say("Runaway firing (a known flaw of this simple model: the smell centre, or with the parts list the optic lobe). Brain calmed.", 4.0)

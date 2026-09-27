@@ -666,20 +666,22 @@ class Game:
         """Tick in real time (scaled by ``speed``) until :attr:`stop_loop` is set (server.serve sets it after Ctrl+C)."""
         while not self.stop_loop.is_set():
             t0 = time.perf_counter()
-            if self.paused:
-                self._apply_actions()
-                self.graded_eps = 0.0
-                a = self.flies[0]                            # keep the page in sync: the brain's state without a step
-                self.publish(a.io.peek(TICK_MS / 1000.0, self.seq, a.readouts), self.hz_shown, 0)
-                time.sleep(0.05)
-                continue
             try:
+                if self.paused:
+                    self._apply_actions()
+                    self.graded_eps = 0.0
+                    a = self.flies[0]                        # keep the page in sync: the brain's state without a step
+                    self.publish(a.io.peek(TICK_MS / 1000.0, self.seq, a.readouts), self.hz_shown, 0)
+                    time.sleep(0.05)
+                    continue
                 self.tick()
-            except Exception as e:                    # keep the game alive, show the problem
-                self.say(f"Error: {e}", 5.0)
+            except Exception as e:                    # keep the game alive, show the problem (a paused game too: its
+                self.say(f"Error: {e}", 5.0)          # brain process can die while it waits)
                 import traceback
                 traceback.print_exc()
                 time.sleep(0.2)
+                if self.paused:
+                    continue
             used = time.perf_counter() - t0
             budget = TICK_MS / 1000.0 / self.speed
             self.rtf += (min(1.0, budget / max(used, 1e-6)) - self.rtf) * 0.1
