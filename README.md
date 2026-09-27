@@ -39,7 +39,7 @@ Compared with the small starter it grew from, it adds:
 | **A retina** | two compound eyes render what the fly sees; looming, small moving objects and wide-field motion are computed from the images, and the connectome's own T4/T5 motion-detector columns are driven facet by facet | the escape (LC4/LPLC2 → giant fibre), the chase (LC10a → DNa02) and the optomotor reflex (T4/T5 → HS → DNp15/DNa02) are wiring; the retina and feature computations are hand-built |
 | **Smell** | odour sources release turbulent plumes carried by the wind; each odour drives its own set of glomeruli | a sparse, odour-specific Kenyon-cell code (7-9 % of cells) and MBON responses are wiring |
 | **Learning** | dopamine-gated depression of Kenyon-cell → MBON synapses, the fly's actual learning rule; pair an odour with sugar, bitter or shock and its preference changes | which synapses are plastic and which dopamine neurons gate which MBON come from the wiring; bitter → punishment dopamine is wiring; sugar → reward dopamine is injected (labelled); the rule's constants are hand-chosen |
-| **A second fly** | a scripted female to chase, tap and sing to | the chase and the song (pC1 → pIP10 → wing motor neurons) are wiring; her behaviour and the contact-to-pC1 arousal are hand-built |
+| **A second fly** | a scripted female to chase, tap and sing to; or, with `--partner female`, a second *simulated* brain (FlyWire's female) in the dish, each fly sensing the other only through the world: sight, his song on her Johnston's organ, a foreleg's touch, bumping | the chase and the song (pC1 → pIP10 → wing motor neurons) are wiring, and so is everything her sensory neurons do next; the scripted female's behaviour, the contact-to-pC1 arousal and each channel between two simulated flies (its rate, range and units) are hand-built and labelled (`docs/SCIENCE.md` section 10) |
 | **Wind, sound, touch** | Johnston's organ senses wind direction and sound; a clap can make the fly jump | sound → giant fibre and wind → grooming are wiring; heading upwind is hand-built |
 | **Internal state** | hunger and thirst rise with time and change what the fly tastes; hunger also changes what it does (thirst cannot: the fly never drinks by itself, because in this wiring water alone does not reach MN9, the proboscis motor neuron; zapping MN9 on a water drop does make it drink) | hand-built |
 | **A better model** | short-term synaptic depression, background noise, per-population output modulation, threshold heterogeneity, checkpoints, spike recording, rate monitors, a `--fast` 1 ms step; the integrator is the starter's (identical spikes), or the same step as compiled numba kernels when numba is installed (about twice as fast, still identical spikes) | the mechanisms are documented physiology; the parameters are chosen by hand |
@@ -260,6 +260,8 @@ against 72 Hz with sugar alone. The parts list, the physics body and the
 background re-test run on her too; `docs/SCIENCE.md` section 9.5 compares each with the male. Most readouts differ from the male's, and
 `docs/SCIENCE.md` section 9 says why most of those differences are not yet sex differences.
 
+**Two simulated flies.** `py fly_game.py --partner female` puts the male and FlyWire's female in one dish, each brain in its own process (about 2.8x real time on a 16-core laptop; `--fast` if yours is slower). Nothing links the two brains but the world: she sees him as a small dark thing, hears his song through her Johnston's organ (at up to 70 Hz on her sound cells, the loudest steady drive that does not startle *him*), tastes him when a foreleg lands, and the two bodies bump. `--social seen,song` keeps only those channels; `--partner male` gives him a male rival; `--female --partner male` gives her a male. Her decision neurons (`DNp37`, the vaginal plate opening command; `DNp13`, ovipositor extrusion; `vpoEN`, `pC2l`, `SAG`) are shown as watches, never as a verdict: in this data his song reaches her hearing and her giant fibre but not those neurons (`docs/SCIENCE.md` 10.3). `py fly_brain.py --female --pair-experiments` runs the pair experiments, whose ranges are provisional and measured, not validated.
+
 **In code**, start with `my_first_fly.py`: poke, wait, listen, in three lines. Then:
 
 | Command (macOS / Linux: `python3` instead of `py`) | What it does |
@@ -274,6 +276,8 @@ background re-test run on her too; `docs/SCIENCE.md` section 9.5 compares each w
 | `py fly_brain.py --profile game --json out.json` | Five seeds each (the default): mean ± sd, saved |
 | `py fly_brain.py --silence GNG087 --only bitter` | Knock out the bitter relay |
 | `py fly_brain.py --stim "prefix:JO-B:100" --record spikes.npz` | Every spike, with neuPrint IDs |
+| `py fly_game.py --partner female` | Two simulated brains in one dish (the male and FlyWire's female) |
+| `py fly_brain.py --female --pair-experiments` | Her song, pC1, pC2l, cVA and SAG routes, measured (provisional ranges) |
 | `py fly_game.py --pure` | The paper's model, seizures and all |
 | `py fly_game.py --noise 5:15` | Spontaneous activity (parts list off; docs/SCIENCE.md 3.4) |
 
@@ -417,6 +421,11 @@ These are the things the critics point at, so it's worth knowing them:
 - **No hormones, no electrical synapses, no development,** one fly's brain, one seed unless you ask
   for more. Nothing here is conscious. It is a wiring diagram with the simplest possible physics,
   and it still does a surprising number of fly things.
+- **Two flies court through hand-built senses.** With `--partner female` both brains are real, but every
+  channel between them (how far a song carries, how loud it is, what a touch fires, how the bodies bump) is
+  a labelled encoder, and in this data his song does not reach her song-tuned neurons at all
+  (`docs/SCIENCE.md` 10.3), so what she does next to him comes mostly from her hand-built walking urge.
+  The pair experiments' ranges are measured, not validated.
 
 ## 7. Where to go next
 
