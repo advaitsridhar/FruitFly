@@ -213,8 +213,9 @@ mean and per-seed rates, ok and fragile flags, after-stimulus activity).
   would be a new hand-built controller: ask the owner before adding one.
 
 ## Next step
-Phase 1 step 1 (plan 5.2): move the per-fly state of `Game` into `FlyAgent` with behaviour unchanged (golden hashes
-identical, all tests green), then step 2 (5.3, the `BrainIO` seam).
+Phase 1: read the third review's confirmed findings and fix them with a test each; full pytest and the real golden compare;
+push; open the draft PR from `../runs/pr-body-p1.md`; check CI; ask the owner to look at `fly_game.py --partner female` in a browser
+(the fly menu, both flies, her cues), then mark the PR ready. Phase 2 starts after the merge with decisions 16-17.
 
 ## Session notes
 ### 2026-09-27 (Phase 1)
@@ -232,7 +233,13 @@ identical, all tests green), then step 2 (5.3, the `BrainIO` seam).
 - An adversarial review of steps 3-5 (five lenses, two refuters per finding) confirmed ten small points (her decision-neuron
   monitors lost on a local-brain rebuild; the male's "court" check keyed on the scripted female; the cues display flag off by
   the list default; touch without collide a no-op; the abdominal gesture on a partner without song cells; a watch able to take
-  one of her built-in keys; three test gaps). Fixes, then steps 6-7 (per-fly API and state, the page), in progress.
+  one of her built-in keys; three test gaps). Fixed in `9fa090d` with a test each.
+- Steps 6-7 done: `6d0d87b` (`?fly=k` on every per-fly endpoint, `"fly": k` on per-fly actions, the state's `flies` list, per-fly
+  recording frames and events; docs/API.md) and `d5d268f` (the page: `posesOf`, the fly menu `focusSel`, two persistent brain maps,
+  per-fly actions through `setActionFly`, the three-state female toggle, her cues). Step 8: the pair scenario `pair_courtship` and
+  the pair checks (`0d56642`), `tools/pair_courtship.py` and its 20 runs (SCIENCE.md 10.5), the pair-game benchmark, the
+  16 experiments identical to the baseline. 531 tests; 18 real golden hashes unchanged after every commit.
+- A third adversarial review (steps 6-8, the tools and SCIENCE.md section 10) in progress; then push, the draft PR and CI.
 
 ### 2026-09-27
 - Read the plan; machine facts gathered (4.1, 4.3); no missing system packages (4.4).
