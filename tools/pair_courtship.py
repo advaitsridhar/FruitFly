@@ -73,8 +73,8 @@ def run(seed: int, condition: str, seconds: float, parts: bool) -> dict:
         contacts = 0
         touching_before = False
         hear_hz, her_v_song, her_v_quiet, his_v = [], [], [], []
-        her = {"vpoEN": [], "DNp37": [], "DNp13": [], "DNp01": [], "pC1": []}
-        his = {"pC1": [], "pIP10": [], "LC10aL": [], "LC10aR": [], "DNp01": []}
+        her = {"vpoEN": [], "DNp37": [], "DNp13": [], "GF": [], "pC1": []}       # GF is the kit's key for DNp01
+        his = {"pC1": [], "pIP10": [], "LC10aL": [], "LC10aR": [], "GF": []}
         bursts = {"male": 0, "female": 0}
         prev_gf = {"male": 0, "female": 0}
         modes = {"male": {}, "female": {}}
@@ -111,8 +111,9 @@ def run(seed: int, condition: str, seconds: float, parts: bool) -> dict:
                     bursts[name] += 1
                 prev_gf[name] = a.bt.gf
                 modes[name][a.mode] = modes[name].get(a.mode, 0) + 1
-        escapes = {"male": sum(1 for e in game.events.items if "escape" in e["text"] and e.get("fly", 0) == 0),
-                   "female": sum(1 for e in game.events.items if "escape" in e["text"] and e.get("fly") == 1)}
+        # with two flies every fly's event carries its id (docs/API.md); the burst counts above are the game's own rule per fly
+        escapes = {name: sum(1 for e in game.events.items if "escape" in e["text"] and e.get("fly") == a.id)
+                   for name, a in (("male", m), ("female", f))}
         return {"seed": seed, "condition": condition, "parts": parts, "seconds": seconds, "ticks": ticks,
                 "channels": game.social.names(),
                 "time_near_s": round(near * TICK_MS / 1000, 1), "facing_when_near": round(facing / near, 3) if near else None,
