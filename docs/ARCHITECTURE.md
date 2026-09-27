@@ -41,12 +41,18 @@ tools/
   harvest_neuprint_rois.py  neuPrint (token; run by .github/workflows/neuprint-harvest.yml) -> data/mb_roi_connectivity.json.gz,
                        APL's and DPM's connections split by region
   vfb_overlay.json     the connector harvest: FBbt classes for the names the OBO lacks (an input of build_vfb_data.py)
+  bench_two_flies.py   baseline speeds for the two-flies work: one brain, the male and female brains side by side,
+                       game ticks with the drawn and the physics body (hand-run; docs/TWO_FLIES_PLAN.md 4.8)
+  golden_hashes.py     what one fly does on the real data, byte for byte: --save before a change, --compare after
+                       (tests/test_golden_single_fly.py is the same check on the synthetic connectome, in CI)
+  compare_experiments.py  every difference between two `fly_brain.py --json` files (a later run against the baselines)
 data/              the connectome (downloaded the first time; the female fly's is built there) and the small tables
                    read by vfb.py and parts.py (fbbt_*.json.gz, vfb_receptors.json.gz, mb_roi_connectivity.json.gz);
                    an installed copy downloads and builds into ~/.cache/virtual-fly instead, and FLY_DATA_DIR,
                    when set, replaces either folder
 tests/             pytest suite on a small synthetic connectome (no download needed)
-docs/              API.md (server contract), SCIENCE.md (what was measured and why), this file
+docs/              API.md (server contract), SCIENCE.md (what was measured and why), this file;
+                   TWO_FLIES_PLAN.md and TWO_FLIES_PROGRESS.md (the two-flies work: the plan and its log)
 ```
 
 ## The loop, one tick at a time

@@ -2260,6 +2260,43 @@ loop through L2 going, where the male's is a spread-out hum of optic-lobe cells 
 3). And her mushroom body is denser still than the male's under vinegar, because her α′/β′ Kenyon
 cells, found through the new alias, now join APL's local release and feel a dopamine tone.
 
+### 9.6 Measured speeds: the female against the male on one machine (v2.8.1)
+
+The female fly's speed had not been measured anywhere. Measured on 2026-09-27 with
+`tools/bench_two_flies.py` (a hand-run tool added for the two-flies work, `docs/TWO_FLIES_PLAN.md`):
+game profile, `dt` 0.5 ms, the compiled (numba) integrator, busy input (sugar `LB3b,LB3c` 120 Hz,
+looming `LC4/R,LPLC2/R` 150 Hz, four vinegar glomeruli 80 Hz, `prefix:JO-B` 100 Hz), 3 simulated seconds
+after 300 ms of warm-up, each row in its own process at `nice 10` on an otherwise idle laptop (Intel
+i9-14900HX; WSL2 shows it 16 cores and 32 threads; Python 3.12.3, NumPy 2.5.3, numba 0.67.0). Real-time factor = simulated
+time / wall time; 0.5 ms per step is real time. Peak memory is each process's own high-water mark.
+
+| brain (busy input) | ms per step | real-time factor | events per second | peak memory |
+|---|---|---|---|---|
+| male, parts list off | 0.14 | 3.6 | 160,781 | 384 MB |
+| male, parts list on | 0.25 | 2.0 | 215,625 | 445 MB |
+| female, parts list off | 0.13 | 3.9 | 141,675 | 580 MB |
+| female, parts list on | 0.29 | 1.7 | 265,713 | 705 MB |
+| both at once, one process each, parts list off | male 0.19, female 0.18 | 2.6 / 2.8 | as above | 384 + 580 MB |
+| both at once, one process each, parts list on | male 0.31, female 0.33 | 1.6 / 1.5 | as above | 445 + 704 MB |
+
+| game (drawn body with the scripted female in the dish, 400 ticks; the physics body 80 ticks) | real-time factor | tick, median / 99th percentile | setup | peak memory |
+|---|---|---|---|---|
+| male, drawn body | 3.1 | 7.9 / 10.5 ms | 1.6 s | 813 MB |
+| female, drawn body | 4.3 | 5.7 / 6.9 ms | 2.9 s | 1,624 MB |
+| male, physics body | 0.22 | 112 / 147 ms | 3.5 s | 1,509 MB |
+
+**What this shows.** The female brain is no slower than the male's: with the parts list off she is
+slightly faster per step (fewer events per second, 141,675 against 160,781, under the same input); with
+it on she is slightly slower (her graded cells release more quanta: 265,713 events per second against
+215,625). Two brains side by side cost each more per step than alone, by 11-39 % in this run (they share
+memory bandwidth, not cores), which is within the run-to-run spread: a first run of the tool put the pair
+rows 22-23 % lower and the male's parts-off brain row at 0.20 ms instead of 0.14, so treat the first
+decimal of a millisecond as the precision and the pair cost as "some tens of per cent", not a number. Her
+game tick is shorter than his, but her process is twice as large, because her file keeps every connection
+(15.1 million against his 6.3 million). These are one machine's numbers on one day. The game's own header
+saturates at "real time" (`Game.loop` averages `min(1, budget/used)`), so a speed above real time can only
+be read from this tool.
+
 ---
 
 ## 10. Honest limitations
