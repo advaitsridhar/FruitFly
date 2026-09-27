@@ -1,0 +1,19 @@
+{
+ "hashes": {
+  "autopilot": "23dc5c8a72b7c0a12f2226e6e5caa8b83ee3417a",
+  "courtship_scenario": "168bbeb466d59756ba19a323f62abef5b886860c",
+  "drum": "1d957156dc879f36a7e8682a28f63fa4e6d5572e",
+  "no_autopilot": "e328232f55864dc670ac3f8be4b0dc06b55f3468",
+  "odour_and_sugar": "d8b20fdd0ee37b4c3855c6a2dc527268481e4759",
+  "physics_body": "f30f5ab8bbd2c55a06ecc593e92d1e3264901892",
+  "scripted_female": "fdd2140fb4561ed15b4c4097e180f42b7cd5b388",
+  "silence_and_watch": "9cccfc5b7173f2447d408946d361c68a0f63497b",
+  "zap_mdn": "2c8b829962a20e07569498754b4d81d50d877ced"
+ },
+ "versions": {
+  "numba": "0.67.0",
+  "numpy": "2.5.3",
+  "platform": "linux",
+  "python": "3.12.3"
+ }
+}
