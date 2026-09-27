@@ -5,7 +5,8 @@ Plan: docs/TWO_FLIES_PLAN.md. Newest session notes first.
 ## Status
 | phase | branch | PR | state | last update |
 |---|---|---|---|---|
-| 0 | claude/two-flies-p0-baseline | #16 | PR ready for review, CI green; waiting for the merge | 2026-09-27 |
+| 0 | claude/two-flies-p0-baseline | #16 | merged (squash, `3631770`) | 2026-09-27 |
+| 1 | claude/two-flies-p1-two-brains | #? | in progress | 2026-09-27 |
 
 ## This machine
 - OS: WSL2 (Ubuntu 24.04.5 LTS) on Windows; the repository lives under the Linux home folder, not `/mnt/c`.
@@ -47,6 +48,18 @@ Plan: docs/TWO_FLIES_PLAN.md. Newest session notes first.
 | 1 | operating system route | WSL2 (Ubuntu 24.04), Claude Code inside Ubuntu: the machine already matched the default | default, confirmed by the owner ("proceed with the defaults") | 2026-09-27 |
 | 2 | Python version | the system python3, 3.12.3 (in the 3.10-3.12 range) | default, confirmed by the owner ("proceed with the defaults") | 2026-09-27 |
 | 3 | continue before a PR is merged | wait for the merge before the next phase | default, confirmed by the owner ("proceed with the defaults") | 2026-09-27 |
+| 4 | which pairs | male protagonist with a simulated FlyWire female (`--partner female`); `--partner male` also supported; `none` stays the default | default, owner: "defaults" | 2026-09-27 |
+| 5 | version numbers | one minor version per merged phase: 2.9.0 for Phase 1, bumped in both files in the phase PR, SCIENCE.md headings tagged to match | default, owner | 2026-09-27 |
+| 6 | song loudness rule (`SONG_MAX_HZ`) | the highest swept JO-A/B rate at which fewer than 1 % of 50 ms windows hold `GF_BURST` or more DNp01 spikes, five seeds, parts off and on | default, owner | 2026-09-27 |
+| 7 | song shape | a steady drive while the male sings; a pulse-train envelope later, as a switch | default, owner | 2026-09-27 |
+| 8 | song range | full within 6 mm, linear to nothing at 15 mm, real centre-to-centre mm; hand-built, provisional, no source | default, owner | 2026-09-27 |
+| 9 | her DNp37 / DNp13 readouts | labelled hand-built cues with provisional thresholds, never "acceptance"/"rejection"; no effect on the male; no copulation rule | default, owner | 2026-09-27 |
+| 10 | cVA channel | off (a switch) | default, owner | 2026-09-27 |
+| 11 | mating status (SAG) | off | default, owner | 2026-09-27 |
+| 12 | drawn flies collide | on with two or more flies; single-fly play unchanged | default, owner | 2026-09-27 |
+| 13 | her walking urge | on for both flies, labelled; every claim checked against the 5.9 controls | default, owner | 2026-09-27 |
+| 14 | contact arousal to pC1 for a simulated partner (`contact_pc1`) | on for a male toucher, off for a female toucher, switchable; the scripted-female path unchanged | default, owner | 2026-09-27 |
+| 15 | if song barely reaches her vpoEN | report as measured; no compensating gain unless the owner asks | default, owner | 2026-09-27 |
 
 ## Measurements
 All on 2026-09-27, this machine, `nice -n 10`, one job at a time, machine otherwise idle (load average under 1.5).
@@ -128,11 +141,14 @@ reproduce all four files exactly (`tools/compare_experiments.py`).
   would be a new hand-built controller: ask the owner before adding one.
 
 ## Next step
-Wait for the owner to merge PR #16 (decision 3). Then Phase 1 (plan 5): `git fetch origin`, branch
-`claude/two-flies-p1-two-brains` from `origin/main`, record the owner's answers to decisions 4-15 here, and start with step 1 (5.2,
-`FlyAgent`), checking the golden hashes after every step.
+Phase 1 step 1 (plan 5.2): move the per-fly state of `Game` into `FlyAgent` with behaviour unchanged (golden hashes
+identical, all tests green), then step 2 (5.3, the `BrainIO` seam).
 
 ## Session notes
+### 2026-09-27 (Phase 1)
+- PR #16 merged by Claude on the owner's go-ahead (squash). Branch `claude/two-flies-p1-two-brains` from `origin/main`.
+- The owner answered decisions 4-15 with the defaults ("defaults"); recorded above.
+
 ### 2026-09-27
 - Read the plan; machine facts gathered (4.1, 4.3); no missing system packages (4.4).
 - Cloned at `739e791`; venv created; the dev, female and physics extras and flygym 1.2.1 (`--no-deps`) installed.
