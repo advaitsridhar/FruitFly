@@ -190,6 +190,11 @@ DNp37 0 everywhere; DNp13 0-1.0 / 0-0.4 / 0-1.2 / 1.1-3.4 Hz. Her speed while he
 3,2,3,0,1 / 0,1,0,2,1; all off 0 / 0. Written into docs/SCIENCE.md 10.5. (The run started before commit 9fa090d, so its JSON lists "cues"
 among the channels and its escape-event counts lack the per-fly tag; the burst counts per fly are from each fly's own giant fibre.)
 
+### Phase 1: the validated experiments against the Phase 0 baseline (plan 1.9)
+`fly_brain.py --profile game` (male, parts off and on) and `--female --profile game` (parts off and on) rerun at the end of the phase
+(`../runs/p1-*-game*.json`): `tools/compare_experiments.py` reports **identical** to `../runs/p0-*.json` for all four (every readout's
+mean and per-seed rates, ok and fragile flags, after-stimulus activity).
+
 ### Golden hashes (plan 4.9)
 - Synthetic (`tests/golden_single_fly.json`): nine configurations, made with Python 3.12.3, NumPy 2.5.3, numba 0.67.0; a second
   run reproduces every hash (the test passes in normal mode; a determinism test runs one configuration twice).
