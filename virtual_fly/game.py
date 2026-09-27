@@ -266,8 +266,11 @@ class MotorDecoder:
 class Game:
     def __init__(self, brain: FlyBrain, autopilot: bool = True, seed: int = 0, columnar: bool = True,
                  profile_name: str = "game", brain_factory=None, parts_list=None, brain_kwargs: dict | None = None,
-                 retest: str = "auto", body: str = "drawn", stride_average: bool = False):
+                 retest: str = "auto", body: str = "drawn", stride_average: bool = False, brain_procs: str = "auto"):
         from .agent import FlyAgent                      # (agent.py imports this module's constants)
+        if brain_procs not in ("auto", "on", "off"):
+            raise ValueError("brain_procs must be 'auto', 'on' or 'off'")
+        self.brain_procs = brain_procs                   # auto: in this process for one fly, a process per brain with more
         self.profile_name = profile_name
         self.rng = random.Random(seed)
         self.seed = seed
@@ -280,7 +283,9 @@ class Game:
         # the flies: one today; fly 0 keeps the game's own random stream (a partner gets its own, docs/TWO_FLIES_PLAN.md 5.1)
         self.flies = [FlyAgent(self, 0, brain, sex=getattr(brain.conn, "sex", "male"), rng=self.rng, seed=seed,
                                autopilot=autopilot, columnar=columnar, body=body, stride_average=stride_average,
-                               parts_list=parts_list, brain_factory=brain_factory, brain_kwargs=brain_kwargs, retest=retest)]
+                               parts_list=parts_list, brain_factory=brain_factory, brain_kwargs=brain_kwargs, retest=retest,
+                               brain_procs=(brain_procs == "on"))]
+        del brain                                        # a process brain has been built from it: let it go
         self.layout_json = self._make_layout()
         self.state_json = b"{}"
         self.state_dict: dict = {}
@@ -298,10 +303,17 @@ class Game:
         """The k-th fly in the dish (fly 0: the protagonist)."""
         return self.flies[k]
 
+    def close(self):
+        """Stop the loop (it returns after the tick it is in) and let every fly's brain process go. server.serve calls
+        this after Ctrl+C, once the loop thread has been joined, so no child is closed while a tick is still using it."""
+        self.stop_loop.set()
+        for a in self.flies:
+            a.io.close()
+
     # ------------------------------------------------------------------ world
     def reset_world(self, first: bool = False):
         a = self.flies[0]
-        a.brain.reset()
+        a.reset_brain()
         self.world.clear("all")
         self.world.hand = None
         self.world.set_stripes(0, 0.0)
@@ -468,8 +480,7 @@ class Game:
             self.say(f"Zapping {a['spec']} ({a['n']} neurons) at {float(a.get('hz', 60)):g} Hz", 2.0)
             self.events.add(self.t, "lab", f"zap {a['spec']} at {float(a.get('hz', 60)):g} Hz for {float(a.get('secs', 2.0)):g} s")
         elif kind == "silence":
-            with self.brain.lock:
-                n = self.brain.silence(a["spec"])
+            n = self.flies[0].io.silence(a["spec"])
             self.user_silenced.add(a["spec"])
             self.done.add("silence")
             if a["spec"].startswith(("gene:", "dimorphism:")):
@@ -477,16 +488,14 @@ class Game:
             self.say(f"Silenced {a['spec']} ({n} neurons): they still fire, but nothing hears them.", 3.0)
             self.events.add(self.t, "lab", f"silenced {a['spec']} ({n} neurons)")
         elif kind == "unsilence":
-            with self.brain.lock:
-                for spec in list(self.user_silenced):
-                    if a.get("spec") in (None, "", spec):
-                        self.brain.unsilence(spec)
-                        self.user_silenced.discard(spec)
+            for spec in list(self.user_silenced):
+                if a.get("spec") in (None, "", spec):
+                    self.flies[0].io.unsilence(spec)
+                    self.user_silenced.discard(spec)
             self.say("Silencing removed.", 2.0)
         elif kind == "modulate":
             factor = float(a.get("factor", 1.0))
-            with self.brain.lock:
-                n = self.brain.modulate(a["spec"], factor)
+            n = self.flies[0].io.modulate(a["spec"], factor)
             if abs(factor - 1.0) < 1e-6:
                 self.user_modulated.pop(a["spec"], None)
             else:
@@ -498,18 +507,18 @@ class Game:
             if key in BUILTIN_KEYS:
                 raise ValueError(f"'{key}' is a built-in readout")
             if key in self.custom_readouts:
-                self.brain.remove_monitor(key)
+                self.flies[0].remove_monitor(key)
             self.custom_readouts[key] = a["spec"]
             self.readouts[key] = self.conn.select(a["spec"])
             self.hz_shown[key] = 0.0
-            self.brain.add_monitor(key, a["spec"], bin_ms=TICK_MS)
+            self.flies[0].add_monitor(key, a["spec"])
         elif kind == "unwatch":
             key = a.get("key")
             if key in self.custom_readouts:
                 del self.custom_readouts[key]
                 self.readouts.pop(key, None)
                 self.hz_shown.pop(key, None)
-                self.brain.remove_monitor(key)
+                self.flies[0].remove_monitor(key)
         elif kind == "clear":
             w.clear(a.get("what", "all"))
         elif kind == "reset":
@@ -522,8 +531,7 @@ class Game:
         elif kind == "speed":
             self.speed = max(0.1, min(3.0, float(a.get("value", 1.0))))
         elif kind == "calm":
-            with self.brain.lock:
-                self.brain.reset()
+            self.flies[0].reset_brain()
             self.say("Brain reset to rest.", 2.0)
         elif kind == "wind":
             w.set_wind(a.get("angle"), a.get("speed"))
@@ -537,35 +545,35 @@ class Game:
             w.toggle_female(bool(a.get("on", True)), a.get("x"), a.get("y"))
             self.events.add(self.t, "world", "a female fly enters" if w.female else "the female leaves")
         elif kind == "learning":
-            if self.brain.plasticity is not None:
+            io = self.flies[0].io
+            if io.has_plasticity:
                 if a.get("forget"):
-                    with self.brain.lock:
-                        self.brain.plasticity.reset_weights()
+                    io.learning(forget=True)
                     self.events.add(self.t, "learning", "all KC→MBON synapses reset to their original strength")
                     self.say("Memories erased.", 2.0)
                 if "on" in a:
-                    self.learning_on = bool(a["on"])
-                    self.brain.plasticity.enabled = self.learning_on
+                    self.learning_on = bool(a["on"])         # (the setter tells the brain)
         elif kind == "scenario":
             if a.get("id"):
                 self.scenario.start(a["id"])
             else:
                 self.scenario.stop()
         elif kind == "record":
+            io = self.flies[0].io
             if a.get("on", True):
-                if self.brain.recording is not None:     # a restart while spikes were being recorded
-                    self.brain.stop_recording()
-                self.brain.recording_kept = []           # the previous take is gone once a new one starts
+                if io.record("active"):                  # a restart while spikes were being recorded
+                    io.record("stop")
+                io.record("clear_kept")                  # the previous take is gone once a new one starts
                 self.recording = []
                 self.record_active = True
                 self.record_spikes = bool(a.get("spikes", False))
                 if self.record_spikes:
-                    self.brain.start_recording()
+                    io.record("start")
                 self.events.add(self.t, "system", "recording started")
             elif self.record_active:
                 self.record_active = False               # frames are kept for download until the next start
-                if self.brain.recording is not None:
-                    self.brain.recording_kept = self.brain.stop_recording()
+                if io.record("active"):
+                    io.record("stop")
                 self.events.add(self.t, "system", f"recording stopped ({len(self.recording or [])} frames)")
         elif kind == "grow":
             self._start_grow(a["level"], a["seed"])
@@ -587,7 +595,7 @@ class Game:
         self.scenario.step(dt)
         a = self.flies[0]
         rates, col_idx, col_hz = a.senses(dt)
-        bt = a.advance(dt, rates, col_idx, col_hz)
+        bt = a.advance(dt, rates, col_idx, col_hz, self.seq)     # seq: the brain-map sample is drawn as publish will number it
         a.act(dt, bt)
         a.bookkeep(dt)
         self.world.step(dt, (a.body.pose.x, a.body.pose.y), fly_singing=a.m["song"], courted=a.courting > 0)
@@ -599,13 +607,13 @@ class Game:
             self.recording.append({"t": round(self.t, 3), "fly": a.body.to_dict(), "mode": a.mode,
                                    "hz": {k: round(v, 1) for k, v in bt.hz.items() if a._has(k)}, "senses": a.senses_now,
                                    "sps": int(a.sps)})
-        self.publish(bt.spikes, a.hz_shown, a.sps)
+        self.publish(bt, a.hz_shown, a.sps)
 
     # ------------------------------------------------------------------ publishing
-    def publish(self, spikes, hz, sps):
-        vis = spikes[self.has_soma[spikes]]
-        if vis.size > 2500:
-            vis = np.random.default_rng(self.seq).choice(vis, 2500, replace=False)
+    def publish(self, bt, hz, sps):
+        """The state the page reads, from this tick's BrainTick ``bt`` (its spike sample, stimulus count, silenced
+        specs, learning summary and parts status were taken from the brain after it stepped)."""
+        a = self.flies[0]
         w = self.world.to_dict()
         if len(w["puffs"]) > 300:
             w["puffs"] = w["puffs"][-300:]
@@ -619,20 +627,20 @@ class Game:
             "hz": {k: round(v, 1) for k, v in hz.items() if self._has(k)},     # not the cells this fly lacks
             "motor": {k: round(v, 3) for k, v in self.decoder.m.items()},
             "driver": self.driver, "mode": self.mode,
-            "spikes": vis.tolist(), "sps": int(sps), "graded_eps": int(self.graded_eps),
-            "stims": len(self.brain.stim),
+            "spikes": bt.spikes_shown, "sps": int(sps), "graded_eps": int(self.graded_eps),
+            "stims": bt.stims,
             "calms": self.calms, "msg": self.message if self.message_left > 0 else "",
             "silenced": sorted(self.user_silenced),
-            "baseline": sorted(set(self.brain.silenced) - self.user_silenced),
+            "baseline": sorted(set(bt.silenced_specs) - self.user_silenced),
             "modulated": self.user_modulated,
             "custom": self.custom_readouts,
             "done": sorted(self.done),
             "state": self.state.to_dict(),
-            "learning": self.learning_summary(),
+            "learning": a.learning_summary(bt),
             "events": self.events.items[-12:],
             "event_seq": self.events.seq,
             "scenario": self.scenario.status(),
-            "genome": self.genome_status(),
+            "genome": a.genome_status(bt.parts_status, known=True),
             "recording": None if self.recording is None else {"frames": len(self.recording), "spikes": self.record_spikes,
                                                               "active": self.record_active},
         }
@@ -661,7 +669,8 @@ class Game:
             if self.paused:
                 self._apply_actions()
                 self.graded_eps = 0.0
-                self.publish(np.zeros(0, dtype=np.int64), self.hz_shown, 0)   # keep the page in sync
+                a = self.flies[0]                            # keep the page in sync: the brain's state without a step
+                self.publish(a.io.peek(TICK_MS / 1000.0, self.seq, a.readouts), self.hz_shown, 0)
                 time.sleep(0.05)
                 continue
             try:

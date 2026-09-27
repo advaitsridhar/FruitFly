@@ -22,7 +22,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from .body import FlyBody, WALK_SPEED
-from .plasticity import APPROACH_NTS, AVOID_NTS
+from .brainio import BrainTick, LocalBrain, ProcessBrain
 from . import genetics
 from . import parts as partslib
 from . import retest as retestlib
@@ -40,25 +40,25 @@ from .senses.vision import Retina
 from .world import ARENA_R, FLY_HALF, wrap
 
 
-@dataclass
-class BrainTick:
-    """What the world needs from one brain after one 25 ms tick."""
-    hz: dict            # readouts from all counts (Hz per cell)
-    motor_hz: dict      # readouts from live counts (silenced cells zeroed): what reaches the body
-    gf: int             # live giant-fibre spikes this tick
-    spikes: np.ndarray  # every event this tick (neuron indices, in step order)
-    n_spikes: int       # how many
+def _empty_tick(readouts: dict) -> BrainTick:
+    """What a fly's brain has said before its first tick: nothing."""
+    zero = {k: 0.0 for k in readouts}
+    return BrainTick(zero, dict(zero), 0, 0, 0, [], 0.0, (0, 0.0), None, 0, [], None)
 
 
 class FlyAgent:
     """One fly: everything the game keeps per fly. ``game`` holds the shared world and clock (read here through
-    :attr:`world`, :attr:`t`, :attr:`events`, :attr:`actions`, :attr:`scenario`, :meth:`say`)."""
+    :attr:`world`, :attr:`t`, :attr:`events`, :attr:`actions`, :attr:`scenario`, :meth:`say`).
+
+    The brain is reached only through :attr:`io` (brainio.py): a :class:`~virtual_fly.brainio.LocalBrain` in this
+    process, or a :class:`~virtual_fly.brainio.ProcessBrain` in a child process of its own (``brain_procs``), with
+    the same numbers either way. :attr:`brain` is the FlyBrain itself when it is local, else None."""
 
     def __init__(self, game, id: int, brain, *, sex: str, rng, seed: int, autopilot: bool = True, columnar: bool = True,
                  body: str = "drawn", stride_average: bool = False, parts_list=None, brain_factory=None,
-                 brain_kwargs: dict | None = None, retest: str = "auto"):
+                 brain_kwargs: dict | None = None, retest: str = "auto", brain_procs: bool = False):
         self.game, self.id, self.sex, self.rng, self.seed = game, id, sex, rng, seed
-        self.brain, self.conn = brain, brain.conn
+        self.conn = brain.conn
         # the genome: the real wiring, and flies grown from its rules (see wiring.py)
         self.real_conn = brain.conn
         self.brain_factory = brain_factory or self._default_brain_factory
@@ -78,6 +78,14 @@ class FlyAgent:
         # the PartsList to (re)build with: the running brain's, else the one the caller chose (curated policy ...)
         self._parts_list = brain.parts.parts if brain.parts is not None else parts_list
         self._parts_counts: dict | None = None
+        self._learning_on = brain.plasticity is not None
+        # the brain: here, or in a child process built from this brain's settings (then this one is let go)
+        if brain_procs:
+            self.io = ProcessBrain(self.child_spec(brain), fly=id)
+            del brain
+        else:
+            self.io = LocalBrain(brain)
+        self.histories: dict[str, list] = {}             # a process brain's readout histories, one value per tick
         self.autopilot = autopilot
         if body == "physics":                          # optional: NeuroMechFly v2 in MuJoCo (virtual_fly/physics.py)
             from .physics import make_body
@@ -108,7 +116,7 @@ class FlyAgent:
         self.custom_readouts: dict[str, str] = {}
         for r in READOUTS:
             if self.readouts[r[0]].size:                 # not for cells this fly lacks (/api/history leaves them out)
-                self.brain.add_monitor(r[0], r[1], bin_ms=TICK_MS)
+                self.add_monitor(r[0], r[1])
         self.user_silenced: set[str] = set()
         self.user_modulated: dict[str, float] = {}
         self.has_soma = ~np.isnan(self.conn.soma[:, 0])
@@ -116,14 +124,79 @@ class FlyAgent:
         # pathway trace or neuron lookup from the browser does not stall behind the game loop
         self.conn.col_ptr
         self.conn.type_graph()
-        self.learning_on = brain.plasticity is not None
         self.done: set[str] = set()                      # the checklist: kept when the player asks for a new fly
         # what one tick leaves for the next steps of the same tick (see Game.tick)
+        self.bt: BrainTick = _empty_tick(self.readouts)  # what the brain said this tick
         self.m: dict = dict(self.decoder.m)
         self._why: list = []
         self.courting = 0.0
         self.rates_now: dict = {}
         self.sps = 0.0
+
+    # ------------------------------------------------------------------ the brain, through its seam
+    @property
+    def brain(self):
+        """The FlyBrain when it lives in this process (LocalBrain), else None."""
+        return self.io.brain
+
+    @brain.setter
+    def brain(self, b):
+        if not isinstance(self.io, LocalBrain):
+            raise AttributeError("this fly's brain lives in its own process; it cannot be replaced from here")
+        self.io.brain = b
+
+    @property
+    def learning_on(self) -> bool:
+        return self._learning_on
+
+    @learning_on.setter
+    def learning_on(self, on: bool):
+        self._learning_on = bool(on)
+        self.io.learning(on=self._learning_on)
+
+    def child_spec(self, brain) -> dict:
+        """What a brain process needs to build this brain (as _retest_spec says it for the re-test)."""
+        path = getattr(self.real_conn, "path", None)
+        if path is None or not os.path.exists(path) or self.real_conn.meta.get("rewired"):
+            raise ValueError("a brain in its own process is built from the connectome's file, and this wiring is not "
+                             "the file's (" + ("grown or rewired: " + str(self.real_conn.meta.get("rewired")) if path
+                                               else "no file") + "); use brain_procs='off'")
+        if self._brain_kwargs is None:
+            raise ValueError("a brain in its own process needs the brain's settings (a custom brain_factory without "
+                             "brain_kwargs); use brain_procs='off'")
+        kw = {k: v for k, v in brain.settings().items() if k in self._BRAIN_KWARGS}
+        kw.update(self._brain_kwargs)
+        kw["parts"] = self.parts_arg(self.parts_on)
+        return {"path": str(path), "wiring": None, "profile": self.profile_name, "brain_kwargs": kw,
+                "readouts": [(r[0], r[1]) for r in READOUTS] + list(HIDDEN_READOUTS.items()),
+                "vfb": vfb.injected(), "regions": partslib.injected_region_table()}   # data swapped in at runtime
+
+    def add_monitor(self, key: str, spec: str):
+        self.io.add_monitor(key, spec)
+        if self.io.parent_histories:
+            self.histories[key] = []
+
+    def remove_monitor(self, key: str):
+        self.io.remove_monitor(key)
+        self.histories.pop(key, None)
+
+    def history(self, keys=None, n: int = 400):
+        """(bin_ms, {key: the last n values}): the brain's monitors, or this fly's own histories for a process brain."""
+        if not self.io.parent_histories:
+            return self.io.history(keys, n)
+        out = {k: self.histories[k][-n:] for k in (keys or list(self.histories)) if k in self.histories}
+        return (TICK_MS if self.histories else False), out
+
+    def reset_brain(self):
+        """Every neuron back at rest (a new fly, a calm, the watchdog); the histories start again, as the monitors do."""
+        self.io.reset()
+        for h in self.histories.values():
+            h.clear()
+
+    def depressed_fraction(self) -> float:
+        """The share of plastic synapses that have been depressed (0 without plasticity), for the scenarios' measures."""
+        info = self.io.learning_summary() if self.io.has_plasticity else None
+        return info["depressed_fraction"] if info else 0
 
     # ------------------------------------------------------------------ the shared world, read as the code always did
     @property
@@ -202,7 +275,7 @@ class FlyAgent:
 
     def _default_brain_factory(self, conn, **extra):
         from .settings import build_brain
-        kw = {k: v for k, v in self.brain.settings().items() if k in self._BRAIN_KWARGS}
+        kw = {k: v for k, v in self.io.settings().items() if k in self._BRAIN_KWARGS}
         kw.update(extra)
         return build_brain(conn, self.profile_name, **kw)
 
@@ -217,8 +290,9 @@ class FlyAgent:
 
     def parts_counts(self) -> dict:
         """What the parts list finds in this connectome (compiled once; the same whether it is switched on)."""
-        if self.brain.parts is not None:
-            return self.brain.parts.counts
+        info = self.io.parts_info()
+        if info is not None:
+            return info[1]
         if self._parts_counts is None:
             self._parts_counts = self.parts_list().compile(self.real_conn).counts
         return self._parts_counts
@@ -232,7 +306,7 @@ class FlyAgent:
     def _grow_worker(self, level: str, seed: int):
         try:
             conn2, rules = wiring.grow_level(self.real_conn, level, seed, rules_cache=self._rules_cache)
-            brain2 = self.brain_factory(conn2, parts=self.parts_arg(self.parts_on))
+            brain2 = self._build_or_ship(conn2, self.parts_arg(self.parts_on))
             cmp = wiring.compare(self.real_conn, conn2) if conn2 is not self.real_conn else None
             self.actions.put({"type": "_swap_brain", "brain": brain2, "conn": conn2, "level": level, "seed": seed,
                               "rules": rules.summary() if rules is not None else None, "wiring": cmp,
@@ -251,7 +325,7 @@ class FlyAgent:
 
     def _rebuild_worker(self, on: bool):
         try:
-            brain2 = self.brain_factory(self.conn, parts=self.parts_arg(on))
+            brain2 = self._build_or_ship(self.conn, self.parts_arg(on))
             self.actions.put({"type": "_swap_brain", "brain": brain2, "conn": self.conn, "level": self.genome["level"],
                               "seed": self.genome["seed"], "rules": self.genome["rules"], "wiring": self.genome["wiring"],
                               "parts": on, "reason": "parts"})
@@ -259,27 +333,46 @@ class FlyAgent:
             self.genome.update(growing=None, error=str(e))
             print("error rebuilding the brain", repr(e))
 
+    def _build_or_ship(self, conn, parts_arg):
+        """A local brain is built here (in the worker thread, as it always was); a process brain is rebuilt in its
+        child, which needs only the wiring (for a grown fly) and the parts setting: what _swap_brain ships."""
+        if isinstance(self.io, LocalBrain):
+            return self.brain_factory(conn, parts=parts_arg)
+        wiring_ = None
+        if conn is not self.real_conn:                   # a grown fly: send its wiring, the neurons are the same
+            wiring_ = {"row_ptr": conn.row_ptr, "post_idx": conn.post_idx, "n_syn": conn.n_syn, "label": "grown"}
+        return {"wiring": wiring_, "parts": parts_arg}
+
     def _swap_brain(self, a: dict):
-        old = self.brain
-        with old.lock:
-            self.brain, self.conn = a["brain"], a["conn"]
-            for r in READOUTS:
-                if self.readouts[r[0]].size:
-                    self.brain.add_monitor(r[0], r[1], bin_ms=TICK_MS)
-            for k, spec in self.custom_readouts.items():
-                self.brain.add_monitor(k, spec, bin_ms=TICK_MS)
-            for spec in self.user_silenced:
-                try:
-                    self.brain.silence(spec)
-                except ValueError:
-                    pass
-            for spec, factor in self.user_modulated.items():
-                try:
-                    self.brain.modulate(spec, factor)
-                except ValueError:
-                    pass
-            if self.brain.plasticity is not None:
-                self.brain.plasticity.enabled = self.learning_on
+        if isinstance(self.io, LocalBrain):
+            old = self.brain
+            with old.lock:
+                self.brain, self.conn = a["brain"], a["conn"]
+                for r in READOUTS:
+                    if self.readouts[r[0]].size:
+                        self.brain.add_monitor(r[0], r[1], bin_ms=TICK_MS)
+                for k, spec in self.custom_readouts.items():
+                    self.brain.add_monitor(k, spec, bin_ms=TICK_MS)
+                for spec in self.user_silenced:
+                    try:
+                        self.brain.silence(spec)
+                    except ValueError:
+                        pass
+                for spec, factor in self.user_modulated.items():
+                    try:
+                        self.brain.modulate(spec, factor)
+                    except ValueError:
+                        pass
+                if self.brain.plasticity is not None:
+                    self.brain.plasticity.enabled = self.learning_on
+                self.zaps = []
+                self.runaway_s = 0.0
+        else:                                            # the child rebuilds and re-applies the lab's changes itself
+            ship = a["brain"]
+            self.io.swap(ship["wiring"], ship["parts"], self.user_silenced, self.user_modulated, self.learning_on)
+            self.conn = a["conn"]
+            for h in self.histories.values():
+                h.clear()
             self.zaps = []
             self.runaway_s = 0.0
         level, seed = a["level"], a["seed"]
@@ -288,7 +381,7 @@ class FlyAgent:
                            survival={"running": True, "results": []})
         if a.get("reason") == "parts":
             if self.parts_on:
-                c = self.brain.parts.counts
+                c = self.parts_counts()
                 self.events.add(self.t, "genome", f"parts list on: {c['modulatory_neurons']:,} modulatory neurons act through slow "
                                 f"tones on {c['modulated_targets']:,} targets, {c['graded_neurons']:,} cells transmit graded signals")
                 self.say("Each neuron now has its parts. Testing the reflexes…", 4.0)
@@ -316,7 +409,7 @@ class FlyAgent:
         path = getattr(self.real_conn, "path", None)
         if path is None or not os.path.exists(path):
             return None
-        kw = {k: v for k, v in self.brain.settings().items() if k in self._BRAIN_KWARGS}
+        kw = {k: v for k, v in self.io.settings().items() if k in self._BRAIN_KWARGS}
         kw.update(self._brain_kwargs)
         kw["parts"] = self.parts_arg(self.parts_on)
         wiring_ = None
@@ -328,7 +421,7 @@ class FlyAgent:
     def _survival_key(self, conn) -> tuple:
         """Everything a survival report depends on. Each seed resets the brain and starts its own random
         generator, so the same wiring, profile, brain settings and parts list always give the same rows."""
-        kw = {k: v for k, v in self.brain.settings().items() if k in self._BRAIN_KWARGS}
+        kw = {k: v for k, v in self.io.settings().items() if k in self._BRAIN_KWARGS}
         kw.update(self._brain_kwargs or {})
         return (conn.dataset, int(conn.n_edges), self.profile_name, repr(sorted(kw.items())),
                 repr(self.parts_arg(self.parts_on)))
@@ -395,11 +488,12 @@ class FlyAgent:
             if self._survival_token is token:
                 self.genome["survival"] = {"running": False, "results": [], "error": str(e)}
 
-    def genome_status(self) -> dict:
+    def genome_status(self, parts_status: dict | None = None, known: bool = False) -> dict:
+        """``known``: ``parts_status`` is this tick's (publish passes the BrainTick's), so the brain is not asked again."""
         g = dict(self.genome)
         if g["growing"]:
             g["growing"] = {**g["growing"], "secs": round(time.time() - g["growing"]["t0"], 1)}
-        g["parts"] = {"on": self.parts_on, "status": self.brain.parts_status()}
+        g["parts"] = {"on": self.parts_on, "status": parts_status if known else self.io.parts_status()}
         return g
 
     # ------------------------------------------------------------------ senses (hand-built encoders)
@@ -524,19 +618,7 @@ class FlyAgent:
             return 0.0, ""
         odour = ODOURS[self.smelling]
         innate = {"attractive": 0.35, "aversive": -0.35}.get(odour.innate, 0.0)
-        learned = 0.0
-        pl = self.brain.plasticity
-        if pl is not None:
-            trace = pl.kc_trace
-            act = trace[pl.pe_kc]                       # eligibility of each plastic synapse's KC
-            if act.sum() > 0:
-                nt = pl.mbon_nt[pl.pe_mbon]                  # the MBONs' transmitters (plasticity.mbon_transmitters)
-                depression = 1.0 - pl.scale
-                app = np.isin(nt, APPROACH_NTS)
-                av = np.isin(nt, AVOID_NTS)
-                wa = float((act * depression)[app].sum() / max(act[app].sum(), 1e-6))
-                wv = float((act * depression)[av].sum() / max(act[av].sum(), 1e-6))
-                learned = 1.2 * (wv - wa)               # avoid-MBON synapses weakened -> approach more
+        learned = self.io.learned(self.bt)          # 1.2 * (wv - wa) off the KC->MBON synapses (brainio._learned)
         self.learned_bias = learned
         valence = max(-1.0, min(1.0, innate + learned))
         if abs(valence) < 0.05:
@@ -554,28 +636,24 @@ class FlyAgent:
         return yaw, why
 
     # ------------------------------------------------------------------ one tick, in steps (Game.tick calls them in this order)
-    def advance(self, dt: float, rates: dict, col_idx, col_hz) -> BrainTick:
-        """Drive the brain with this tick's rates and step it for TICK_MS; the readouts it leaves."""
-        b = self.brain
-        with b.lock:
-            if col_idx.size:
-                b.set_stimulus_arrays(col_idx, col_hz, extra=rates)
-            else:
-                b.set_stimuli(rates)
-            b.reset_counts()
-            chunks = []
-            for _ in range(int(round(TICK_MS / b.dt))):
-                s = b.step()
-                if s.size:
-                    chunks.append(s)
-            spikes = np.concatenate(chunks) if chunks else np.zeros(0, dtype=np.int64)
-            counts = b.spike_count
-            live = np.where(b.silenced_mask(), 0, counts) if b.silenced else counts   # what reaches the body
-        hz = {k: (float(counts[i].sum()) / max(1, i.size) / dt if i.size else 0.0) for k, i in self.readouts.items()}
-        motor_hz = {k: (float(live[i].sum()) / max(1, i.size) / dt if i.size else 0.0) for k, i in self.readouts.items()}
-        gf = int(live[self.readouts["GF"]].sum())
+    def advance_input(self, dt: float, rates: dict, col_idx, col_hz, seq: int) -> tuple:
+        """What the brain's seam is sent for this tick (Game.tick hands it to advance_all with the other flies')."""
         self.rates_now = rates                       # the watchdog's "since input" reads whether anything drove the brain
-        return BrainTick(hz, motor_hz, gf, spikes, int(spikes.size))
+        return (dt, rates, col_idx, col_hz, seq, self.readouts, bool(self.smelling))   # smelling: odour steering will want the learned bias
+
+    def advance_done(self, bt: BrainTick) -> BrainTick:
+        """Keep this tick's answer (the later steps read it) and, for a process brain, the readout histories."""
+        self.bt = bt
+        if self.io.parent_histories:
+            for k, h in self.histories.items():
+                h.append(round(bt.hz.get(k, 0.0), 2))
+                if len(h) > 100000:
+                    del h[:50000]
+        return bt
+
+    def advance(self, dt: float, rates: dict, col_idx, col_hz, seq: int = 0) -> BrainTick:
+        """Drive the brain with this tick's rates and step it for TICK_MS; the readouts it leaves."""
+        return self.advance_done(self.io.advance(*self.advance_input(dt, rates, col_idx, col_hz, seq)))
 
     def act(self, dt: float, bt: BrainTick):
         """Decode the descending neurons, choose a mode, add the hand-built walking urge and steering, move the body,
@@ -694,8 +772,8 @@ class FlyAgent:
             if "court" not in self.done:
                 self.events.add(self.t, "behaviour", "courtship song: pC1 → pIP10, one wing out")
             self.done.add("court")
-        if self.brain.plasticity is not None and self.brain.plasticity.events and "learn" not in self.done \
-                and self.brain.plasticity.depressed_fraction() > 0.002:
+        if self.io.has_plasticity and self.bt.learn[0] and "learn" not in self.done \
+                and self.bt.learn[1] > 0.002:
             self.done.add("learn")
             self.events.add(self.t, "learning", "KC→MBON synapses depressed: the fly has learned something about this odour")
         courting = 1.0 if mode == "court" else 0.0
@@ -704,7 +782,7 @@ class FlyAgent:
 
     def after_senses(self, dt: float, bt: BrainTick):
         """Sense events, the feeding-bout and water Why lines, the driver text and the smoothed numbers shown on screen."""
-        mode, why, spikes, hz = self.mode, self._why, bt.spikes, bt.hz
+        mode, why, n_spikes, hz = self.mode, self._why, bt.n_spikes, bt.hz
         # events for salient sense changes
         self._sense_events()
         # sugar at the mouth for a while, yet MN9 itself quiet, with no bitter and nothing silenced: the bout has ended
@@ -722,7 +800,7 @@ class FlyAgent:
                        "it does not drink")
         self.driver = "  +  ".join(why)
         if not self.driver:
-            self.driver = ("nothing: the brain is quiet" if not spikes.size else
+            self.driver = ("nothing: the brain is quiet" if not n_spikes else
                            "the brain is busy, but no movement command is strong enough")
         for k, v in hz.items():                      # smooth the numbers shown on screen
             self.hz_shown[k] = self.hz_shown.get(k, 0.0) + (v - self.hz_shown.get(k, 0.0)) * min(1.0, dt / 0.15)
@@ -730,17 +808,16 @@ class FlyAgent:
     def watchdog(self, dt: float, bt: BrainTick):
         """Graded count, events per second, and the reset after a runaway (its event carries the game's clock, which
         Game.tick has already advanced, as it always did)."""
-        b, spikes, rates = self.brain, bt.spikes, self.rates_now
+        rates = self.rates_now
         # watchdog: this simple model can lock into runaway firing. It counts events: spikes plus the graded cells'
         # release quanta (parts list), each one a spike's worth of transmitter; the graded share is shown apart
-        n_graded = int(b._gmask[spikes].sum()) if spikes.size and b._graded_idx.size else 0
+        n_graded = bt.n_graded
         self.graded_eps = n_graded / dt
-        sps = spikes.size / dt
+        sps = bt.n_spikes / dt
         self.since_input = 0.0 if rates else self.since_input + dt
         self.runaway_s = self.runaway_s + dt if sps > 150000 else 0.0
         if (self.runaway_s > 1.5 and self.since_input > 0.5) or self.runaway_s > 4.0:
-            with b.lock:
-                b.reset()
+            self.reset_brain()
             self.calms += 1
             self.runaway_s = 0.0
             self.say("Runaway firing (a known flaw of this simple model: the smell centre, or with the parts list the optic lobe). Brain calmed.", 4.0)
@@ -761,15 +838,17 @@ class FlyAgent:
         self._prev_felt = dict(f)
 
     # ------------------------------------------------------------------ what the page shows
-    def learning_summary(self) -> dict | None:
-        pl = self.brain.plasticity
-        if pl is None:
+    def learning_summary(self, bt: BrainTick | None = None) -> dict | None:
+        """The learning card's numbers; ``bt`` (this tick's) saves asking the brain again (publish passes it)."""
+        if not self.io.has_plasticity:
             return None
-        summ = pl.summary(self.conn)
-        return {"enabled": self.learning_on, "depressed_fraction": round(pl.depressed_fraction(), 4),
-                "events": pl.events, "learned_bias": round(self.learned_bias, 3), "smelling": self.smelling,
+        info = bt.learning if bt is not None else self.io.learning_summary()
+        if info is None:
+            return None
+        return {"enabled": self.learning_on, "depressed_fraction": round(info["depressed_fraction"], 4),
+                "events": info["events"], "learned_bias": round(self.learned_bias, 3), "smelling": self.smelling,
                 "mbon": {t: {"strength": round(v["strength"], 3), "now": round(v["now"], 3), "valence": v["valence"],
-                             "dopamine": round(v["dopamine"], 3)} for t, v in summ.items()}}
+                             "dopamine": round(v["dopamine"], 3)} for t, v in info["mbon"].items()}}
 
     # ------------------------------------------------------------------ static data for the browser
     def _make_layout(self):
@@ -821,7 +900,7 @@ class FlyAgent:
                        "rules": {"type_groups": None}},
             "parts": {"tables": self.parts_list().describe(), "counts": self.parts_counts()},
             "vfb": vfb.ontology_for(c).summary(c),
-            "settings": self.brain.settings(),
+            "settings": self.io.settings(),
             "decoder": self.decoder.dn_targets,
             "columnar_vision": self.columnar_on,
             "body": self.body_kind, "stride_average": bool(getattr(self.body, "stride_average", False)),

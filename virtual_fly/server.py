@@ -119,13 +119,13 @@ def make_handler(game):
                         if not 0 <= i < conn.n:
                             return self._error("index out of range", 404)
                     info = conn.info(i)
-                    info["rate_hz"] = float(game.brain.spike_count[i]) / max(game.brain.window_ms, 1) * 1000.0
+                    info["rate_hz"], parts_role = game.fly(0).io.neuron(i)
                     info["inputs"] = conn.inputs_of(f"index:{i}", top=8)
                     info["outputs"] = conn.outputs_of(f"index:{i}", top=8)
                     info["genes"] = genetics.genes_of(conn, i)
                     info["vfb"] = vfb.describe_type(conn.types[i], conn)
                     info["receptors"] = vfb.receptors_of_type(conn.types[i], conn)
-                    info["parts"] = game.brain.parts.role(i) if game.brain.parts is not None else None
+                    info["parts"] = parts_role
                     return self._json({"ok": True, "neuron": info})
                 if path == "/api/ontology":
                     ont = vfb.ontology_for(conn)
@@ -170,26 +170,21 @@ def make_handler(game):
                 if path == "/api/history":
                     keys = [k for k in get("keys", "").split(",") if k]
                     n = int(get("n", 400))
-                    out = {}
-                    for k in keys or list(game.brain.monitors):
-                        m = game.brain.monitors.get(k)
-                        if m is not None:
-                            out[k] = m.history[-n:]
-                    return self._json({"ok": True, "bin_ms": game.brain.monitors and next(iter(game.brain.monitors.values())).bin_ms,
-                                       "history": out})
+                    bin_ms, out = game.fly(0).history(keys, n)
+                    return self._json({"ok": True, "bin_ms": bin_ms, "history": out})
                 if path == "/api/learning":
-                    pl = game.brain.plasticity
-                    if pl is None:
+                    info = game.fly(0).io.learning_summary() if game.fly(0).io.has_plasticity else None
+                    if info is None:
                         return self._json({"ok": True, "learning": None})
-                    return self._json({"ok": True, "learning": pl.summary(conn), "settings": pl.settings(),
-                                       "depressed_fraction": pl.depressed_fraction()})
+                    return self._json({"ok": True, "learning": info["mbon"], "settings": info["settings"],
+                                       "depressed_fraction": info["depressed_fraction"]})
                 if path == "/api/genome":
                     return self._json({"ok": True, "levels": [{"level": lv, "label": lb} for lv, lb in wiring.LEVELS], **game.genome_status()})
                 if path == "/api/genes":
                     return self._json({"ok": True, **game.genetics})
                 if path == "/api/parts":
                     return self._json({"ok": True, "on": game.parts_on, "tables": game.parts_list().describe(),
-                                       "counts": game.parts_counts(), "status": game.brain.parts_status()})
+                                       "counts": game.parts_counts(), "status": game.fly(0).io.parts_status()})
                 if path == "/api/lines":
                     spec = get("spec", "").strip()
                     if not spec:
@@ -215,14 +210,11 @@ def make_handler(game):
                     return self._json({"ok": True, "targets": game.decoder.dn_targets})
                 if path == "/api/recording":
                     rec = game.recording or []
-                    body = json.dumps({"frames": rec, "settings": game.brain.settings()}).encode()
+                    body = json.dumps({"frames": rec, "settings": game.fly(0).io.settings()}).encode()
                     return self._send(200, body, "application/json",
                                       {"Content-Disposition": "attachment; filename=fly-session.json"})
                 if path == "/api/spikes":
-                    b = game.brain
-                    with b.lock:                     # the game thread appends to the live recording
-                        rec = list(b.recording) if b.recording is not None else list(getattr(b, "recording_kept", []))
-                    t_ms, idx = b.recording_arrays(rec)
+                    t_ms, idx = game.fly(0).io.record("arrays")     # (read under the brain's lock: the game thread appends to it)
                     buf = io.BytesIO()
                     np.savez_compressed(buf, time_ms=t_ms, neuron=idx, body_id=conn.body_id[idx] if idx.size else idx)
                     return self._send(200, buf.getvalue(), "application/octet-stream",
@@ -327,8 +319,14 @@ def serve(game, port: int = 8765, open_browser: bool = True, host: str = "127.0.
         print("Bye!")
     finally:
         # let the game loop finish its tick and stop before Python shuts down: a thread still inside MuJoCo (the physics
-        # body) while the interpreter tears down crashes the process
+        # body) while the interpreter tears down crashes the process; then let the brain processes go (Game.close), only
+        # once no tick can still be using them
         game.stop_loop.set()
         loop.join(timeout=10)
+        if loop.is_alive():
+            print("The game's last tick is taking more than 10 s; closing the brains anyway.")
+        close = getattr(game, "close", None)
+        if close is not None:
+            close()
         server.server_close()
     return server

@@ -392,14 +392,19 @@ def test_ctrl_c_stops_the_game_loop_before_serve_returns(conn, monkeypatch, caps
     """After Ctrl+C the loop thread finishes its tick and ends before serve() returns: a daemon thread still inside
     MuJoCo while Python shuts down crashed the process (the physics body)."""
     game = Game(build_brain(conn, "game", seed=0), autopilot=False, seed=2)
-    ticked, threads = threading.Event(), []
-    tick = game.tick
+    ticked, threads, closed = threading.Event(), [], []
+    tick, close = game.tick, game.close
 
     def counted_tick():
         threads.append(threading.current_thread())
         tick()
         ticked.set()
+
+    def counted_close():                                    # the brains are let go only once the loop thread is gone
+        closed.append(threads[-1].is_alive() if threads else None)
+        close()
     monkeypatch.setattr(game, "tick", counted_tick)
+    monkeypatch.setattr(game, "close", counted_close)
 
     class Server(ThreadingHTTPServer):
         def serve_forever(self, poll_interval=0.5):
@@ -409,6 +414,7 @@ def test_ctrl_c_stops_the_game_loop_before_serve_returns(conn, monkeypatch, caps
     server = S.serve(game, port=0, open_browser=False)
     assert "Bye!" in capsys.readouterr().out
     assert game.stop_loop.is_set() and threads and not threads[-1].is_alive()
+    assert closed == [False]                                # Game.close() ran once, after the loop thread had ended
     assert server.socket.fileno() == -1                     # and the port is let go
 
 

@@ -84,6 +84,9 @@ def _main(argv=None):
     ap.add_argument("--stride-average", action="store_true",
                     help="physics body: the senses see the body's pose averaged over one stride (hand-built, a stand-in for "
                          "gaze stabilisation) instead of the stride-by-stride wobble")
+    ap.add_argument("--brain-procs", choices=("auto", "on", "off"), default="auto",
+                    help="where the brain runs: auto (in this process for one fly; one process per brain with a partner), "
+                         "on (its own process even for one fly), off (always in this process)")
     args = ap.parse_args(argv)
     if args.body == "physics":
         from .physics import available, unavailable_reason
@@ -132,7 +135,9 @@ def _main(argv=None):
               + ("; the senses see the pose averaged over a stride)." if args.stride_average else ")."), file=sys.stderr)
     game = Game(brain, autopilot=not args.no_autopilot, seed=args.seed, columnar=not args.no_columnar,
                 profile_name=profile, brain_factory=lambda c, **kw: build_brain(c, profile, **{**overrides, **kw}),
-                parts_list=parts_list, brain_kwargs={k: v for k, v in overrides.items() if k != "parts"}, body=args.body, stride_average=args.stride_average)
+                parts_list=parts_list, brain_kwargs={k: v for k, v in overrides.items() if k != "parts"}, body=args.body,
+                stride_average=args.stride_average, brain_procs=args.brain_procs)
+    del brain                                    # the game owns it now (or, in its own process, has let it go)
     if args.no_learning:
         game.learning_on = False
     if args.grow:
