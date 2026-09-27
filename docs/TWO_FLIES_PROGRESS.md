@@ -123,6 +123,25 @@ reproduce all four files exactly (`tools/compare_experiments.py`).
   cost over a lone brain (11-39 % in the second run, −23 % to +33 % in the first) as within the run-to-run spread.
 - Physics: 0.22x real time here (the plan's reference machine: 0.086-0.113), 112 ms per tick.
 
+### Phase 1: cell counts behind the social channels and the female's readouts (plan 5.5, 5.6; checked 2026-09-27)
+`Connectome.count(spec)` on the kit's files (male / female): `prefix:JO-A,prefix:JO-B` 138 / 359; `LC10a` 275 / 234; `LC11` 143 / 127;
+`LC4` 126 / 104; `LPLC2` 185 / 210; `LgLG1a,LgLG1b` 270 / **0**; `ORN_DA1` 204 / 126; `prefix:pC1_` 148 / 10; `pIP10` 2 / **0**;
+`DNp13` 2 / 2; `DNp37` **0** / 2; `vpoEN` 4 / 4; `AN_SMP_2` (SAG) 0 / 2; `prefix:BM_InOm` 745 / 1,113; `DNp01` 2 / 2; `MDN` 4 / 4.
+Female only: the pC2l spec `AVLP567,AVLP568,AVLP569,AVLP570,CL313,SIP200f,SIP201f,!body:720575940610359758` 38 (39 without the
+exclusion), `DNp55` 2, `oviDNa_a,oviDNa_b,oviDNb` 6, `DA1_lPN` 15, `aSP-g1,aSP-g2,aSP-g3A,aSP-g3B` 23, `M_lvPNm43,M_lvPNm45` 10.
+Wiring spot checks (`--female --inputs`): pC1a → DNp37 382 synapses (26 % of its input), vpoEN → DNp37 169, CL313 → DNp13 678 and
+AVLP569 142 (the pC2l types), vpoEN → DNp13 275, AN_SMP_2 → pC1 872. All as the plan's channel table says.
+
+### Phase 1 steps 1-2 (2026-09-27)
+- Step 1 (`89d6f78`, FlyAgent): 449 passed; real-data golden compare 18 unchanged.
+- Step 2 (`ae3d656`, the BrainIO seam): 461 passed (12 new in `tests/test_brainio.py`); real-data golden compare 18 unchanged;
+  the three golden configurations autopilot, zap_mdn and silence_and_watch give the same hashes through a process brain
+  (`Game(brain_procs="on")`). `Ctrl+C` on `fly_game.py --brain-procs on`: "Bye!", exit code 0, nothing left (the brain child and
+  multiprocessing's resource tracker both gone).
+- **Pipe cost per tick** (real male, drawn body with the scripted female, 400 ticks, two runs each): inline p50 7.01-7.06 ms,
+  p99 8.75-9.35, mean 7.10-7.19; process brain p50 7.56-7.81, p99 9.98-10.11, mean 7.66-7.87. The pipe costs about **0.6 ms per
+  tick** (p50 +0.65, p99 +0.99, mean +0.62): under the plan's 1 ms line, so pipes stay and no shared memory is used.
+
 ### Golden hashes (plan 4.9)
 - Synthetic (`tests/golden_single_fly.json`): nine configurations, made with Python 3.12.3, NumPy 2.5.3, numba 0.67.0; a second
   run reproduces every hash (the test passes in normal mode; a determinism test runs one configuration twice).
