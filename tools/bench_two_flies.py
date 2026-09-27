@@ -10,6 +10,9 @@ Real-time factor (RTF) = simulated time / wall time; 1.0 = real time.
   pair     the male and the female brain at the same time, one process each, busy input
   game     game ticks with the drawn body and a scripted female (male, then female protagonist)
   physics  male game ticks with the physics body (needs flygym)
+  pair-game  the two-fly game (male protagonist, FlyWire female partner, both brains in their own processes,
+           the social channels on), parts list off and on, dt 0.5 and 1.0: ticks, and the peak memory of the
+           parent and of each brain child (Phase 1, docs/TWO_FLIES_PLAN.md 5.9 item 4)
 
 Every row is measured in a fresh child process (``spawn``), so its peak memory is its own: a process's high-water mark
 never falls, and on Linux a child inherits the parent's ``ru_maxrss``, so rows measured one after another in one process
@@ -32,7 +35,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-KINDS = ("brain", "pair", "game", "physics")     # the rows --only can choose
+KINDS = ("brain", "pair", "game", "physics", "pair-game")     # the rows --only can choose
 
 # Busy input (the names resolve on both flies; the female reaches LB3b,LB3c through her aliases)
 BUSY = {"LB3b,LB3c": 120.0, "LC4/R,LPLC2/R": 150.0,
@@ -152,6 +155,57 @@ def game_rtf(body: str, ticks: int, female: bool = False, parts: bool = False) -
             "setup_s": round(setup_s, 1), "peak_rss_mb": peak_rss_mb()}
 
 
+def _vmhwm_mb(pid: int) -> float | None:
+    """Another process's peak resident memory in MB, from /proc (Linux); None elsewhere."""
+    try:
+        with open(f"/proc/{pid}/status") as f:
+            for line in f:
+                if line.startswith("VmHWM:"):
+                    return round(int(line.split()[1]) / 1024.0, 1)
+    except (OSError, ValueError, IndexError):
+        pass
+    return None
+
+
+def pair_game_rtf(parts: bool, dt: float, ticks: int) -> dict:
+    """The two-fly game: the male with a simulated FlyWire female, each brain in its own process, lockstepped."""
+    from virtual_fly import load_connectome
+    from virtual_fly.game import TICK_MS, Game
+    from virtual_fly.parts import PartsList
+    from virtual_fly.settings import build_brain
+    conn, fconn = load_connectome(quiet=True), load_connectome(female=True, quiet=True)
+    parts_list = PartsList() if parts else None
+    kw = {"seed": 0, "dt": dt}
+    brain = build_brain(conn, "game", **kw, **({"parts": parts_list} if parts else {}))
+    t0 = time.perf_counter()
+    game = Game(brain, seed=0, brain_kwargs=dict(kw), parts_list=parts_list, brain_procs="auto",
+                partner={"conn": fconn, "brain_kwargs": dict(kw), "parts": parts_list if parts else False})
+    del brain
+    setup_s = time.perf_counter() - t0
+    try:
+        for _ in range(20):
+            game.tick()
+        per_tick = []
+        for _ in range(ticks):
+            t1 = time.perf_counter()
+            game.tick()
+            per_tick.append(time.perf_counter() - t1)
+        wall = sum(per_tick)
+        q = statistics.quantiles(per_tick, n=100)
+        children = {}
+        for a in game.flies:
+            proc = getattr(a.io, "proc", None)
+            if proc is not None:
+                children[f"fly{a.id}_{a.sex}"] = _vmhwm_mb(proc.pid)
+        return {"fly": "male+female", "body": "drawn", "parts": parts, "dt": dt, "ticks": ticks, "flies": len(game.flies),
+                "channels": sorted(game.social.names()) if hasattr(game.social, "names") else None,
+                "rtf": round(ticks * TICK_MS / 1000.0 / wall, 3),
+                "tick_ms_p50": round(q[49] * 1000, 2), "tick_ms_p99": round(q[98] * 1000, 2),
+                "setup_s": round(setup_s, 1), "peak_rss_mb": peak_rss_mb(), "children_peak_rss_mb": children}
+    finally:
+        game.close()
+
+
 def machine() -> dict:
     import numpy
     info = {"python": sys.version.split()[0], "platform": platform.platform(), "cpus": os.cpu_count(),
@@ -218,6 +272,10 @@ def main():
             add("game", in_children([(game_rtf, {"body": "physics", "ticks": 80})])[0])
         else:
             print("physics: flygym is not installed, skipped")
+    if "pair-game" in want:
+        for parts in (False, True):
+            for dt in (0.5, 1.0):
+                add("pair-game", in_children([(pair_game_rtf, {"parts": parts, "dt": dt, "ticks": 400})])[0])
     if args.json:
         Path(args.json).write_text(json.dumps(out, indent=1))
 
