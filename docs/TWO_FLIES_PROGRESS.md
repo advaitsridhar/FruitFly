@@ -212,7 +212,13 @@ identical, all tests green), then step 2 (5.3, the `BrainIO` seam).
   post-reset numbers as v2.8.1 did; a rebuild that fails in the child leaves the game usable; a request that times out stops the
   child instead of desynchronising the pipe; the scenario measure asks for the cheap number; one tautological test assertion
   removed. 471 tests; 18 real golden hashes unchanged.
-- Steps 3-5 (the N-fly tick, the partner, the social encoders, her readouts) in progress.
+- Steps 3-5 done (`cb7e853`, `0b7aa1b`, `31e5897`; 496 tests; 18 real golden hashes unchanged; the real two-fly game runs both brains
+  in their own processes and exits cleanly). SONG_MAX_HZ measured (`217b187`), the pair experiments (`468f757`), the pair-game
+  benchmark row (`6008897`), SCIENCE.md section 10 begun (`7fb119f`, `d616063`, `19dabfe`), version 2.9.0 (`f539523`).
+- An adversarial review of steps 3-5 (five lenses, two refuters per finding) confirmed ten small points (her decision-neuron
+  monitors lost on a local-brain rebuild; the male's "court" check keyed on the scripted female; the cues display flag off by
+  the list default; touch without collide a no-op; the abdominal gesture on a partner without song cells; a watch able to take
+  one of her built-in keys; three test gaps). Fixes, then steps 6-7 (per-fly API and state, the page), in progress.
 
 ### 2026-09-27
 - Read the plan; machine facts gathered (4.1, 4.3); no missing system packages (4.4).
