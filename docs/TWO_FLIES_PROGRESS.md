@@ -5,7 +5,7 @@ Plan: docs/TWO_FLIES_PLAN.md. Newest session notes first.
 ## Status
 | phase | branch | PR | state | last update |
 |---|---|---|---|---|
-| 0 | claude/two-flies-p0-baseline | #16 | draft PR open, CI pending | 2026-09-27 |
+| 0 | claude/two-flies-p0-baseline | #16 | draft PR open, CI green | 2026-09-27 |
 
 ## This machine
 - OS: WSL2 (Ubuntu 24.04.5 LTS) on Windows; the repository lives under the Linux home folder, not `/mnt/c`.
@@ -54,6 +54,10 @@ All on 2026-09-27, this machine, `nice -n 10`, one job at a time, machine otherw
 ### Tests (plan 4.7)
 - `python -m pytest -q` on the fresh clone: **438 passed, 0 skipped**, 24 s (the two flygym tests run: the physics extra is installed).
 - With `tests/test_golden_single_fly.py` added: **449 passed**, 35 s.
+- CI on PR #16 (ubuntu-latest, `[dev]` only, no flygym): Python 3.10 with NumPy 2.2.6 and numba 0.67.0: **446 passed,
+  3 skipped** (the two physics tests and the golden physics configuration); 3.11 and 3.12 green too. So the synthetic golden
+  hashes made here with NumPy 2.5.3 reproduce under NumPy 2.2.6 on Python 3.10: no version-dependent hash set is needed
+  (plan 4.9 item 3).
 
 ### Validated experiments, the baseline JSONs (plan 4.7; game profile, five seeds, numba)
 | run | file (work folder) | result |
