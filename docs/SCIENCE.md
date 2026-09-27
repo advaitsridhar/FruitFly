@@ -2344,11 +2344,22 @@ advance together, all bodies move, so sensing and collisions do not depend on th
 them and gets the mirror result). Fly 0 keeps the game's random stream; fly *k* gets `random.Random(f"{seed}:fly{k}")`
 and brain seed `seed + 1000k`. A single fly run through a process brain gives the same golden hashes as inline.
 
-Measured (2026-09-27, the machine of section 9.6): the pipe costs about 0.6 ms per tick (real male, drawn body,
-400 ticks; inline tick median 7.0-7.1 ms, through a process 7.6-7.8 ms). The two-fly game, both brains busy in
-their own processes, ticks in 8.6-8.8 ms (median; 99th percentile 10.7-11.6 ms): about 2.8× real time with the
-parts list off (the target of the plan was 0.7×). Memory: the game process about 1.0 GB, the male's brain child
-about 0.4 GB, the female's about 0.6 GB. A `Ctrl+C` closes both children; the game exits with code 0.
+Measured (2026-09-27, the machine of section 9.6, `tools/bench_two_flies.py --only pair-game`: the male with a
+FlyWire female partner, both brains in their own processes, the four default channels on, 400 ticks after 20 of
+warm-up, each row in its own process). The pipe alone costs about 0.6 ms per tick (real male, drawn body, 400
+ticks: inline tick median 7.0-7.1 ms, through a process 7.6-7.8 ms).
+
+| two-fly game | real-time factor | tick, median / 99th percentile | peak memory: game process, his brain child, hers |
+|---|---|---|---|
+| parts list off, `dt` 0.5 | 2.9 | 8.7 / 10.3 ms | 1,655 / 409 / 630 MB |
+| parts list off, `dt` 1.0 (`--fast`) | 4.3 | 5.8 / 7.6 ms | 1,656 / 408 / 630 MB |
+| parts list on, `dt` 0.5 | 1.9 | 13.3 / 16.0 ms | 1,721 / 470 / 714 MB |
+| parts list on, `dt` 1.0 | 2.6 | 9.5 / 12.3 ms | 1,721 / 470 / 713 MB |
+
+**What this shows.** Two busy brains in two processes hold about 2.9× real time with the parts list off and 1.9×
+with it on, against the plan's target of 0.7×; the game process is large (1.7 GB) because, as `fly_game.py` does,
+it builds the first fly's brain before handing it to a child and holds both connectomes for the API. A `Ctrl+C`
+closes both children; the game exits with code 0.
 
 ### 10.3 How loud can his song be? (`tools/song_startle.py`)
 

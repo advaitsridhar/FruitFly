@@ -175,6 +175,12 @@ Summary lines: female 13/14 readouts, 5/6 experiments (M1 on her reads 18.4 / 9.
 F1 fragile, F3 DNp13 0 Hz, F4 DA1_lPN 207 Hz as comparisons). `--pair-experiments` refuses the 12 modes that run no experiments (exit 2)
 and matches `--only` against the pair list. Written into docs/SCIENCE.md 10.4.
 
+### Phase 1: the two-fly game's speed and memory (plan 5.9 item 4; `../runs/p1-bench-pair-game.json`; commit `6008897`)
+`tools/bench_two_flies.py --only pair-game` (male + FlyWire female, brains in processes, channels seen/song/contact/collide,
+400 ticks after 20): parts off dt 0.5: RTF 2.87, tick p50 8.66 / p99 10.28 ms, parent 1,655 MB, children 409 + 630 MB; parts off
+dt 1.0: RTF 4.27, 5.77 / 7.58 ms; parts on dt 0.5: RTF 1.88, 13.34 / 16.0 ms, parent 1,721, children 470 + 714 MB; parts on dt 1.0:
+RTF 2.60, 9.49 / 12.28 ms. Target (plan 3.3): 0.7x. In docs/SCIENCE.md 10.2.
+
 ### Golden hashes (plan 4.9)
 - Synthetic (`tests/golden_single_fly.json`): nine configurations, made with Python 3.12.3, NumPy 2.5.3, numba 0.67.0; a second
   run reproduces every hash (the test passes in normal mode; a determinism test runs one configuration twice).
