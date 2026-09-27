@@ -29,7 +29,7 @@ from . import retest as retestlib
 from . import vfb
 from . import wiring
 from .experiments import survival as survival_report
-from .game import (CHECKS, COURTSHIP_HZ, COURTSHIP_SECS, COURTSHIP_SPEC, FEMALE_READOUTS, GF_BURST, HIDDEN_READOUTS,
+from .game import (BUILTIN_KEYS, CHECKS, COURTSHIP_HZ, COURTSHIP_SECS, COURTSHIP_SPEC, FEMALE_READOUTS, GF_BURST, HIDDEN_READOUTS,
                    PHEROMONE_GRNS, READOUTS, REWARD_HZ, REWARD_SPEC, SHOCK_HZ, SHOCK_SPEC, SOUND_HZ, SOUND_SPEC,
                    STILL_TICKS, TICK_MS, ZAP_PRESETS, InternalState, MotorDecoder)
 from .scenarios import SCENARIOS
@@ -165,6 +165,9 @@ class FlyAgent:
         self.readouts = {k: self.conn.select(spec) for k, spec in self._readout_specs}
         c = self.conn
         shown = READOUTS + (FEMALE_READOUTS if pair and sex == "female" else [])   # the bars the page shows
+        self._shown = shown                              # (a rebuilt brain gets monitors for the same bars)
+        # the keys a 'watch' may never take: the decoder's and the page's built-in readouts, hers included
+        self.builtin_keys = BUILTIN_KEYS | ({r[0] for r in FEMALE_READOUTS} if pair and sex == "female" else set())
         self.readout_meta = [{"key": r[0], "spec": r[1], "label": r[2], "group": r[3], "max": r[4], "colour": r[5],
                               "genes": genetics.genotype(c, c.select(r[1]))["tags"]}
                              for r in shown if self.readouts[r[0]].size]      # (the female fly has no pIP10, no TTMn)
@@ -195,6 +198,7 @@ class FlyAgent:
         self.courting = 0.0
         self.rates_now: dict = {}
         self.sps = 0.0
+        self._others = ()                                # the other flies' start-of-tick poses this tick (act keeps them)
 
     # ------------------------------------------------------------------ the brain, through its seam
     @property
@@ -412,7 +416,7 @@ class FlyAgent:
             old = self.brain
             with old.lock:
                 self.brain, self.conn = a["brain"], a["conn"]
-                for r in READOUTS:
+                for r in self._shown:                    # the same bars as at the start (hers included)
                     if self.readouts[r[0]].size:
                         self.brain.add_monitor(r[0], r[1], bin_ms=TICK_MS)
                 for k, spec in self.custom_readouts.items():
@@ -853,7 +857,9 @@ class FlyAgent:
             o = social.nearest(self.body.pose, others)
             bearing = wrap(math.atan2(o.y - self.body.pose.y, o.x - self.body.pose.x) - self.body.pose.h)
             self.song_side = 1.0 if bearing < 0 else -1.0
-            drive["abdomen"] = 1.0 if (m["court"] > 0.5 and social.distance(self.body.pose, o) < 6.0) else 0.0
+            # the abdominal bend is a male courtship gesture: a partner that may not court (no pIP10, D12) keeps it
+            drive["abdomen"] = 1.0 if (m["court"] > 0.5 and self.can_court and social.distance(self.body.pose, o) < 6.0) else 0.0
+        self._others = others
         capsules = social.capsules_of(others) if (others and self.game.social.collide) else ()   # channel 4
         if capsules:
             self.body.move(dt, mode, drive, wander_yaw, others=capsules)
@@ -915,6 +921,10 @@ class FlyAgent:
         if m["song"] > 0.3 and self.world.female is not None:
             if "court" not in self.done:
                 self.events.add(self.t, "behaviour", "courtship song: pC1 → pIP10, one wing out")
+            self.done.add("court")
+        elif m["song"] > 0.3 and any(o.sex == "female" for o in self._others):   # sung at a simulated female (D9: no scripted one)
+            if "court" not in self.done:
+                self.events.add(self.t, "behaviour", "courtship song: pC1 → pIP10, one wing out", fly=self.id)
             self.done.add("court")
         if self.io.has_plasticity and self.bt.learn[0] and "learn" not in self.done \
                 and self.bt.learn[1] > 0.002:
@@ -1034,7 +1044,7 @@ class FlyAgent:
             "edges": int(c.n_edges), "synapses": int(c.n_syn.sum()),
             "dataset": c.dataset, "sex": c.sex,
             "readouts": self.readout_meta,
-            "checks": [{"id": i, "text": t} for i, t in CHECKS                    # none this fly cannot do
+            "checks": [{"id": i, "text": self._check_text(i, t)} for i, t in CHECKS   # none this fly cannot do
                        if (i not in ("court", "genetics") or self.readouts["pIP10"].size)   # no song cells, no song to lose
                        and not (c.sex == "female" and i in ("groom", "sound", "wall"))],
             "odours": [{"id": o.id, "name": o.name, "glomeruli": o.glomeruli, "innate": o.innate, "colour": o.colour,
@@ -1054,6 +1064,16 @@ class FlyAgent:
             "body": self.body_kind, "stride_average": bool(getattr(self.body, "stride_average", False)),
             "whats_real": self.whats_real(),
         }, separators=(",", ":")).encode()
+
+    def _check_text(self, check_id: str, text: str) -> str:
+        """A checklist item's text; with a simulated female partner in the dish the two courtship items name her,
+        since no scripted female can be added then (D9). Single-fly texts are untouched."""
+        if len(self.game.flies) > 1 and any(f.sex == "female" for f in self.game.flies if f is not self):
+            if check_id == "court":
+                return text.replace("Add a female → it chases her", "The female partner: it chases her")
+            if check_id == "genetics":
+                return text.replace("then add a female:", "with the female partner in the dish:")
+        return text
 
     def _has(self, key: str) -> bool:
         """Whether this fly has the cells of a readout (the female fly has no pIP10 and no TTMn)."""
@@ -1100,7 +1120,12 @@ class FlyAgent:
             hb.append(f"Mating status: {cfg.mating}: " + (f"a steady {social.SAG_HZ:g} Hz drive on her SAG neurons (AN_SMP_2), provisional"
                                                           if cfg.mating == "virgin" else "her SAG neurons (AN_SMP_2) silenced") + ".")
         if cfg.touch:
-            hb.append("Touch: bumping into the other fly reaches the head bristles as a wall bump does.")
+            hb.append("Touch: bumping into the other fly reaches the head bristles as a wall bump does (it needs the collide "
+                      "channel, which is switched on with it).")
+        if cfg.cues and any(f.sex == "female" for f in self.game.flies):
+            hb.append("Her cues: the marks drawn at the tip of a female's abdomen are readout displays of her DNp37 (vaginal "
+                      "plate opening command) and DNp13 (ovipositor extrusion command) rates, thresholds provisional; "
+                      "hand-built, and never a verdict on the male (docs/TWO_FLIES_PLAN.md 3.2).")
         if any(f.sex == "female" for f in self.game.flies):
             hb.append("Her walking is the hand-built walking urge; her brain changes it only through the decoder's thresholds "
                       "(her walking descending neurons stay near 0 Hz in this data: docs/TWO_FLIES_PLAN.md D5).")

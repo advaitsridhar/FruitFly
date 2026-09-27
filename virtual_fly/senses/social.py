@@ -18,8 +18,8 @@ millimetres (world.py): every distance constant below says which scale it is in.
   cva       (off) the male's pheromone cVA reaches the female's ORN_DA1 within CVA_MM
   mating    (off) "virgin" drives her SAG neurons steadily, "mated" silences them
   touch     (off) bumping into the other fly reaches the head bristles, as a wall bump does
-  cues      whether her decision neurons' rates are drawn on her abdomen (the page; readout displays, never a
-            verdict: docs/TWO_FLIES_PLAN.md 3.2)
+  cues      (not a --social member) whether her decision neurons' rates are drawn on her abdomen (the page;
+            readout displays, never a verdict: docs/TWO_FLIES_PLAN.md 3.2); on by default, a SocialConfig field
 """
 
 from __future__ import annotations
@@ -51,7 +51,7 @@ CVA_MM, CVA_MAX_HZ = 5.0, 40.0
 SAG_SPEC, SAG_HZ = "AN_SMP_2", 30.0
 # The capsule each drawn fly is for collisions lives in body.py (FLY_CAPSULE_HALF, FLY_CAPSULE_R: drawn scale).
 
-CHANNELS = ("seen", "song", "contact", "collide", "cva", "mating", "touch", "cues")
+CHANNELS = ("seen", "song", "contact", "collide", "cva", "mating", "touch")      # what --social can list
 DEFAULT_CHANNELS = "seen,song,contact,collide"
 
 
@@ -67,8 +67,12 @@ class SocialConfig:
     cva: bool = False
     mating: str = "none"            # "none", "virgin" or "mated"
     touch: bool = False
-    cues: bool = True
+    cues: bool = True               # a display, not a coupling: never in the --social list
     contact_pc1: bool | None = None
+
+    def __post_init__(self):
+        if self.touch:                  # a bump is only ever noticed when the bodies collide (channel 4)
+            self.collide = True
 
     @classmethod
     def from_list(cls, text: str | None) -> "SocialConfig":

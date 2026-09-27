@@ -448,12 +448,12 @@ class Game:
         if kind == "watch":
             explicit = str(a.get("key") or "").strip()
             key = (explicit or a["spec"])[:24]
-            if key in BUILTIN_KEYS:                          # the decoder reads these; a rewire would steer the body
+            if key in self.flies[0].builtin_keys:            # the decoder and the page read these; a rewire would steer the body
                 if explicit:
                     return {"ok": False, "error": f"'{key}' is a built-in readout; pick another name for the watch."}
                 key = f"watch:{a['spec']}"[:24]
             a["key"] = key
-        if kind == "unwatch" and a.get("key") not in self.custom_readouts:
+        if kind == "unwatch" and (a.get("key") in self.flies[0].builtin_keys or a.get("key") not in self.custom_readouts):
             return {"ok": False, "error": f"'{a.get('key')}' is not a custom watch."}
         if kind == "scenario" and a.get("id") is not None and not isinstance(a["id"], str):
             return {"ok": False, "error": f"'id' must be a scenario id ({', '.join(SCENARIOS)}), not {a['id']!r}"}
@@ -556,7 +556,7 @@ class Game:
             self.events.add(self.t, "lab", f"modulate {a['spec']} x{factor:g}")
         elif kind == "watch":
             key = a["key"]                                   # validated in action()
-            if key in BUILTIN_KEYS:
+            if key in self.flies[0].builtin_keys:
                 raise ValueError(f"'{key}' is a built-in readout")
             if key in self.custom_readouts:
                 self.flies[0].remove_monitor(key)

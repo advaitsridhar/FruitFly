@@ -219,9 +219,8 @@ def test_each_fly_sees_the_other_and_not_itself(conn, fconn):
     assert len(flies_seen) == 1 and (flies_seen[0].x, flies_seen[0].y, flies_seen[0].r, flies_seen[0].h) == (f1.body.pose.x, f1.body.pose.y, 1.6, 2.2)
     assert [o for o in f1.retina.objects(f1.body.pose, [f0.pose_view()]) if o.kind == "fly"][0].x == f0.body.pose.x
     assert [o for o in f0.retina.objects(f0.body.pose) if o.kind == "fly"] == []          # nothing with no others
-    off = pair(conn, fconn, social=SocialConfig(seen=False))
-    off.tick()
-    assert "small" not in off.flies[0].senses_now or off.flies[0].senses_now.get("small") == ""
+    # the switch is proven by what reaches the brain (test_the_seen_channel_reaches_the_brain_only_when_on), not by a flag
+    # the retina sets only for a blob that moves across the eye
 
 
 def test_the_contact_channel_tastes_a_female_and_arouses_a_male_toucher(conn, fconn):
@@ -302,8 +301,10 @@ def test_every_channel_off_leaves_the_brains_input_free_of_social_terms(conn, fc
         assert not ({"touches_fly", "hears_song", "pheromone", "courting", "smells_cva", "virgin_drive"} & set(f.senses_now))
         assert not f.body.bumped_fly
     assert [o for o in f0.retina.objects(f0.body.pose, [f1.pose_view()]) if o.kind == "fly"]   # objects() itself lists them ...
-    g.tick()
-    assert "small" not in f0.senses_now                                                   # ... but the senses never ask for them
+    for k in range(12):                                                                    # ... but the senses never ask for them:
+        place(f1, 10.0, -6.0 + k, math.pi)                                                 # she crosses his view, 1 mm a tick
+        g.tick()
+        assert not any(k2.startswith(("LC10a/", "LC11/")) for k2 in f0.rates_now), f0.rates_now
 
 
 def test_the_bodies_do_not_overlap_yet_a_head_on_tap_still_lands(conn, fconn, monkeypatch):
@@ -436,3 +437,139 @@ def test_her_decision_neurons_travel_to_her_brain_process(conn, fconn):
         assert "DNp37" in f1.histories and len(f1.histories["DNp37"]) == 1
     finally:
         g.close()
+
+
+# ------------------------------------------------------------------ what the second review found (docs/TWO_FLIES_PROGRESS.md)
+import json  # noqa: E402
+
+from virtual_fly.game import CHECKS  # noqa: E402
+
+
+def _force_decode(fly, monkeypatch, **drives):
+    m = fly.decoder.m
+    monkeypatch.setattr(fly.decoder, "decode", lambda hz, dt, m=m: {**{k: 0.0 for k in m}, **drives})
+
+
+def test_the_seen_channel_reaches_the_brain_only_when_on(conn, fconn):
+    """The other fly is a small moving object to the retina: LC10a/LC11 rates when she crosses his view, none with the
+    channel off (the retina's own 'small' flag needs a blob that moves, so a still partner proves nothing)."""
+    seen = {}
+    for on in (True, False):
+        g = pair(conn, fconn, social=SocialConfig(seen=on, collide=False))
+        f0, f1 = g.flies
+        f0.autopilot = f1.autopilot = False
+        keys = set()
+        for k in range(12):
+            place(f0, 0.0, 0.0, 0.0)
+            place(f1, 10.0, -6.0 + k, math.pi)                                             # across his view, 1 mm a tick
+            g.tick()
+            keys |= {k2 for k2 in f0.rates_now if k2.startswith(("LC10a/", "LC11/"))}
+        seen[on] = keys
+    assert seen[True] >= {"LC10a/L", "LC11/L"} or seen[True] >= {"LC10a/R", "LC11/R"}, seen[True]
+    assert seen[False] == set()
+
+
+def test_her_decision_monitors_survive_a_brain_swap_on_the_local_seam(conn, fconn, monkeypatch):
+    """Finding 1/7: a rebuilt local brain got monitors for the kit's readouts only; hers must come back too."""
+    g = Game(build_brain(fconn, "game", seed=0), autopilot=False, seed=1, brain_procs="off", partner={"conn": conn})
+    f = g.flies[0]
+    monkeypatch.setattr(f, "_survival_worker", lambda conn, token: None)                 # no re-test child in this test
+    before = [k for k in FEMALE_KEYS if k in f.brain.monitors]
+    assert before == [k for k in FEMALE_KEYS if f.readouts[k].size] and before
+    f._swap_brain({"brain": build_brain(fconn, "game", seed=0), "conn": fconn, "level": "real", "seed": 0, "rules": None,
+                   "wiring": None, "parts": False, "reason": "parts"})
+    assert [k for k in FEMALE_KEYS if k in f.brain.monitors] == before
+    g.tick()
+    assert set(before) <= set(f.history()[1]) and "MDN" in f.history()[1]
+
+
+def test_a_male_singing_at_a_simulated_female_ticks_the_court_check(conn, fconn, monkeypatch):
+    """Finding 2/10: the song event and the 'court' item were keyed on the scripted female, absent with a partner."""
+    g = pair(conn, fconn)
+    f0, f1 = g.flies
+    f0.autopilot = f1.autopilot = False
+    _force_decode(f0, monkeypatch, song=0.9, court=0.9)
+    place(f0, 0.0, 0.0, 0.0)
+    place(f1, 5.0, 0.0, math.pi)
+    for _ in range(4):
+        g.tick()
+    assert f0.mode == "court" and "court" in f0.done and "court" not in f1.done
+    song = [e for e in g.events.items if e["text"].startswith("courtship song")]
+    assert len(song) == 1 and song[0]["fly"] == 0
+    # the checklist text names the partner now, and the single fly's text is what it always was
+    checks = {c["id"]: c["text"] for c in json.loads(f0._make_layout())["checks"]}
+    assert "female partner" in checks["court"] and "Add a female" not in checks["court"]
+    assert "female partner" in checks["genetics"] and "add a female" not in checks["genetics"]
+    single = {c["id"]: c["text"] for c in json.loads(Game(build_brain(conn, "game", seed=0), autopilot=False, seed=1)._make_layout())["checks"]}
+    assert single == dict(CHECKS)
+
+
+def test_her_cues_are_a_display_not_a_channel():
+    """Finding 3: 'cues' is on by default and is not a --social list member."""
+    assert SocialConfig.from_list(None).cues is True and SocialConfig.from_list("seen").cues is True
+    assert "cues" not in SocialConfig().names() and "cues" not in social.CHANNELS
+    with pytest.raises(ValueError, match="social channel"):
+        SocialConfig.from_list("cues")
+
+
+def test_touch_switches_collide_on_with_it(conn, fconn):
+    """Finding 4: a bump is only noticed when the bodies collide."""
+    assert SocialConfig.from_list("touch").collide is True and SocialConfig.from_list("touch").touch is True
+    assert SocialConfig(touch=True, collide=False).collide is True
+    assert SocialConfig(collide=False).collide is False
+    j = " ".join(pair(conn, fconn, social=SocialConfig(touch=True)).whats_real()["hand_built"])
+    assert "Touch:" in j and "collide" in j
+    j = " ".join(pair(conn, fconn).whats_real()["hand_built"])
+    assert "Her cues:" in j and "readout displays" in j
+
+
+def test_a_partner_that_may_not_court_keeps_its_abdomen_straight(conn, fconn, monkeypatch):
+    """Finding 5: the abdominal bend is the male's courtship gesture; a female partner's pC1 must not bend hers."""
+    g = pair(conn, fconn, social=SocialConfig(collide=False))
+    f0, f1 = g.flies
+    f0.autopilot = f1.autopilot = False
+    for f in (f0, f1):
+        _force_decode(f, monkeypatch, court=0.9)
+    place(f0, 0.0, 0.0, 0.0)
+    place(f1, 4.0, 0.0, math.pi)                                                           # within 6 mm, both facing
+    for _ in range(12):
+        g.tick()
+    assert f0.body.pose.abdomen > 0.5 and f1.body.pose.abdomen == 0.0
+
+
+@pytest.mark.parametrize("procs", ["off", "auto"])
+def test_a_watch_cannot_take_or_remove_her_built_in_readouts(conn, fconn, procs):
+    """Finding 6: her decision keys are built-in for her; a watch is renamed, an unwatch of them refused."""
+    g = Game(build_brain(fconn, "game", seed=0), autopilot=False, seed=1, brain_procs=procs, partner={"conn": conn})
+    try:
+        f = g.flies[0]
+        assert {"DNp37", "SAG", "vpoEN"} <= f.builtin_keys and not ({"DNp37", "SAG"} & g.flies[1].builtin_keys)
+        r = g.action({"type": "watch", "spec": "DNp37"})
+        assert r["ok"] is True and r["n"] == 2
+        assert g.action({"type": "watch", "spec": "MDN", "key": "SAG"})["ok"] is False
+        assert g.action({"type": "unwatch", "key": "DNp37"})["ok"] is False
+        g.tick()
+        assert "watch:DNp37" in f.custom_readouts and "DNp37" in f.readouts and "DNp37" in f.bt.hz and "DNp37" in g.state_dict["hz"]
+        assert g.action({"type": "unwatch", "key": "watch:DNp37"})["ok"] is True
+        g.tick()
+        assert "watch:DNp37" not in f.custom_readouts and "DNp37" in f.bt.hz and f.readouts["DNp37"].size == 2
+        # a single fly keeps the kit's set of built-in keys exactly
+        assert Game(build_brain(conn, "game", seed=0), autopilot=False, seed=1).flies[0].builtin_keys == __import__("virtual_fly.game", fromlist=["BUILTIN_KEYS"]).BUILTIN_KEYS
+    finally:
+        g.close()
+
+
+def test_each_fly_has_its_own_checklist_and_new_fly_keeps_both(conn, fconn):
+    """Plan 5.10: the synthetic female's layout lacks groom, sound, wall, court and genetics; New fly keeps each fly's done."""
+    g = pair(conn, fconn)
+    f0, f1 = g.flies
+    ids0 = [c["id"] for c in json.loads(f0._make_layout())["checks"]]
+    ids1 = [c["id"] for c in json.loads(f1._make_layout())["checks"]]
+    assert ids0 == [c[0] for c in CHECKS]
+    assert set(ids1) == set(ids0) - {"groom", "sound", "wall", "court", "genetics"} and len(ids1) == 12
+    assert json.loads(f1._make_layout())["sex"] == "female"
+    f0.done.add("smell")
+    f1.done.add("feed")
+    assert g.action({"type": "reset"})["ok"] is True
+    g.tick()
+    assert "smell" in f0.done and "feed" in f1.done and "feed" not in f0.done
