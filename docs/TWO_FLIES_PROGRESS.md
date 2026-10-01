@@ -286,6 +286,27 @@ rather than the propagation, the host time is per-step Python. The speed work (m
 hit target, a per-block plasticity step, the monitors and weights checked only when they can change) follows, with the equality
 script and the tests as the guard.
 
+### Phase 2: the speed work on the GPU brain (2026-10-01; the profile script's numbers, ms per 25 ms tick, male / female)
+Game profile, busy input, 40 monitors with 25 ms bins, plasticity on, parts off unless said. A race fixed first: the first engine
+made its device arrays on CuPy's default stream and filled them on its own non-blocking one, which are unordered, so next to
+another process's GPU load an initialising memset could land after an upload (2 of 50 runs beside a GPU hog gave different
+spikes: a brain with every threshold wiped to zero fired everywhere at step 0); every device operation now runs on the engine's one
+blocking stream (0 of 110 runs). Then, in order: the start 5.92 / 7.68 (device stream 4.26 / 5.77); the stream fix 5.77 / 7.95;
+the kernels merged (a scatter kernel for the host's noise counts and forced marks, one dense kernel that also appends the spikes
+to the log), the send a block per spiking neuron, the hit list gathered with warp-aggregated atomics, the pull a warp per hit
+target with the kicks still added one at a time in edge order: 4.62 / 4.93 (device 1.94 / 2.06); pinned host buffers and one
+download per chunk: 4.44 / 4.24; the host's bookkeeping per chunk (`MushroomBodyPlasticity.step_block`, exact and tested
+field by field; `spike_count`, the APL tally, the tone deposits and the refractory lists per chunk; monitors only when a bin
+can close; the weight subsets through a scatter kernel, the plastic ones only after a block that changed them): 3.74 (male);
+chunks of 20 steps where a block starts (three launches per tick, two graphs) and the gain uploaded at block starts: **4.22 /
+3.95**, with the parts list on 5.11 / 6.43. The device's share is now 1.9 ms per brain per tick (about 38 µs per step: the dense
+pass 12, the pull 10, the send 8, the hits 3, the rest 5). Per step without monitors (the equality script): male 0.083 ms on
+the GPU against numba's 0.143 (6.0x against 3.5x real time), female 0.092 against 0.124, male parts on 0.116 against 0.252,
+female parts on 0.149 against 0.260. Both brains back to back in one process: about 8.2 ms per tick with the parts list off
+(3.0x real time, the 6.9 target just met) and 11.5 ms with it on (2.2x). Left for later: launching both brains' chunks before
+waiting on either (the device time would hide behind the other brain's host replay; it needs a generator-shaped
+`advance_steps` and a change in the brain server); narrower per-neuron arrays in the dense pass.
+
 ### Golden hashes (plan 4.9)
 - Synthetic (`tests/golden_single_fly.json`): nine configurations, made with Python 3.12.3, NumPy 2.5.3, numba 0.67.0; a second
   run reproduces every hash (the test passes in normal mode; a determinism test runs one configuration twice).
