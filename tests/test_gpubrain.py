@@ -273,3 +273,29 @@ def test_host_copies_are_read_only_and_assignment_uploads(conn):
     b.run(20)
     assert b.total_spikes > before
     assert b.thr.min() > np.float32(7.5)                      # the uploaded thresholds are what the device runs with
+
+
+@pytest.mark.parametrize("bin_ms", [3.0, 10.0, 25.0])
+def test_monitors_recording_and_callbacks_match_the_cpu_across_chunks(conn, bin_ms):
+    """A monitor whose bin closes inside a chunk (3 ms), at a chunk end (10 ms) or at a tick end (25 ms), the spike
+    recording and the callbacks all see the per-step numbers the CPU gives, through chunked advance_steps."""
+    a = FlyBrain(conn, seed=4, backend="numpy", fatigue_mv=0.05)
+    b = FlyBrain(conn, seed=4, backend="cupy", fatigue_mv=0.05)
+    seen = {"a": [], "b": []}
+    for key, br in (("a", a), ("b", b)):
+        br.add_monitor("mn9", "MN9", bin_ms=bin_ms)
+        br.add_monitor("gng", "GNG232", bin_ms=bin_ms)
+        br.stimulate("LB3b,LB3c", 120)
+        br.start_recording()
+        br.on_spikes.append(lambda s, t, key=key: seen[key].append((t, s.copy())))
+    a.advance_steps(50); a.advance_steps(23); a.advance_steps(50)
+    b.advance_steps(50); b.advance_steps(23); b.advance_steps(50)
+    assert a.t == b.t == 123
+    for name in ("mn9", "gng"):
+        assert a.monitors[name].history == b.monitors[name].history and len(a.monitors[name].history) > 0
+        assert a.monitors[name]._count == b.monitors[name]._count and a.monitors[name]._t_start == b.monitors[name]._t_start
+    ra, rb = a.stop_recording(), b.stop_recording()
+    assert len(ra) == len(rb) > 0 and all(x == y and np.array_equal(sa, sb) for (x, sa), (y, sb) in zip(ra, rb))
+    assert len(seen["a"]) == len(seen["b"]) > 0 and all(x == y and np.array_equal(sa, sb) for (x, sa), (y, sb) in zip(seen["a"], seen["b"]))
+    assert np.array_equal(a.spike_count, b.spike_count) and a.total_spikes == b.total_spikes
+    _assert_bits_equal(a, b)

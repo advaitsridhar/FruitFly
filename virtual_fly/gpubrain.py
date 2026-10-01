@@ -16,8 +16,9 @@ every step and the same bits in every state array. How that is kept true (docs/T
 * **Synaptic kicks are pulled, in order.** The CPU scatters each spike's kicks into the delayed-input slot, spike by
   spike and edge by edge, so every target accumulates its kicks in ascending presynaptic order from the slot's value.
   The device marks the spiking neurons' edges in a bitmap over the edges grouped by target (the connectome's stable
-  in-edge order), then one thread per hit target walks its bits upward and adds the kicks in that same order from the
-  slot's value: deterministic, and identical to the CPU, because the data has one connection per (pre, post) pair.
+  in-edge order), then one warp per hit target walks its bits upward (the words and the marked kicks loaded in
+  parallel) and adds the kicks one by one in that same order from the slot's value, every lane repeating the same
+  chain: deterministic, and identical to the CPU, because the data has one connection per (pre, post) pair.
 * **The depression factor keeps the CPU's mixed precision**: ``1 - x`` in float32, promoted, times a float64
   ``exp`` from a host-built table (the CPU's own ``math.exp`` values), then rounded to float32 for the kick.
 * **The host replays its own work from the spike log.** Tone deposits, the APL tally, plasticity, monitors, the
@@ -25,6 +26,13 @@ every step and the same bits in every state array. How that is kept true (docs/T
   spike list, by the same code the CPU runs, so every host-side number is the CPU's. The device keeps ``v``, ``g``,
   ``thr``, the delay ring, the resets, the depression state and the graded cells' release; the host reads them on
   demand (properties that download).
+
+* **Six kernels per step, chunks of steps as one graph.** A step is the scatter of the host's draws, the dense pass
+  (arrivals, noise, leak, threshold, forced spikes, graded release, the log), the send and mark, the hit list, the
+  pull and the step's end; ten steps (five at ``dt`` 1.0), or twenty where a 20-step block starts and the 25 ms tick
+  allows, are captured once into a CUDA graph and replayed with one upload (pinned memory) and one download per
+  chunk, so a tick is three launches. Every device array is made and used on the engine's own stream, so nothing
+  from another stream can overtake an upload.
 
 ``available()`` says whether CuPy and a GPU are there; ``unavailable_reason()`` says in one line what is missing.
 Nothing here is imported unless the backend is asked for, so a machine without CUDA never pays for it.
@@ -80,72 +88,61 @@ extern "C" {
 __device__ __forceinline__ int grid_stride() { return gridDim.x * blockDim.x; }
 __device__ __forceinline__ int grid_tid() { return blockIdx.x * blockDim.x + threadIdx.x; }
 
-// the delayed input that arrives this step (one slot of the ring), scaled per modulated target by the tone gain in
-// force at the START of the step, added to g; the slot is emptied. Nothing happens when nothing is pending (as on the
-// CPU, so a -0.0 in g stays what it is).
-__global__ void k_arrive(const int n, const int n_slots, const int* ctrl, float* queue, const unsigned char* pending,
-                         const int* tpos, const float* gain, float* g)
+// this step's host-drawn noise (how many kicks each hit neuron gets) and forced spikes, scattered into two per-neuron
+// arrays the dense pass reads and clears (a sparse kernel: a few hundred entries)
+__global__ void k_scatter(const int C, const int* inbuf, int* noise_cnt, unsigned char* forced_mask)
 {
-    int t = ctrl[0];
-    int slot = t % n_slots;
-    if (!pending[slot]) return;
-    float* arr = queue + (size_t)slot * n;
-    for (int i = grid_tid(); i < n; i += grid_stride()) {
-        float a = arr[i];
-        int tp = tpos[i];
-        if (tp >= 0) a = __fmul_rn(a, gain[tp]);
-        g[i] = __fadd_rn(g[i], a);
-        arr[i] = 0.0f;
-    }
+    int k = inbuf[1];
+    const int* noise_off = inbuf + 8;
+    const int* forced_off = inbuf + 8 + C + 1;
+    int a = noise_off[k], b = noise_off[k + 1];
+    const int* idx = inbuf + inbuf[4];
+    const int* cnt = inbuf + inbuf[5];
+    for (int j = a + grid_tid(); j < b; j += grid_stride()) noise_cnt[idx[j]] = cnt[j];
+    int fa = forced_off[k], fb = forced_off[k + 1];
+    const int* forced = inbuf + inbuf[6];
+    for (int j = fa + grid_tid(); j < fb; j += grid_stride()) forced_mask[forced[j]] = 1;
 }
 
-// the tone gain the host staged becomes the live one (right after the first arrival of a chunk: the gain a block
-// computes applies from the next step on, as on the CPU)
+// the tone gain the host staged becomes the live one (after the first step of a chunk has read the old one: the gain a
+// block computes applies from the next step on, as on the CPU)
 __global__ void k_copy_gain(const int m, const float* staged, float* live)
 {
     for (int i = grid_tid(); i < m; i += grid_stride()) live[i] = staged[i];
 }
 
-// the host's noise hits: the same neuron hit c times gets c separate additions, as np.add.at gives it
-__global__ void k_noise(const int C, const int* inbuf, const float noise_mv, float* g)
-{
-    int k = inbuf[1];
-    const int* noise_off = inbuf + 8;
-    int a = noise_off[k], b = noise_off[k + 1];
-    const int* idx = inbuf + inbuf[4];
-    const int* cnt = inbuf + inbuf[5];
-    for (int j = a + grid_tid(); j < b; j += grid_stride()) {
-        int i = idx[j];
-        int c = cnt[j];
-        float gi = g[i];
-        for (int r = 0; r < c; r++) gi = __fadd_rn(gi, noise_mv);
-        g[i] = gi;
-    }
-}
-
-// the host's forced spikes of this step (stimulated neurons the host's dice chose)
-__global__ void k_force(const int C, const int* inbuf, unsigned char* forced_mask)
-{
-    int k = inbuf[1];
-    const int* forced_off = inbuf + 8 + C + 1;
-    int a = forced_off[k], b = forced_off[k + 1];
-    const int* forced = inbuf + inbuf[6];
-    for (int j = a + grid_tid(); j < b; j += grid_stride()) forced_mask[forced[j]] = 1;
-}
-
-// the dense pass: the fatigue fade at a block step, the refractory freeze, the leak and the integration, the flush at a
-// block step, the threshold, the forced spikes, the graded cells' release; writes the spike flags
-__global__ void k_dense(const int n, const int* ctrl, const int ref_steps, const int fatigue_block,
+// the dense pass, one thread per neuron, in the CPU's order: the arriving slot (scaled by the tone gain on a modulated
+// target, when the slot is pending; the slot entry emptied), the noise kicks one by one (as np.add.at adds them), the
+// fatigue fade at a block step, the refractory freeze or the leak and integration, the flush at a block step, the
+// threshold, the forced spike, the graded cells' release; a spiking neuron appends itself to the log (any order: the
+// host sorts) and clears its own noise count and forced mark on the way
+__global__ void k_dense(const int n, const int n_slots, int* ctrl, const int ref_steps, const int fatigue_block,
                         const float decay_m, const float decay_s, const float coupling, const float flush,
                         const float fatigue_mv, const float fade20, const float gr_c, const float gr_sat,
+                        const float noise_mv, float* queue, const unsigned char* pending, const int* tpos,
+                        const float* gain, int* noise_cnt,
                         float* v, float* g, float* thr, const float* theta_i, const int* last_reset,
-                        const unsigned char* gmask, const int* gpos, float* rel, const unsigned char* forced_mask,
-                        unsigned char* spk_flag)
+                        const unsigned char* gmask, const int* gpos, float* rel, unsigned char* forced_mask, int* logbuf)
 {
     int t = ctrl[0];
+    int slot = t % n_slots;
     bool block = (t % fatigue_block) == 0;
+    bool pend = pending[slot] != 0;
+    float* arr = queue + (size_t)slot * n;
     for (int i = grid_tid(); i < n; i += grid_stride()) {
         float vi = v[i], gi = g[i], th = thr[i];
+        if (pend) {                                              // g += arriving (the tone scales a modulated target's)
+            float a = arr[i];
+            int tp = tpos[i];
+            if (tp >= 0) a = __fmul_rn(a, gain[tp]);
+            gi = __fadd_rn(gi, a);
+            arr[i] = 0.0f;
+        }
+        int c = noise_cnt[i];
+        if (c) {                                                 // then the noise: one addition per hit
+            for (int r = 0; r < c; r++) gi = __fadd_rn(gi, noise_mv);
+            noise_cnt[i] = 0;
+        }
         if (block && fatigue_mv > 0.0f) {                       // thr -= theta_i; thr *= f; thr += theta_i
             th = __fsub_rn(th, theta_i[i]);
             th = __fmul_rn(th, fade20);
@@ -169,7 +166,7 @@ __global__ void k_dense(const int n, const int* ctrl, const int ref_steps, const
         v[i] = vi;
         g[i] = gi;
         bool spk = (!refr) && (vi >= th);
-        if (forced_mask[i]) spk = true;                          // stimulated neurons fire even while refractory
+        if (forced_mask[i]) { spk = true; forced_mask[i] = 0; }  // stimulated neurons fire even while refractory
         if (gmask[i]) {                                          // graded cells: release in proportion to v
             if (vi > 0.0f) {
                 float r = rel[gpos[i]];
@@ -179,27 +176,20 @@ __global__ void k_dense(const int n, const int* ctrl, const int ref_steps, const
                 rel[gpos[i]] = r;
             }
         }
-        spk_flag[i] = spk ? 1 : 0;
-    }
-}
-
-// the step's spikes into the log (any order: the host sorts); the forced marks are cleared on the way
-__global__ void k_compact(const int n, int* ctrl, const unsigned char* spk_flag, unsigned char* forced_mask, int* logbuf)
-{
-    for (int i = grid_tid(); i < n; i += grid_stride()) {
-        if (spk_flag[i]) {
+        if (spk) {
             int p = atomicAdd(&ctrl[2], 1);
             logbuf[p] = i;
         }
-        forced_mask[i] = 0;
     }
 }
 
-// one warp per spiking neuron: the reset (not for graded cells), the fatigue step, the depression bookkeeping, and
-// its outgoing edges marked in the bitmap with their targets put on the hit list
+// one block per spiking neuron: thread 0 does the reset (not for graded cells), the fatigue step and the depression
+// bookkeeping; every thread marks a share of the neuron's outgoing edges in the bitmap (atomicOr without a return
+// value: fire and forget) and flags their targets as hit (a plain store: every writer writes 1), so a neuron with
+// thousands of outgoing edges is marked by 256 threads at once and nothing in the loop waits for an answer
 __global__ void k_send_mark(int* ctrl, const int* step_end, const int* logbuf,
                             const int* row_ptr, const int* post_idx, const int* csr_to_csc,
-                            unsigned int* bits, int* hit, int* hit_list,
+                            unsigned int* bits, int* hit,
                             float* v, float* g, float* thr, int* last_reset, const unsigned char* gmask,
                             const float fatigue_mv, const int use_std, float* std_x, long long* std_t,
                             float* std_factor, const double* std_table, const int K, const double one_minus_u)
@@ -207,12 +197,9 @@ __global__ void k_send_mark(int* ctrl, const int* step_end, const int* logbuf,
     int t = ctrl[0], k = ctrl[1];
     int s0 = (k == 0) ? 0 : step_end[k - 1];
     int s1 = ctrl[2];
-    int lane = threadIdx.x & 31;
-    int warp = grid_tid() >> 5;
-    int nwarps = grid_stride() >> 5;
-    for (int j = s0 + warp; j < s1; j += nwarps) {
+    for (int j = s0 + blockIdx.x; j < s1; j += gridDim.x) {
         int s = logbuf[j];
-        if (lane == 0) {
+        if (threadIdx.x == 0) {
             if (!gmask[s]) {
                 v[s] = 0.0f;
                 g[s] = 0.0f;
@@ -230,20 +217,38 @@ __global__ void k_send_mark(int* ctrl, const int* step_end, const int* logbuf,
             }
         }
         int a = row_ptr[s], b = row_ptr[s + 1];
-        for (int e = a + lane; e < b; e += 32) {
+        for (int e = a + threadIdx.x; e < b; e += blockDim.x) {
             int q = csr_to_csc[e];
             atomicOr(&bits[q >> 5], 1u << (q & 31));
-            int p = post_idx[e];
-            if (atomicExch(&hit[p], 1) == 0) {
-                int pos = atomicAdd(&ctrl[3], 1);
-                hit_list[pos] = p;
-            }
+            hit[post_idx[e]] = 1;
         }
     }
 }
 
-// one thread per hit target: its set bits in ascending edge (= presynaptic) order, each kick added to the slot's
-// value in that order, exactly the CPU's scatter; the bits and the hit flag are cleared on the way
+// the hit targets of this step gathered into a list: each warp reads 32 flags at once and the warp's hits are appended
+// together (one atomic on the counter per warp with a hit); the list's order does not matter, every target is pulled
+// on its own
+__global__ void k_hits(const int n, int* ctrl, const int* hit, int* hit_list)
+{
+    int lane = threadIdx.x & 31;
+    for (int base = (grid_tid() & ~31); base < n; base += grid_stride()) {
+        int i = base + lane;
+        bool h = (i < n) && hit[i];
+        unsigned int ball = __ballot_sync(0xffffffffu, h);
+        if (ball) {
+            int leader = __ffs(ball) - 1;
+            int pos = 0;
+            if (lane == leader) pos = atomicAdd(&ctrl[3], __popc(ball));
+            pos = __shfl_sync(0xffffffffu, pos, leader);
+            if (h) hit_list[pos + __popc(ball & ((1u << lane) - 1u))] = i;
+        }
+    }
+}
+
+// the pull: a warp per hit target walks its segment of the bitmap, 32 words at a time, one word per lane; the marked
+// kicks of each word are loaded by one lane each, in parallel, then added to the accumulator one by one in ascending
+// edge (= presynaptic) order, every lane repeating the same chain of __fadd_rn so that all of them hold the CPU's
+// value; the words and the flag are cleared on the way
 __global__ void k_pull(const int n, const int n_slots, const int delay_steps, const int* ctrl, const int* hit_list,
                        const int* col_ptr, const int* csc_pre, const float* w_csc, unsigned int* bits, int* hit,
                        float* queue, const int use_std, const float* std_factor)
@@ -252,33 +257,44 @@ __global__ void k_pull(const int n, const int n_slots, const int delay_steps, co
     int out = (t + delay_steps) % n_slots;
     int nh = ctrl[3];
     float* slotp = queue + (size_t)out * n;
-    for (int j = grid_tid(); j < nh; j += grid_stride()) {
+    int lane = threadIdx.x & 31;
+    int warp = grid_tid() >> 5;
+    int nwarps = grid_stride() >> 5;
+    for (int j = warp; j < nh; j += nwarps) {
         int p = hit_list[j];
         float acc = slotp[p];
         int q0 = col_ptr[p], q1 = col_ptr[p + 1];
-        if (q1 > q0) {
-            int w0 = q0 >> 5, w1 = (q1 - 1) >> 5;
-            for (int wi = w0; wi <= w1; wi++) {
+        int w0 = q0 >> 5, w1 = (q1 - 1) >> 5;
+        for (int wb = w0; wb <= w1; wb += 32) {
+            int wi = wb + lane;
+            unsigned int mine = 0u, mask = 0u;
+            if (wi <= w1) {
                 unsigned int word = bits[wi];
                 unsigned int lo = (wi == w0) ? (0xffffffffu << (q0 & 31)) : 0xffffffffu;
                 unsigned int hi = (wi == w1) ? (0xffffffffu >> (31 - ((q1 - 1) & 31))) : 0xffffffffu;
-                unsigned int mask = lo & hi;
-                unsigned int mine = word & mask;
-                if (mine) {
-                    unsigned int m = mine;
-                    while (m) {
-                        int b = __ffs(m) - 1;
-                        m &= m - 1;
-                        int q = (wi << 5) + b;
-                        float kick = use_std ? __fmul_rn(w_csc[q], std_factor[csc_pre[q]]) : w_csc[q];
-                        acc = __fadd_rn(acc, kick);
-                    }
-                    if (mask == 0xffffffffu) bits[wi] = 0u; else atomicAnd(&bits[wi], ~mask);
+                mask = lo & hi;
+                mine = word & mask;
+            }
+            unsigned int active = __ballot_sync(0xffffffffu, mine != 0u);
+            while (active) {                                     // the words with marked kicks, in ascending order
+                int wl = __ffs(active) - 1;
+                active &= active - 1;
+                unsigned int wbits = __shfl_sync(0xffffffffu, mine, wl);
+                int m = __popc(wbits);
+                float kick = 0.0f;
+                if (lane < m) {                                  // lane j loads the j-th marked kick of this word
+                    int b = __fns(wbits, 0, lane + 1);
+                    int q = ((wb + wl) << 5) + b;
+                    kick = use_std ? __fmul_rn(w_csc[q], std_factor[csc_pre[q]]) : w_csc[q];
                 }
+                for (int jj = 0; jj < m; jj++)                   // the CPU's order, one addition at a time
+                    acc = __fadd_rn(acc, __shfl_sync(0xffffffffu, kick, jj));
+            }
+            if (mine) {                                          // clear my word's marks (a boundary word is shared)
+                if (mask == 0xffffffffu) bits[wi] = 0u; else atomicAnd(&bits[wi], ~mask);
             }
         }
-        slotp[p] = acc;
-        hit[p] = 0;
+        if (lane == 0) { slotp[p] = acc; hit[p] = 0; }
     }
 }
 
@@ -294,6 +310,17 @@ __global__ void k_end(const int n_slots, const int delay_steps, int* ctrl, int* 
     ctrl[3] = 0;
     ctrl[0] = t + 1;
     ctrl[1] = k + 1;
+}
+
+// a subset of weights written into both edge layouts (the plastic edges after a learning block, the local neurons'
+// outputs after a release block): the values come through a pinned staging buffer, stream-ordered before the next step
+__global__ void k_scatter_w(const int m, const int* e_csr, const int* e_csc, const float* vals, float* w_csr, float* w_csc)
+{
+    for (int i = grid_tid(); i < m; i += grid_stride()) {
+        float x = vals[i];
+        w_csr[e_csr[i]] = x;
+        w_csc[e_csc[i]] = x;
+    }
 }
 
 // the analytic fatigue fade on waking: thr = ((thr - theta_i) * f) + theta_i, three float32 operations
@@ -320,17 +347,31 @@ class GpuEngine:
         self.cp = cp
         self.use_graph = use_graph
         self.launches = 0                                   # how many times the kernels ran (tests read it)
-        self.stream = cp.cuda.Stream(non_blocking=True)
+        self.profile = False                                # True: time the device's work with events (device_ms adds up)
+        self.device_ms = 0.0
+        # one stream per engine, and EVERY device operation of the engine on it: an array made on another stream
+        # (CuPy's default one) is initialised by a memset that nothing orders before this stream's first upload or
+        # kernel, and under a busy GPU that memset was seen to land late and wipe the uploaded thresholds. A blocking
+        # stream (the default kind) also waits for anything CuPy itself puts on the legacy default stream.
+        self.stream = cp.cuda.Stream()
+        with self.stream:
+            self._build(brain)
+        self.stream.synchronize()
+
+    def _build(self, brain):
+        cp = self.cp
         n, conn = brain.n, brain.conn
         self.n, self.n_slots, self.delay_steps, self.ref_steps = n, brain.n_slots, brain.delay_steps, brain.ref_steps
         self.fatigue_block = brain._fatigue_block
         tick_steps = int(round(25.0 / brain.dt))
+        self.tick_steps = tick_steps
         self.C = math.gcd(math.gcd(tick_steps, self.fatigue_block), 200)   # 10 at dt 0.5, 5 at dt 1.0
+        self.C2 = 2 * self.C                                # the long chunk, where a block boundary allows it
         if self.fatigue_block % self.C or 200 % self.C:
             raise ValueError("the chunk must divide the 20-step block and the 200-step quiet check")
         mod = cp.RawModule(code=_SRC, options=("--fmad=false",))
         self.k = {name: mod.get_function(name) for name in
-                  ("k_arrive", "k_copy_gain", "k_noise", "k_force", "k_dense", "k_compact", "k_send_mark", "k_pull", "k_end", "k_fade")}
+                  ("k_scatter", "k_copy_gain", "k_dense", "k_send_mark", "k_hits", "k_pull", "k_end", "k_fade", "k_scatter_w")}
         self.grid_n = max(1, min(1024, -(-n // _BLOCK)))
         # ---- the wiring: CSR as the connectome keeps it, CSC in the connectome's stable in-edge order
         E = int(conn.row_ptr[-1])
@@ -372,10 +413,11 @@ class GpuEngine:
         self.n_targets = int(brain._mod_targets.size)
         self.d_gain_live = cp.ones(max(self.n_targets, 1), dtype=cp.float32)
         self.d_gain_staged = cp.ones(max(self.n_targets, 1), dtype=cp.float32)
-        self._gain_staged_host = np.ones(self.n_targets, dtype=np.float32)
+        self._pinned_mems = []
+        self.h_gain = self._pinned_f32(max(self.n_targets, 1))
         self.d_theta_i = cp.asarray(np.asarray(brain._theta_i, dtype=np.float32))
         self.d_std_factor = cp.zeros(n, dtype=cp.float32)
-        self.d_spk_flag = cp.zeros(n, dtype=cp.uint8)
+        self.d_noise_cnt = cp.zeros(n, dtype=cp.int32)
         self.d_forced_mask = cp.zeros(n, dtype=cp.uint8)
         self.d_last_reset = cp.full(n, -(2 ** 30), dtype=cp.int32)
         self.d_pending = cp.zeros(self.n_slots, dtype=cp.uint8)
@@ -400,16 +442,21 @@ class GpuEngine:
         self.gr_c = np.float32(brain._gr_c) if brain._parts is not None else np.float32(0.0)
         self.gr_sat = np.float32(brain._gr_sat) if brain._parts is not None else np.float32(0.0)
         self.noise_mv = np.float32(brain.noise_mv)
-        # ---- the chunk buffers
-        self.d_step_end = cp.zeros(self.C, dtype=cp.int32)
-        self.d_log = cp.zeros(max(self.C * n, 1), dtype=cp.int32)
+        # ---- the chunk buffers: one device array for the step boundaries and the log (downloaded in one copy into
+        # pinned host memory), one pinned host buffer for the inputs (uploaded in one copy); sized for the long chunk
+        self.d_out = cp.zeros(self.C2 + max(self.C2 * n, 1), dtype=cp.int32)
+        self.d_step_end = self.d_out[:self.C2]
+        self.d_log = self.d_out[self.C2:]
+        self.h_out = self._pinned(self.d_out.size)
+        self._out_guess = 4096                             # how much of the log the one download fetches (grows to fit)
         self._inbuf_cap = 0
         self._ensure_inbuf(_HDR + 2 * (self.C + 1) + 4096)
-        self._graph = None
+        self._graphs = {}
         self._w_ref = None
         self._w_pe_last = None
         self._w_loc_last = None
-        self._args = None
+        self._subset_index = {}
+        self._args = {}
         self.upload_state(brain)
         self.upload_weights(brain, full=True)
 
@@ -433,66 +480,81 @@ class GpuEngine:
         bad = np.flatnonzero(other != table)
         return table, (int(bad[0]) if bad.size else None)
 
+    def _pinned(self, count: int):
+        """A page-locked host buffer of ``count`` int32 (a DMA can go straight to it, without a staging copy); the
+        memory stays alive as long as the engine keeps it in ``_pinned_mems``."""
+        mem = self.cp.cuda.alloc_pinned_memory(count * 4)
+        self._pinned_mems.append(mem)
+        return np.frombuffer(mem, dtype=np.int32, count=count)
+
+    def _pinned_f32(self, count: int):
+        mem = self.cp.cuda.alloc_pinned_memory(count * 4)
+        self._pinned_mems.append(mem)
+        return np.frombuffer(mem, dtype=np.float32, count=count)
+
     def _ensure_inbuf(self, size: int):
         cp = self.cp
         if size > self._inbuf_cap:
             self._inbuf_cap = max(size, 2 * self._inbuf_cap)
-            self.d_inbuf = cp.zeros(self._inbuf_cap, dtype=cp.int32)
-            self._graph = None                                  # the launches' arguments changed
-            self._args = None
+            with self.stream:                                   # (made and zeroed on the engine's own stream)
+                self.d_inbuf = cp.zeros(self._inbuf_cap, dtype=cp.int32)
+            self.h_in = self._pinned(self._inbuf_cap)
+            self._graphs = {}                                   # the launches' arguments changed
+            self._args = {}
 
-    def _launch_args(self):
-        """The argument tuples of the per-step launches (fixed: every per-step number is read from device memory)."""
-        if self._args is None:
-            C = np.int32(self.C)
+    def _launch_args(self, count: int):
+        """The argument tuples of the per-step launches of a chunk of ``count`` steps (fixed: every per-step number
+        is read from device memory; the count sets the input buffer's layout)."""
+        if count not in self._args:
+            C = np.int32(count)
             ctrl = self.d_inbuf
             n = np.int32(self.n)
-            self._args = {
-                "k_arrive": (n, np.int32(self.n_slots), ctrl, self.d_queue, self.d_pending, self.d_tpos, self.d_gain_live, self.d_g),
+            self._args[count] = {
+                "k_scatter": (C, ctrl, self.d_noise_cnt, self.d_forced_mask),
                 "k_copy_gain": (np.int32(max(self.n_targets, 1)), self.d_gain_staged, self.d_gain_live),
-                "k_noise": (C, ctrl, self.noise_mv, self.d_g),
-                "k_force": (C, ctrl, self.d_forced_mask),
-                "k_dense": (n, ctrl, np.int32(self.ref_steps), np.int32(self.fatigue_block), self.decay_m, self.decay_s,
-                            self.coupling, self.flush, self.fatigue_mv, self.fade20, self.gr_c, self.gr_sat,
-                            self.d_v, self.d_g, self.d_thr, self.d_theta_i, self.d_last_reset, self.d_gmask, self.d_gpos,
-                            self.d_rel, self.d_forced_mask, self.d_spk_flag),
-                "k_compact": (n, ctrl, self.d_spk_flag, self.d_forced_mask, self.d_log),
+                "k_dense": (n, np.int32(self.n_slots), ctrl, np.int32(self.ref_steps), np.int32(self.fatigue_block),
+                            self.decay_m, self.decay_s, self.coupling, self.flush, self.fatigue_mv, self.fade20,
+                            self.gr_c, self.gr_sat, self.noise_mv, self.d_queue, self.d_pending, self.d_tpos,
+                            self.d_gain_live, self.d_noise_cnt, self.d_v, self.d_g, self.d_thr, self.d_theta_i,
+                            self.d_last_reset, self.d_gmask, self.d_gpos, self.d_rel, self.d_forced_mask, self.d_log),
                 "k_send_mark": (ctrl, self.d_step_end, self.d_log, self.d_row_ptr, self.d_post, self.d_csr_to_csc,
-                                self.d_bits, self.d_hit, self.d_hit_list, self.d_v, self.d_g, self.d_thr, self.d_last_reset,
+                                self.d_bits, self.d_hit, self.d_v, self.d_g, self.d_thr, self.d_last_reset,
                                 self.d_gmask, self.fatigue_mv, np.int32(1 if self.use_std else 0), self.d_std_x, self.d_std_t,
                                 self.d_std_factor, self.d_std_table, np.int32(self.std_table.size), np.float64(self.one_minus_u)),
+                "k_hits": (n, ctrl, self.d_hit, self.d_hit_list),
                 "k_pull": (n, np.int32(self.n_slots), np.int32(self.delay_steps), ctrl, self.d_hit_list, self.d_col_ptr,
                            self.d_csc_pre, self.d_w_csc, self.d_bits, self.d_hit, self.d_queue,
                            np.int32(1 if self.use_std else 0), self.d_std_factor),
                 "k_end": (np.int32(self.n_slots), np.int32(self.delay_steps), ctrl, self.d_step_end, self.d_pending),
             }
-        return self._args
+        return self._args[count]
 
-    def _launch_step(self, first: bool):
-        a = self._launch_args()
+    def _launch_step(self, first: bool, count: int):
+        """One step: six launches (the scatter of the host's draws, the dense pass, the send and mark, the hit list, the
+        pull, the step's end), plus, after the first step of a chunk, the staged tone gain going live."""
+        a = self._launch_args(count)
         k = self.k
         gn = (self.grid_n,)
         b = (_BLOCK,)
-        k["k_arrive"](gn, b, a["k_arrive"])
+        k["k_scatter"]((64,), b, a["k_scatter"])
+        k["k_dense"](gn, b, a["k_dense"])
         if first and self.n_targets:
             k["k_copy_gain"]((max(1, min(64, -(-self.n_targets // _BLOCK))),), b, a["k_copy_gain"])
-        k["k_noise"]((64,), b, a["k_noise"])
-        k["k_force"]((64,), b, a["k_force"])
-        k["k_dense"](gn, b, a["k_dense"])
-        k["k_compact"](gn, b, a["k_compact"])
-        k["k_send_mark"]((256,), b, a["k_send_mark"])
-        k["k_pull"]((256,), b, a["k_pull"])
+        k["k_send_mark"]((256,), b, a["k_send_mark"])        # a block per spiking neuron
+        k["k_hits"](gn, b, a["k_hits"])                      # the hit flags compacted into the list
+        k["k_pull"]((256,), b, a["k_pull"])                  # a warp per hit target
         k["k_end"]((1,), (1,), a["k_end"])
 
-    def _chunk_graph(self):
-        if self._graph is None:
-            self._launch_args()
+    def _chunk_graph(self, count: int):
+        """The captured graph of a chunk of ``count`` steps (one per chunk length in use)."""
+        if count not in self._graphs:
+            self._launch_args(count)
             with self.stream:
                 self.stream.begin_capture()
-                for s in range(self.C):
-                    self._launch_step(s == 0)
-                self._graph = self.stream.end_capture()
-        return self._graph
+                for s in range(count):
+                    self._launch_step(s == 0, count)
+                self._graphs[count] = self.stream.end_capture()
+        return self._graphs[count]
 
     # ------------------------------------------------------------------ uploads and downloads
     _NAMES = ("v", "g", "thr", "queue", "std_x", "std_t", "_rel")
@@ -540,10 +602,10 @@ class GpuEngine:
                 gain = np.asarray(brain._mod_gain, dtype=np.float32)
                 self.d_gain_live.set(gain)
                 self.d_gain_staged.set(gain)
-                self._gain_staged_host = gain.copy()
             self.d_hit.fill(0)
             self.d_bits.fill(0)
             self.d_forced_mask.fill(0)
+            self.d_noise_cnt.fill(0)
         self.stream.synchronize()
         brain._stale.clear()
 
@@ -565,38 +627,62 @@ class GpuEngine:
         if pl is not None:
             cur = w[pl.pe]
             if self._w_pe_last is None or not np.array_equal(cur.view(np.uint32), self._w_pe_last.view(np.uint32)):
-                self._upload_subset(pl.pe, cur)
+                self._upload_subset("pe", pl.pe, cur)
                 self._w_pe_last = cur.copy()
+        self.upload_local(brain)
+
+    def upload_plastic(self, brain):
+        """The plastic edges' weights after a block that changed them (no comparison: the block said so)."""
+        pl = brain.plasticity
+        if pl is not None:
+            cur = brain.w[pl.pe]
+            self._upload_subset("pe", pl.pe, cur)
+            self._w_pe_last = cur.copy()
+
+    def upload_local(self, brain):
+        """The local neurons' output weights where a block changed them (it rewrites them every block, mostly with
+        the same values: compared with the last upload first)."""
         for j, loc in enumerate(brain._local):
-            cur = w[loc.edges]
+            cur = brain.w[loc.edges]
             if len(self._w_loc_last) <= j:
                 self._w_loc_last.append(None)
             last = self._w_loc_last[j]
             if last is None or not np.array_equal(cur.view(np.uint32), last.view(np.uint32)):
-                self._upload_subset(loc.edges, cur)
+                self._upload_subset(("loc", j), loc.edges, cur)
                 self._w_loc_last[j] = cur.copy()
 
-    def _upload_subset(self, edges, values):
+    def _upload_subset(self, key, edges, values):
+        """``values`` into both edge layouts at ``edges`` (a fixed subset: its device index arrays, a pinned staging
+        buffer and a device one are kept under ``key``): one asynchronous copy and one scatter kernel, stream-ordered
+        before the next launch, no synchronisation (the staging buffer is rewritten only after a later launch's
+        synchronisation)."""
         cp = self.cp
-        if not len(edges):
+        m = len(edges)
+        if not m:
             return
+        cached = self._subset_index.get(key)
         with self.stream:
-            e = cp.asarray(np.asarray(edges, dtype=np.int64))
-            vals = cp.asarray(np.ascontiguousarray(values, dtype=np.float32))
-            self.d_w_csr[e] = vals
-            self.d_w_csc[self.d_csr_to_csc[e].astype(cp.int64)] = vals
-        self.stream.synchronize()
+            if cached is None or cached[0] is not edges:
+                e = cp.asarray(np.asarray(edges, dtype=np.int32))
+                ec = self.d_csr_to_csc[e.astype(cp.int64)]
+                mem = cp.cuda.alloc_pinned_memory(m * 4)
+                self._pinned_mems.append(mem)
+                host = np.frombuffer(mem, dtype=np.float32, count=m)
+                cached = (edges, e, ec, host, cp.empty(m, dtype=cp.float32))
+                self._subset_index[key] = cached
+                self.stream.synchronize()                       # (the index copies came from pageable memory)
+            _, e, ec, host, dvals = cached
+            host[:] = values
+            dvals.data.copy_from_host_async(host.ctypes.data, m * 4, self.stream)
+            self.k["k_scatter_w"]((max(1, min(256, -(-m // _BLOCK))),), (_BLOCK,), (np.int32(m), e, ec, dvals, self.d_w_csr, self.d_w_csc))
 
     def sync_gain(self, brain):
-        """Stage the host's tone gain when a block changed it (it goes live after the next step's arrivals)."""
+        """Stage the host's tone gain after a block recomputed it (it goes live after the next step's arrivals):
+        one asynchronous copy from a pinned buffer, no comparison, no synchronisation."""
         if not self.n_targets:
             return
-        gain = np.asarray(brain._mod_gain, dtype=np.float32)
-        if gain.shape != self._gain_staged_host.shape or not np.array_equal(gain, self._gain_staged_host):
-            with self.stream:
-                self.d_gain_staged.set(gain)
-            self.stream.synchronize()
-            self._gain_staged_host = gain.copy()
+        self.h_gain[:] = brain._mod_gain
+        self.d_gain_staged.data.copy_from_host_async(self.h_gain.ctypes.data, self.n_targets * 4, self.stream)
 
     def set_gain_now(self, brain):
         """The host's tone gain in force at once (after a restore or a reset: the next arrivals use it)."""
@@ -607,7 +693,6 @@ class GpuEngine:
             self.d_gain_live.set(gain)
             self.d_gain_staged.set(gain)
         self.stream.synchronize()
-        self._gain_staged_host = gain.copy()
 
     def fade(self, factor: np.float32):
         with self.stream:
@@ -630,10 +715,10 @@ class GpuEngine:
 
     # ------------------------------------------------------------------ running steps
     def run(self, t0: int, count: int, noise, forced):
-        """Launch ``count`` steps from step ``t0`` (a whole chunk as a graph when it is one) with the host's draws
-        (``noise``: per step a (neurons, counts) pair or None; ``forced``: per step an index array or None).
-        Returns the per-step spike lists, each sorted, int64."""
-        C = self.C
+        """Launch ``count`` steps from step ``t0`` (a whole chunk, C or 2C steps, as a graph; fewer steps one by one)
+        with the host's draws (``noise``: per step a (neurons, counts) pair or None; ``forced``: per step an index
+        array or None). Returns the per-step spike lists, each sorted, int64."""
+        C = count if count in (self.C, self.C2) else self.C
         n_off = [0]
         f_off = [0]
         n_idx, n_cnt, f_parts = [], [], []
@@ -652,27 +737,45 @@ class GpuEngine:
         nn, nf = n_off[-1], f_off[-1]
         used = hdr + 2 * nn + nf
         self._ensure_inbuf(used)
-        host = np.empty(used, dtype=np.int32)
+        host = self.h_in                                         # the pinned input buffer, filled in place
         host[0:8] = (t0, 0, 0, 0, hdr, hdr + nn, hdr + 2 * nn, 0)
         host[8:8 + C + 1] = n_off
         host[8 + C + 1:hdr] = f_off
         if nn:
-            host[hdr:hdr + nn] = np.concatenate(n_idx)
-            host[hdr + nn:hdr + 2 * nn] = np.concatenate(n_cnt)
+            np.concatenate(n_idx, out=host[hdr:hdr + nn])
+            np.concatenate(n_cnt, out=host[hdr + nn:hdr + 2 * nn])
         if nf:
-            host[hdr + 2 * nn:used] = np.concatenate(f_parts)
-        with self.stream:
-            self.d_inbuf[:used].set(host)
+            np.concatenate(f_parts, out=host[hdr + 2 * nn:used])
+        stream = self.stream
+        guess = min(self._out_guess, self.d_log.size)
+        with stream:
+            self.d_inbuf.data.copy_from_host_async(host.ctypes.data, used * 4, stream)
+            if self.profile:
+                e0, e1 = self.cp.cuda.Event(), self.cp.cuda.Event()
+                e0.record()
             if count == C and self.use_graph:
-                self._chunk_graph().launch(self.stream)
+                self._chunk_graph(count).launch(stream)
             else:
                 for s in range(count):
-                    self._launch_step(s == 0)
-            step_end = self.d_step_end[:count].get()
-            total = int(step_end[count - 1])
-            log = self.d_log[:total].get() if total else np.zeros(0, dtype=np.int32)
-        self.stream.synchronize()
+                    self._launch_step(s == 0, C)
+            if self.profile:
+                e1.record()
+            # one download: the step boundaries and the first part of the log (a second one only when it overflows);
+            # the log sits after the C2 step boundaries in d_out, whatever this chunk's length
+            L = self.C2
+            self.d_out.data.copy_to_host_async(self.h_out.ctypes.data, (L + guess) * 4, stream)
+        stream.synchronize()
+        step_end = self.h_out[:count]
+        total = int(step_end[count - 1])
+        if total > guess:
+            with stream:
+                self.d_log[guess:total].data.copy_to_host_async(self.h_out[L + guess:].ctypes.data, (total - guess) * 4, stream)
+            stream.synchronize()
+            self._out_guess = min(2 * total, self.d_log.size)
+        if self.profile:
+            self.device_ms += self.cp.cuda.get_elapsed_time(e0, e1)
         self.launches += 1
+        log = self.h_out[L:L + total]
         out = []
         start = 0
         for k in range(count):
@@ -776,6 +879,9 @@ class GpuFlyBrain(FlyBrain):
         out = []
         n = int(n_steps)
         C = self._gpu.C
+        C2, tick = self._gpu.C2, self._gpu.tick_steps
+        self._gpu.upload_weights(self)                       # weights rewritten in place since the last call (attach,
+        self._weights_fresh = True                           # forget, load, restore): compared once per call
         while n > 0:
             slot = self.t % self.n_slots
             if self.quiet and not self._stim_idx.size and not self._pending[slot] and not self._noise_idx.size:
@@ -792,13 +898,26 @@ class GpuFlyBrain(FlyBrain):
             if self.quiet and self.fatigue_mv > 0:           # waking up: fatigue kept fading while we slept
                 self._fade_fatigue(self.decay_f ** (self.t - self._quiet_since))
             self.quiet = False
-            out.extend(self._run_steps(C))
-            n -= C
+            # the long chunk when it starts at a block (so the blocks fall at its start and end) and ends within the
+            # tick (so a 25 ms monitor bin closes at a chunk end, never inside one)
+            count = C2 if (self.t % C2 == 0 and n >= C2 and (self.t % tick) + C2 <= tick) else C
+            out.extend(self._run_steps(count))
+            n -= count
+        self._weights_fresh = False
         return out
 
     def _draw(self, count: int):
-        """The chunk's random numbers, in the CPU's per-step order, from the brain's own generator."""
+        """The chunk's random numbers, in the CPU's per-step order, from the brain's own generator. Without noise
+        the only draw per step is ``random(n_stim)``, and one ``random((count, n_stim))`` is the same sequence of
+        doubles (the generator fills them one after another), so the whole chunk is drawn at once."""
         noise, forced = [], []
+        if not self._noise_idx.size:
+            if self._stim_idx.size:
+                u = self.rng.random((count, self._stim_idx.size))
+                forced = [self._stim_idx[u[k] < self._stim_p].astype(np.int32) for k in range(count)]
+            else:
+                forced = [None] * count
+            return [None] * count, forced
         for _ in range(count):
             hit = None
             if self._noise_idx.size:
@@ -815,55 +934,85 @@ class GpuFlyBrain(FlyBrain):
         return noise, forced
 
     def _run_steps(self, count: int) -> list:
-        """``count`` steps from the current step on the device, then the host's work for each in the CPU's order."""
+        """``count`` steps from the current step on the device, then the host's work for each in the CPU's order.
+        What must stay per step is (the recording, the callbacks); the rest is done once for the run where that is
+        exactly the CPU's result: the spike counts and the local tally are integer sums, the tone deposits keep the
+        spike order in one call, the refractory lists are the last steps' resets, the plasticity's tallies are
+        exact counts (``step_block``), and a monitor bin can only close at a step the run ends with (else the slow
+        exact path is taken)."""
         t0 = self.t
         gpu = self._gpu
         if t0 % self._fatigue_block == 0:
             if self._parts is not None:
                 self._mod_block()
+                gpu.sync_gain(self)                          # (the gain only changes here)
                 if self._local_active:
                     self._local_block()
-        gpu.sync_gain(self)
-        gpu.upload_weights(self)
+                    gpu.upload_local(self)
+        if not getattr(self, "_weights_fresh", False):
+            gpu.upload_weights(self)
         noise, forced = self._draw(count)
         steps = gpu.run(t0, count, noise, forced)
         self._stale.update(("v", "g", "thr", "queue", "std_x", "std_t", "_rel"))
+        dt, n_slots, delay = self.dt, self.n_slots, self.delay_steps
         out = []
-        graded = self._graded_idx.size
-        for spikes in steps:
-            t = self.t
-            slot = t % self.n_slots
-            self._pending[slot] = False
-            resets = spikes
+        for k, spikes in enumerate(steps):                   # what is per step by nature
             if spikes.size:
-                if graded:
-                    resets = spikes[~self._gmask[spikes]]
-                self.spike_count[spikes] += 1
-                self.total_spikes += spikes.size
-                self._pending[(t + self.delay_steps) % self.n_slots] = True
-                if self._mod_targets.size:
-                    if fastbrain.available():
-                        if fastbrain.deposit_tone(spikes, self._mod_kind, self.row_ptr, self.post_idx, self._n_syn, self.out_scale,
-                                                  self._parts.target_pos, self._mod_synref_k, self._mod_level):
-                            self._mod_active = True
-                    else:
-                        self._deposit(spikes)
-                if self._local:
-                    self._local_tally(spikes)
+                t = t0 + k
                 if self.recording is not None:
                     self.recording.append((t, spikes.astype(np.int32)))
                 for cb in self.on_spikes:
                     cb(spikes, t)
                 out.append((t, spikes))
-            if self._recent:
-                self._recent = [resets] + self._recent[:-1]
-            if self.plasticity is not None:
-                self.plasticity.step(self, spikes)
-            self.t += 1
-            self.window_ms += self.dt
-            self.last_spikes = spikes
-            if self.monitors:
+        for k, spikes in enumerate(steps):                   # the ring's flags, in step order
+            t = t0 + k
+            self._pending[t % n_slots] = False
+            if spikes.size:
+                self._pending[(t + delay) % n_slots] = True
+        lists = [s for _, s in out]
+        allspk = np.concatenate(lists) if len(lists) > 1 else (lists[0] if lists else self._empty)
+        # a monitor whose bin closes before the run's last step needs the counts of that step: the per-step path
+        early = False
+        if self.monitors and count > 1:
+            end1 = (t0 + count - 1) * dt
+            early = any(end1 - m._t_start >= m.bin_ms - 1e-9 for m in self.monitors.values())
+        if early:
+            for k, spikes in enumerate(steps):
+                if spikes.size:
+                    self.spike_count[spikes] += 1
+                self.t = t0 + k + 1
                 self._tick_monitors()
-            if self.t % 200 == 0:
-                self._check_quiet()
+            self.t = t0
+        else:
+            for spikes in lists:                             # (each list is unique: a plain fancy add; np.add.at is slow)
+                self.spike_count[spikes] += 1
+        if allspk.size:
+            self.total_spikes += allspk.size
+            if self._mod_targets.size:                       # one call keeps the order: step by step, spikes ascending
+                if fastbrain.available():
+                    if fastbrain.deposit_tone(allspk, self._mod_kind, self.row_ptr, self.post_idx, self._n_syn, self.out_scale,
+                                              self._parts.target_pos, self._mod_synref_k, self._mod_level):
+                        self._mod_active = True
+                else:
+                    for spikes in lists:
+                        self._deposit(spikes)
+            if self._local:
+                self._local_tally(allspk)                    # integer sums: the order does not matter
+        if self._recent:                                     # the resets of the last ref_steps - 1 steps, newest first
+            graded = self._graded_idx.size
+            recent = []
+            for k in range(count - 1, max(-1, count - 1 - len(self._recent)), -1):
+                spikes = steps[k]
+                recent.append(spikes[~self._gmask[spikes]] if (graded and spikes.size) else spikes)
+            self._recent = (recent + self._recent)[:len(self._recent)]
+        if self.plasticity is not None:
+            if self.plasticity.step_block(self, steps, t0 + count - 1):
+                gpu.upload_plastic(self)
+        self.t = t0 + count
+        self.window_ms += count * dt
+        self.last_spikes = steps[-1]
+        if self.monitors and not early:
+            self._tick_monitors()
+        if self.t % 200 == 0:
+            self._check_quiet()
         return out

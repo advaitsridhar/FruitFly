@@ -201,3 +201,37 @@ def test_brain_reset_clears_traces(learner):
     brain.reset()
     assert not pl.kc_trace.any() and not pl.dan_trace.any() and not pl.dopamine.any() and pl.events == 0
     assert pl.depressed_fraction() > 0                                       # weights are memory, not state
+
+
+def test_step_block_equals_stepping_one_step_at_a_time(conn):
+    """``step_block`` over runs of steps gives the step-by-step result field for field (the GPU replay's shortcut)."""
+    from virtual_fly.brain import FlyBrain
+    a = FlyBrain(conn, seed=0, backend="numpy", kenyon_gain=1.0)
+    b = FlyBrain(conn, seed=0, backend="numpy", kenyon_gain=1.0)
+    pa, pb = MushroomBodyPlasticity().attach(a), MushroomBodyPlasticity().attach(b)
+    rng = np.random.default_rng(7)
+    kc, dan, other = conn.select("class:Kenyon_Cell"), conn.select("class:DAN"), conn.select("MN9,GNG232")
+    pool = np.concatenate([kc, dan, other])
+    t = 0
+    changes = 0
+    for window in ([10] * 8 + [10, 10, 10] + [7, 3] + [10] * 6 + [1] * 20 + [10] * 4):   # runs that end at or before a block boundary
+        lists = []
+        for _ in range(window):
+            if rng.random() < 0.7:
+                lists.append(np.unique(rng.choice(pool, size=rng.integers(1, 12), replace=False)).astype(np.int64))
+            else:
+                lists.append(np.zeros(0, dtype=np.int64))
+        assert all((t + k + 1) % 20 for k in range(window - 1))          # no boundary before the last step
+        for k, s in enumerate(lists):                                   # the reference: one step at a time
+            a.t = t + k
+            pa.step(a, s)
+        b.t = t
+        changed = pb.step_block(b, lists, t + window - 1)
+        changes += changed
+        t += window
+        a.t = b.t = t
+        for name in ("kc_trace", "dan_trace", "_kc_acc", "_dan_acc", "scale", "dopamine"):
+            assert np.array_equal(getattr(pa, name), getattr(pb, name)), name
+        assert pa.events == pb.events
+        assert np.array_equal(a.w, b.w)
+    assert pa.events > 0 and changes > 0 and pa.depressed_fraction() == pb.depressed_fraction()
