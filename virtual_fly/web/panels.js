@@ -53,6 +53,10 @@ export class WhyPanel {
 
 // ================================================================= 2. Key neurons (bars + sparklines)
 const HIST = 240;   // samples kept per readout (6 s at 40 ticks/s)
+// her decision neurons are watches on her own wiring; the marks drawn at her abdomen in the dish are hand-built cues
+// with provisional thresholds (decision 9 of docs/TWO_FLIES_PLAN.md), never a verdict about her
+const CUES_NOTE = "Watches on her own neurons, as the wiring gives them. The marks at her abdomen in the dish are hand-built cues " +
+  "with provisional thresholds (DNp37: an opening arc, the plate-opening command; DNp13: a spine, the extrusion command), never a verdict about her.";
 export class KeyNeurons {
   constructor(L) {
     this.L = L; this.rows = {}; this.hist = {}; this.customKeys = ""; this.lastSpark = 0;
@@ -60,7 +64,9 @@ export class KeyNeurons {
     const groups = new Map();
     for (const r of L.readouts) { if (!groups.has(r.group)) groups.set(r.group, []); groups.get(r.group).push(r); }
     for (const [g, rs] of groups) {
-      this.box.appendChild(el("div", "grp", `<span>${esc(g)}</span>`));
+      const grp = el("div", "grp", `<span>${esc(g)}</span>` + (g === "Her decisions" ? `<span class="note" title="${esc(CUES_NOTE)}">abdomen marks: hand-built cues, provisional</span>` : ""));
+      if (g === "Her decisions") grp.title = CUES_NOTE;
+      this.box.appendChild(grp);
       for (const r of rs) this.addRow(r, false);
     }
     this.customGrp = el("div", "grp", `<span>Custom watches</span>`); this.customGrp.hidden = true;
@@ -252,7 +258,7 @@ export class LabPanel {
     const dl = $("typelist");
     const search = debounce(async (q) => {
       if (q.length < 2) { if (dl.innerHTML !== this.baseOptions) dl.innerHTML = this.baseOptions; return; }
-      const r = await getJSON(`api/types?q=${encodeURIComponent(q)}&limit=40`);
+      const r = await getJSON(`api/types?q=${encodeURIComponent(q)}&limit=40${this.flyQ()}`);
       if (!r || !r.types) return;
       const seen = new Set(), opts = [];
       for (const t of r.types) { if (!seen.has(t.type)) { seen.add(t.type); const of = t.alias_of ? ` (alias of ${t.alias_of.startsWith("body:") ? "a list of neuron ids" : t.alias_of})` : "";
@@ -267,8 +273,9 @@ export class LabPanel {
     $("modBtn").onclick = () => this.modulate();
     $("watchBtn").onclick = () => this.watch();
     this.silKey = ""; this.modKey = "";
-    if (L.vfb && L.vfb.available) this.wireOntology();
   }
+  /** `&fly=k` for the fly in focus (two flies): the type search, the ontology search and the trace ask its connectome. */
+  flyQ() { return this.L && this.L.fly_id ? `&fly=${this.L.fly_id}` : ""; }
   /** The parts that depend on which fly is in focus (two flies: app.js setFocus): the zap presets its cells allow and
    *  the type list of its connectome. The inputs and their listeners are wired once. */
   relayout(L) {
@@ -278,6 +285,10 @@ export class LabPanel {
     for (const t of L.types || []) { const o = document.createElement("option"); o.value = t; frag.appendChild(o); }
     dl.appendChild(frag);
     this.baseOptions = dl.innerHTML;
+    // the ontology search: shown when this fly's data carries the ontology, wired once, asking the focused fly
+    const onto = !!(L.vfb && L.vfb.available);
+    if (onto && !this.ontoWired) this.wireOntology();
+    setShown($("ontoRow"), onto); $("ontoHits").innerHTML = "";
     const pr = $("presets"); pr.innerHTML = "";
     for (const p of L.presets || []) {
       const b = document.createElement("button"); b.textContent = p.spec; b.title = p.label;
@@ -287,11 +298,11 @@ export class LabPanel {
   }
   // Virtual Fly Brain's anatomy ontology: type a class name, pick one, and `fbbt:<class>` becomes the population
   wireOntology() {
-    setShown($("ontoRow"), true);
+    this.ontoWired = true;
     const hits = $("ontoHits");
     const lookup = debounce(async (q) => {
       if (q.length < 3) { hits.innerHTML = ""; return; }
-      const r = await getJSON(`api/ontology?q=${encodeURIComponent(q)}&limit=12`);
+      const r = await getJSON(`api/ontology?q=${encodeURIComponent(q)}&limit=12${this.flyQ()}`);
       if (!r || !r.ok) return;
       hits.innerHTML = "";
       if (!r.classes.length) { hits.innerHTML = `<div class="oh"><small>no ontology class with that name among this data's cell types</small></div>`; return; }
@@ -362,11 +373,19 @@ export class PathwayPanel {
     for (const id of ["traceFrom", "traceTo"]) $(id).addEventListener("keydown", (e) => { if (e.key === "Enter") this.trace(); });
   }
   update() { /* nothing per tick: results come from an explicit trace */ }
+  /** Another fly's map in focus (two flies: app.js setFocus): a route traced in the other fly's wiring would be drawn
+   *  with its indices on this map, so the old result goes, and so does the path on the old map. */
+  refocus(brain) {
+    if (this.brain && this.brain !== brain) { this.brain.setPath(null); this.brain.pathNames = null; }
+    this.brain = brain; this.result = null; this.selected = -1;
+    $("paths").innerHTML = ""; $("relays").innerHTML = ""; setText($("traceInfo"), ""); setClass($("traceInfo"), "err", false);
+  }
   async trace() {
     const from = $("traceFrom").value.trim(), to = $("traceTo").value.trim(), hops = $("traceHops").value;
     if (!from || !to) return;
     const btn = $("traceBtn"); btn.disabled = true; setText($("traceInfo"), "searching the wiring…");
-    const r = await getJSON(`api/trace?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&hops=${hops}&top=8`);
+    const fly = this.brain && this.brain.L && this.brain.L.fly_id ? `&fly=${this.brain.L.fly_id}` : "";   // the focused fly's wiring
+    const r = await getJSON(`api/trace?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&hops=${hops}&top=8${fly}`);
     btn.disabled = false;
     if (!r || !r.ok) { setText($("traceInfo"), (r && r.error) || "no answer"); setClass($("traceInfo"), "err", true); return; }
     setClass($("traceInfo"), "err", false);
@@ -436,8 +455,10 @@ export class GeneticsPanel {
       : ` ${unclear.toLocaleString()} neurons have no confident transmitter prediction and count as excitatory.`));
     this.renderVfb(L.vfb);
     for (const id of ["lineBtn", "linesBtn"]) {       // NeuronBridge knows MaleCNS bodies only
-      $(id).disabled = this.sex === "female";
-      $(id).title = this.sex === "female" ? "NeuronBridge matches MaleCNS neurons only, not the female fly's FlyWire cells" : "";
+      const b = $(id);
+      if (b.dataset.title === undefined) b.dataset.title = b.title;   // the page's own tooltip, kept for a male
+      b.disabled = this.sex === "female";
+      b.title = this.sex === "female" ? "NeuronBridge matches MaleCNS neurons only, not the female fly's FlyWire cells" : b.dataset.title;
     }
   }
   // what the anatomy ontology (via Virtual Fly Brain) says about the transmitters, where it differs from the prediction
@@ -657,8 +678,14 @@ export class EventsPanel {
     if (!this.queue.length) { if (S.events && S.events.length && !this.lastId) this.ingest(S); if (!this.queue.length) return; }
     const ul = this.ul, atBottom = ul.scrollHeight - ul.scrollTop - ul.clientHeight < 24;
     const frag = document.createDocumentFragment();
+    // two flies: a per-fly event carries `fly` (docs/API.md); the row then starts with whose it is
+    const who = (e) => {
+      if (e.fly == null || !S.flies) return "";
+      const f = S.flies.find((x) => x.id === e.fly), sex = f ? f.sex : "";
+      return `<span class="who" title="fly ${e.fly}${sex ? ", the " + esc(sex) : ""}">${sex === "female" ? "♀" : "♂"}</span>`;
+    };
     for (const e of this.queue) {
-      const li = el("li", e.kind, `<i></i><span class="t">${fmt(e.t, 1)} s</span><span>${esc(e.text)}</span>`);
+      const li = el("li", e.kind, `<i></i><span class="t">${fmt(e.t, 1)} s</span><span>${who(e)}${esc(e.text)}</span>`);
       li.title = e.kind; frag.appendChild(li); this.count++;
     }
     this.queue.length = 0;

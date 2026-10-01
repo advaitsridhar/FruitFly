@@ -49,7 +49,7 @@ async function loadLayout() {
   setText($("genomeSyn"), `${Math.round(L.synapses / 1e6)} million`);
   wireBrain();
   attachPick(brain);
-  $("focusSel").onchange = (e) => setFocus(parseInt(e.target.value) || 0);
+  $("focusSel").onchange = (e) => { setFocus(parseInt(e.target.value) || 0); e.target.blur(); };   // (keys are ignored while a menu has the focus)
   panels.why = new P.WhyPanel(L);
   panels.keys = new P.KeyNeurons(L);
   panels.drives = new P.DrivesPanel();
@@ -99,6 +99,7 @@ async function setupPair(s) {
   const fem = $("femaleToggle"); fem.checked = true; fem.disabled = true;
   setText($("femaleText"), "♀ female: simulated");
   $("femaleLabel").title = "A simulated female with a brain of her own is in the dish (--partner); the scripted female is for single-fly play";
+  setShown($("cuesNote"), s.flies.some((f) => f.sex === "female"));       // her abdomen marks are hand-built cues: say so under the dish
   const names = s.flies.map((f) => `${f.sex} (${layouts[f.id] ? layouts[f.id].dataset : "…"})`).join(" and ");
   setText($("sub"), `two flies: ${names} · ${(L.n + (layouts[1] ? layouts[1].n : 0)).toLocaleString()} neurons in two brains`);
   buildDialogs();
@@ -116,7 +117,7 @@ function setFocus(k) {
   panels.keys = new P.KeyNeurons(Lk);
   panels.checks = new P.ChecksPanel(Lk);
   panels.lab.relayout(Lk);
-  panels.paths.brain = brain;
+  panels.paths.refocus(brain);
   panels.genetics.relayout(Lk);
   panels.genome = new P.GenomePanel(Lk);
   panels.model = new P.ModelPanel(Lk);
@@ -213,7 +214,7 @@ function renderState(s0) {
   toast(s.msg);
 }
 function syncControls(s) {
-  const ap = $("autopilot"); if (document.activeElement !== ap && !focus) ap.checked = !!s.autopilot;   // (the state's is fly 0's)
+  const ap = $("autopilot"); if (document.activeElement !== ap) ap.checked = !!s.autopilot;
   setText($("pauseBtn"), s.paused ? "Resume" : "Pause");
   const fem = $("femaleToggle"); if (!s.flies && document.activeElement !== fem) fem.checked = !!(s.world && s.world.female);
   if (!speedDrag && !held("speed")) { const sp = $("speed"); if (Math.abs(parseFloat(sp.value) - s.speed) > 0.01) sp.value = s.speed; setText($("speedVal"), fmt(s.speed, 2) + "×"); }
@@ -242,8 +243,13 @@ function slowHint(s) {
   }
   $("hint").__slow = true; setText($("hint"), `Your computer is running the brain at ${fmt(s.rtf, 2)}× real time, so the fly's world is in slow motion to keep up. Closing other programs helps.`);
 }
-let toastText = "";
-function toast(msg) {
+let toastText = "", toastHold = 0;
+/** Show the server's message (sent with every tick), or, with `holdMs`, a page-local one that the next ticks'
+ *  empty `msg` leaves in place until the hold runs out (the server's own message still replaces it). */
+function toast(msg, holdMs = 0) {
+  const now = performance.now();
+  if (holdMs) toastHold = now + holdMs;
+  else if (!msg && now < toastHold) return;
   if (msg && msg !== toastText) { $("toast").textContent = msg; $("toast").classList.add("show"); }
   if (!msg && toastText) $("toast").classList.remove("show");
   toastText = msg || "";
@@ -540,11 +546,11 @@ window.addEventListener("keydown", (e) => {
   if (/^[0-9]$/.test(e.key)) { const k = e.key === "0" ? 9 : parseInt(e.key) - 1; if (toolOrder[k]) setTool(toolOrder[k]); return; }
   switch (e.key) {
     case " ": e.preventDefault(); post({ type: "pause", on: !(S && S.paused) }); break;
-    case "f": case "F": if (S && S.flies) toast("The female is simulated here (--partner); the scripted female is for single-fly play."); else post({ type: "female", on: !(S && S.world && S.world.female) }); break;
+    case "f": case "F": if (S && S.flies) toast("The female is simulated here (--partner); the scripted female is for single-fly play.", 3000); else post({ type: "female", on: !(S && S.world && S.world.female) }); break;
     case "c": case "C": clap(); break;
     case "s": case "S": $("seesToggle").checked = sees = !sees; break;
     case "e": case "E": $("retinaToggle").checked = retinaOn = !retinaOn; setShown($("retinaBox"), retinaOn); break;
-    case "w": case "W": post({ type: "autopilot", on: !(S && S.autopilot) }); break;
+    case "w": case "W": { const V = S ? viewOf(S) : null; post({ type: "autopilot", on: !(V && V.autopilot) }); break; }
     case "n": case "N": post({ type: "reset" }); break;
     case "h": case "H": if (layout) layout.toggleSidebar(); break;
     case "+": case "=": zoomStep(1); break;
