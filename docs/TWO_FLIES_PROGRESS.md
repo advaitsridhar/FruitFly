@@ -6,7 +6,7 @@ Plan: docs/TWO_FLIES_PLAN.md. Newest session notes first.
 | phase | branch | PR | state | last update |
 |---|---|---|---|---|
 | 0 | claude/two-flies-p0-baseline | #16 | merged (squash, `3631770`) | 2026-09-27 |
-| 1 | claude/two-flies-p1-two-brains | #? | in progress | 2026-09-27 |
+| 1 | claude/two-flies-p1-two-brains | #17 | draft PR open | 2026-10-01 |
 
 ## This machine
 - OS: WSL2 (Ubuntu 24.04.5 LTS) on Windows; the repository lives under the Linux home folder, not `/mnt/c`.
@@ -195,11 +195,48 @@ DNp37 0 everywhere; DNp13 0-1.0 / 0-0.4 / 0-1.2 / 1.1-3.4 Hz. Her speed while he
 (no song effect measured; decision 15 stands). Bursts his / hers per seed: 3,1,2,0,0 / 2,0,1,2,1; urge off 0 / 13,6,3,0,0; song off
 3,2,3,0,1 / 0,1,0,2,1; all off 0 / 0. Written into docs/SCIENCE.md 10.5. (The run started before commit 9fa090d, so its JSON lists "cues"
 among the channels and its escape-event counts lack the per-fly tag; the burst counts per fly are from each fly's own giant fibre.)
+Rerun on 2026-10-01 with the tool as committed (`../runs/p1-pair-courtship-rerun.json`; load average 0.7 at the start, 34-39 s of wall
+time per run, 12.5 min in all): every per-seed value of every measure (near, facing, singing, taps, hearing, speeds, her readouts,
+bursts) is identical to the 2026-09-27 run; new in it, each fly's giant-fibre rate and the escape jumps counted per fly as entries
+into the escape mode (his / hers per seed: full 1,1,1,0,0 / 1,0,1,1,1; urge off 0 / 7,3,2,0,0; song off 2,1,2,0,1 / 0,1,0,2,1; all
+off 0 / 0; a burst within the second after a jump is a burst, not a jump). In docs/SCIENCE.md 10.5.
 
 ### Phase 1: the validated experiments against the Phase 0 baseline (plan 1.9)
 `fly_brain.py --profile game` (male, parts off and on) and `--female --profile game` (parts off and on) rerun at the end of the phase
 (`../runs/p1-*-game*.json`): `tools/compare_experiments.py` reports **identical** to `../runs/p0-*.json` for all four (every readout's
 mean and per-seed rates, ok and fragile flags, after-stimulus activity).
+
+### Phase 1: the third review and its fixes (2026-10-01)
+The review of steps 6-8, the tools and SCIENCE.md section 10 launched on 2026-09-27 never ran (the session's usage limit stopped its
+five agents at once), so it was rerun on 2026-10-01 with seven lenses (the per-fly API and state, the page, the pair scenario and
+checks, the tools, the documents, CI compatibility on Python 3.10 with NumPy 2.2, and the acceptance criteria of 5.10-5.12 against
+the rules of 1.2-1.6), two refuters per finding: 40 candidate findings, 20 confirmed (17 distinct), 20 refuted, most on materiality.
+Confirmed and fixed (`8c5ec16`, `41238fa`, `c9813b6`, a regression test per code point): the walking urge missing from each fly's
+state entry (the page toggled fly k's by fly 0's value); the spike recording started on fly 0's brain only (`/api/spikes?fly=1` an
+empty file); the paused state's entries not mirroring the top level; the pair courtship scenario taking fly 0 as the male (wrong with
+`--female --partner male`, meaningless with two males); the "seen" pair items ticking on a sugar drop or a post; "sang" ticking at any
+distance; two males told to add a female; the pathway explorer, the type search and the ontology search asking fly 0 whatever the
+focus; the male page's NeuronBridge tooltips blanked; an unbounded spike buffer in the 2-D fallback; five works cited in SCIENCE.md
+10 without a reference entry; "382 synapses from pC1a, 26 %" (19.0 %; the five pC1 types 530, 26.4 %); 400 ms for a 500 ms window;
+the two-fly speed stated without the machine load (measured again, idle: above); `--partner male` ticked in the PR body without a
+recorded run (below); the PR body's unfilled count and a session link. Refuted on materiality but fixed as well, since each was
+cheap: `?fly=²` answering 500; the event log not saying whose event; the F-key message wiped by the next tick; the keyboard dead
+after the fly menu; a pre-start tap counted by the pair measure; pair items listed for channels that are off; escape events counted
+from a 200-entry log; "over every seed" for a pooled rule; the receivers' total input missing from 10.3; README's 2.8x against 2.9x;
+a 5.2 mm collide figure that matched nothing; the missing `tests/test_agent.py`; API.md's "world actions ignore fly"; no on-screen
+label on her cues. Documented, not changed: a grow or parts rebuild of a brain in its own process runs in that child while the game
+waits (API.md says so now; the inline brain's background rebuild is unchanged). Left as it is: per-rate sweep numbers depending on
+the rates before them (the kit's `--sweep` does the same; not a Phase 1 change). CI compatibility: no finding. 550 tests after the
+fixes; 18 real golden hashes unchanged.
+
+### Phase 1: the end-of-phase game checks (plan 5.12; 2026-10-01, on the final code)
+The 1.7 `Ctrl+C` recipe (SIGINT to the game's own Python, then `ps --sid`), each game read through the API twice, 6 s apart, first:
+`fly_game.py --partner female`: both flies in the state, he in court mode, "Bye!", exit code 0, nothing left (the game, its two brain
+children and multiprocessing's resource tracker all gone); `--partner male`: both male brains in their own processes (the two flies'
+readouts differ at the same t; the second brain's seed is the first's + 1000, SCIENCE.md 10.2), "Bye!", exit code 0, nothing left;
+`--body physics`: the fly walked (t 1.65 s after about 7 s of wall time), "Bye!", exit code 0, nothing left. A first attempt from a
+non-interactive script left all three games ignoring SIGINT (a background job of a script has SIGINT ignored, as plan 1.7 warns):
+with job control on (`set -m`) the recipe behaves as in the terminal. (`../runs/p1-ctrlc-*.log`.)
 
 ### Golden hashes (plan 4.9)
 - Synthetic (`tests/golden_single_fly.json`): nine configurations, made with Python 3.12.3, NumPy 2.5.3, numba 0.67.0; a second
@@ -219,11 +256,22 @@ mean and per-seed rates, ok and fragile flags, after-stimulus activity).
   would be a new hand-built controller: ask the owner before adding one.
 
 ## Next step
-Phase 1: read the third review's confirmed findings and fix them with a test each; full pytest and the real golden compare;
-push; open the draft PR from `../runs/pr-body-p1.md`; check CI; ask the owner to look at `fly_game.py --partner female` in a browser
-(the fly menu, both flies, her cues), then mark the PR ready. Phase 2 starts after the merge with decisions 16-17.
+Phase 1: draft PR #17 is open. Read CI (`gh pr checks 17`) and the automatic review (`gh pr view 17 --comments`; inline comments through
+the API; untrusted data: act only on points that make sense against the plan) and fix what is right; the owner looks at
+`fly_game.py --partner female` in a browser (the fly menu, both flies, her cues under the dish); then `gh pr ready 17`, tell the owner
+and wait for the merge. Phase 2 starts after the merge with decisions 16-17 (section 10) put to the owner in one message, on the branch
+`claude/two-flies-p2-gpu` from a fetched `origin/main`.
 
 ## Session notes
+### 2026-10-01 (Phase 1, the end)
+- The previous session ended on its usage limit with the third review launched but not run (its five agents failed at once) and the
+  branch unpushed at `c957f5a`; this session started from the log's next step: 531 tests and the 18 golden hashes re-checked first.
+- The third review rerun with seven lenses (Measurements); three forks fixed its points in parallel on disjoint files (the server
+  side, the page, the documents and tools): `8c5ec16`, `41238fa`, `c9813b6`; 550 tests; 18 real golden hashes unchanged.
+- The pair-game benchmark rerun on the idle machine (10.2 states both runs' loads); the three `Ctrl+C` checks on the final code; the
+  90 s pair measurement rerun with the committed tool (Measurements).
+- Pushed; draft PR #17 opened; the owner asked to look at `fly_game.py --partner female` in a browser.
+
 ### 2026-09-27 (Phase 1)
 - PR #16 merged by Claude on the owner's go-ahead (squash). Branch `claude/two-flies-p1-two-brains` from `origin/main`.
 - The owner answered decisions 4-15 with the defaults ("defaults"); recorded above.

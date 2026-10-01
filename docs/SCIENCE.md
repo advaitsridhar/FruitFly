@@ -2456,7 +2456,9 @@ brains in their own processes, and the three controls the plan asks for: her wal
 (he still sings), and every channel off (a partner in the dish that neither can sense). Distances are real
 centre-to-centre millimetres; "near" is within 15 mm; "facing" is her centre within ±30° of his heading while near;
 speeds are the drawn body's, jump ticks left out; a burst is 5 or more giant-fibre spikes over two ticks (the escape
-rule). Ranges over the five seeds, mean in brackets.
+rule); a jump is the escape mode entered (a burst within the second after a jump is a burst, not a jump: the game's
+cooldown). Ranges over the five seeds, mean in brackets. Measured on 2026-09-27 and again on 2026-10-01 with the tool as
+committed: every per-seed value came back identical (seeded games stepped tick by tick are deterministic).
 
 | | full (seen, song, contact, collide) | her walking urge off | song channel off | every channel off |
 |---|---|---|---|---|
@@ -2474,6 +2476,7 @@ rule). Ranges over the five seeds, mean in brackets.
 | his modes: court / walk / feed | 62 / 19 / 12 % | 72 / 15 / 11 % | 59 / 21 / 13 % | 0 / 82 / 0 % |
 | her modes: walk / idle / groom | 95 / 1 / 3 % | 67 / 32 / 1 % | 94 / 1 / 4 % | 83 / 3 / 14 % |
 | giant-fibre bursts in 90 s, his / hers, per seed | 3,1,2,0,0 / 2,0,1,2,1 | 0,0,0,0,0 / 13,6,3,0,0 | 3,2,3,0,1 / 0,1,0,2,1 | 0 / 0 |
+| escape jumps in 90 s, his / hers, per seed | 1,1,1,0,0 / 1,0,1,1,1 | 0,0,0,0,0 / 7,3,2,0,0 | 2,1,2,0,1 / 0,1,0,2,1 | 0 / 0 |
 
 **What this shows.**
 
@@ -2497,14 +2500,14 @@ rule). Ranges over the five seeds, mean in brackets.
 * **Her movement is the walking urge.** With it off she covers 0.4-1.9 mm/s, mostly the push of his bumping; her
   descending neurons drive nothing on their own (section 9.4). Every claim about "what she does" is a claim about a
   hand-built drive perturbed by him, which is why the controls are reported with the numbers.
-* **Escapes.** Alone in a drawn dish neither fly jumps (section 5.7). In the pair he bursts 0-3 times in 90 s and she
-  0-2, both from the partner looming on the retina or a tap (never from song: the song channel off changes neither
-  count); with her walking urge off she stands where he keeps arriving and bursts 0-13 times, the more he looms.
+* **Escapes.** Alone in a drawn dish neither fly jumps (section 5.7). In the pair he bursts 0-3 times in 90 s (0-2 jumps) and she
+  0-2 (0-1 jumps), both from the partner looming on the retina or a tap (never from song: the song channel off changes neither
+  count); with her walking urge off she stands where he keeps arriving and bursts 0-13 times (0-7 jumps), the more he looms.
   Jump ticks are left out of the speeds above.
 
 Hand-built, still: every channel (10.1), the placement, the 15 mm and ±30° of the measures. Not modelled: the sex
-peptide's route, mating status, her song, copulation. Cost: 90 s of the pair took 34-43 s of wall time per run here
-(2026-09-27; the machine load during those runs was not recorded); the twenty runs 13 minutes.
+peptide's route, mating status, her song, copulation. Cost: 90 s of the pair takes 34-39 s of wall time per run here
+(2026-10-01, load average 0.7 at the start; 34-43 s on 2026-09-27, load not recorded); the twenty runs 12-13 minutes.
 
 ### 10.6 Not modelled
 
