@@ -5,7 +5,8 @@ Plan: docs/TWO_FLIES_PLAN.md. Newest session notes first.
 ## Status
 | phase | branch | PR | state | last update |
 |---|---|---|---|---|
-| 0 | claude/two-flies-p0-baseline | #16 | PR ready for review, CI green; waiting for the merge | 2026-09-27 |
+| 0 | claude/two-flies-p0-baseline | #16 | merged (squash, `3631770`) | 2026-09-27 |
+| 1 | claude/two-flies-p1-two-brains | #17 | draft PR open, CI green | 2026-10-01 |
 
 ## This machine
 - OS: WSL2 (Ubuntu 24.04.5 LTS) on Windows; the repository lives under the Linux home folder, not `/mnt/c`.
@@ -47,6 +48,18 @@ Plan: docs/TWO_FLIES_PLAN.md. Newest session notes first.
 | 1 | operating system route | WSL2 (Ubuntu 24.04), Claude Code inside Ubuntu: the machine already matched the default | default, confirmed by the owner ("proceed with the defaults") | 2026-09-27 |
 | 2 | Python version | the system python3, 3.12.3 (in the 3.10-3.12 range) | default, confirmed by the owner ("proceed with the defaults") | 2026-09-27 |
 | 3 | continue before a PR is merged | wait for the merge before the next phase | default, confirmed by the owner ("proceed with the defaults") | 2026-09-27 |
+| 4 | which pairs | male protagonist with a simulated FlyWire female (`--partner female`); `--partner male` also supported; `none` stays the default | default, owner: "defaults" | 2026-09-27 |
+| 5 | version numbers | one minor version per merged phase: 2.9.0 for Phase 1, bumped in both files in the phase PR, SCIENCE.md headings tagged to match | default, owner | 2026-09-27 |
+| 6 | song loudness rule (`SONG_MAX_HZ`) | the highest swept JO-A/B rate at which fewer than 1 % of 50 ms windows hold `GF_BURST` or more DNp01 spikes, five seeds, parts off and on | default, owner | 2026-09-27 |
+| 7 | song shape | a steady drive while the male sings; a pulse-train envelope later, as a switch | default, owner | 2026-09-27 |
+| 8 | song range | full within 6 mm, linear to nothing at 15 mm, real centre-to-centre mm; hand-built, provisional, no source | default, owner | 2026-09-27 |
+| 9 | her DNp37 / DNp13 readouts | labelled hand-built cues with provisional thresholds, never "acceptance"/"rejection"; no effect on the male; no copulation rule | default, owner | 2026-09-27 |
+| 10 | cVA channel | off (a switch) | default, owner | 2026-09-27 |
+| 11 | mating status (SAG) | off | default, owner | 2026-09-27 |
+| 12 | drawn flies collide | on with two or more flies; single-fly play unchanged | default, owner | 2026-09-27 |
+| 13 | her walking urge | on for both flies, labelled; every claim checked against the 5.9 controls | default, owner | 2026-09-27 |
+| 14 | contact arousal to pC1 for a simulated partner (`contact_pc1`) | on for a male toucher, off for a female toucher, switchable; the scripted-female path unchanged | default, owner | 2026-09-27 |
+| 15 | if song barely reaches her vpoEN | report as measured; no compensating gain unless the owner asks | default, owner | 2026-09-27 |
 
 ## Measurements
 All on 2026-09-27, this machine, `nice -n 10`, one job at a time, machine otherwise idle (load average under 1.5).
@@ -58,6 +71,8 @@ All on 2026-09-27, this machine, `nice -n 10`, one job at a time, machine otherw
   3 skipped** (the two physics tests and the golden physics configuration); 3.11 and 3.12 green too. So the synthetic golden
   hashes made here with NumPy 2.5.3 reproduce under NumPy 2.2.6 on Python 3.10: no version-dependent hash set is needed
   (plan 4.9 item 3).
+- CI on PR #17 (2026-10-01, the same matrix): **547 passed, 3 skipped** on 3.10, 3.11 and 3.12 (the same three tests); here
+  550 passed, 0 skipped with the physics extra.
 
 ### Validated experiments, the baseline JSONs (plan 4.7; game profile, five seeds, numba)
 | run | file (work folder) | result |
@@ -110,6 +125,121 @@ reproduce all four files exactly (`tools/compare_experiments.py`).
   cost over a lone brain (11-39 % in the second run, −23 % to +33 % in the first) as within the run-to-run spread.
 - Physics: 0.22x real time here (the plan's reference machine: 0.086-0.113), 112 ms per tick.
 
+### Phase 1: cell counts behind the social channels and the female's readouts (plan 5.5, 5.6; checked 2026-09-27)
+`Connectome.count(spec)` on the kit's files (male / female): `prefix:JO-A,prefix:JO-B` 138 / 359; `LC10a` 275 / 234; `LC11` 143 / 127;
+`LC4` 126 / 104; `LPLC2` 185 / 210; `LgLG1a,LgLG1b` 270 / **0**; `ORN_DA1` 204 / 126; `prefix:pC1_` 148 / 10; `pIP10` 2 / **0**;
+`DNp13` 2 / 2; `DNp37` **0** / 2; `vpoEN` 4 / 4; `AN_SMP_2` (SAG) 0 / 2; `prefix:BM_InOm` 745 / 1,113; `DNp01` 2 / 2; `MDN` 4 / 4.
+Female only: the pC2l spec `AVLP567,AVLP568,AVLP569,AVLP570,CL313,SIP200f,SIP201f,!body:720575940610359758` 38 (39 without the
+exclusion), `DNp55` 2, `oviDNa_a,oviDNa_b,oviDNb` 6, `DA1_lPN` 15, `aSP-g1,aSP-g2,aSP-g3A,aSP-g3B` 23, `M_lvPNm43,M_lvPNm45` 10.
+Wiring spot checks (`--female --inputs`): pC1a → DNp37 382 synapses (19.0 % of its 2,008 input synapses; the five pC1 types together 530, 26.4 %), vpoEN → DNp37 169, CL313 → DNp13 678 and
+AVLP569 142 (the pC2l types), vpoEN → DNp13 275, AN_SMP_2 → pC1 872. All as the plan's channel table says.
+
+### Phase 1 steps 1-2 (2026-09-27)
+- Step 1 (`89d6f78`, FlyAgent): 449 passed; real-data golden compare 18 unchanged.
+- Step 2 (`ae3d656`, the BrainIO seam): 461 passed (12 new in `tests/test_brainio.py`); real-data golden compare 18 unchanged;
+  the three golden configurations autopilot, zap_mdn and silence_and_watch give the same hashes through a process brain
+  (`Game(brain_procs="on")`). `Ctrl+C` on `fly_game.py --brain-procs on`: "Bye!", exit code 0, nothing left (the brain child and
+  multiprocessing's resource tracker both gone).
+- **Pipe cost per tick** (real male, drawn body with the scripted female, 400 ticks, two runs each): inline p50 7.01-7.06 ms,
+  p99 8.75-9.35, mean 7.10-7.19; process brain p50 7.56-7.81, p99 9.98-10.11, mean 7.66-7.87. The pipe costs about **0.6 ms per
+  tick** (p50 +0.65, p99 +0.99, mean +0.62): under the plan's 1 ms line, so pipes stay and no shared memory is used.
+
+### Phase 1: the song level (plan 5.9 item 1, decision 6; 2026-09-27)
+`tools/song_startle.py` (new): the sound cells `prefix:JO-A,prefix:JO-B` driven at 10-100 Hz, 5 s per rate and seed after
+100 ms, seeds 0-4, game profile, the giant fibre `DNp01` binned into 25 ms ticks, windows of two ticks; a burst is
+`game.GF_BURST` = 5 or more spikes. Share of windows with a burst (largest window in brackets), male, parts off / on:
+
+| JO-A/B Hz | 40 | 50 | 60 | 70 | 80 | 90 | 100 |
+|---|---|---|---|---|---|---|---|
+| parts off | 0 % (4) | 0.20 % (5) | 0.10 % (5) | **0.50 % (5)** | 1.21 % (6) | 3.12 % (6) | 6.73 % (7) |
+| parts on | 0 % (4) | 0.20 % (5) | 0.10 % (5) | **0.80 % (5)** | 2.21 % (6) | 4.42 % (6) | 10.15 % (6) |
+| GF Hz per cell (off / on) | 14.0 / 14.0 | 16.8 / 16.8 | 19.4 / 19.4 | 22.6 / 23.2 | 25.7 / 26.4 | 27.9 / 29.0 | 31.0 / 32.2 |
+
+**`SONG_MAX_HZ` = 70 Hz** by the rule (the highest swept rate under 1 % in both settings; 80 Hz crosses it). At 70 Hz every burst
+window holds exactly 5 spikes (the threshold), 5 of 995 windows with the parts list off and 8 with it on. Under the same drive
+the female's giant fibre never bursts: largest window 4 (parts off) or 3 (parts on) at 100 Hz, 0 % at every rate; her GF mean
+reaches 21.2 / 13.1 Hz per cell at 100 Hz. (`../runs/p1-startle-male.json`, `../runs/p1-startle-female.json`; 114 s.)
+
+### Phase 1: what the sweep does to each fly's readouts (plan 5.9 item 1; `fly_brain.py --sweep`, 5 seeds, `../runs/p1-song-*.json`)
+Male (parts off and on alike): DNp01 4.2 → 28.0 Hz per cell from 10 to 100 Hz; pC1 0.0 and vpoEN 0.0 at every rate.
+Female, parts off: DNp01 0.0 → 26.5 Hz per cell; **vpoEN, pC2l (38 cells), DNp37 and DNp13 stay at 0.0 Hz at every rate up to
+100 Hz**; DNp55 0 → 4.8 Hz (from 60 Hz on). Parts on: DNp01 0 → 15.8; the four decision readouts 0.0 throughout; DNp55 0 → 4.8.
+So in this data his song reaches her Johnston's organ and her giant fibre (never to a burst) but not her song-tuned neurons
+(vpoEN), her pulse-song detectors (pC2l) or the two motor commands (DNp37, DNp13): the Johnston's-organ synapses Baker et al.
+(2022) found under-detected in FlyWire v274 look under-detected in v783 too. Reported as measured; no compensating gain
+(decision 15).
+
+### Phase 1: the pair experiments (plan 5.9 item 2; commit `468f757`; `../runs/p1-pair-{female,male}[-parts].json`)
+Five seeds, game profile, parts off and on. Ranges set from the measurement (provisional). Female: F1 (song at 70 Hz):
+vpoEN, pC2l, DNp37, DNp13 all 0 on every seed, DNp01 7-20; F2 (pC1 80 Hz): DNp37 72-86; F3 (pC2l 80 Hz): DNp13 105-113;
+F4 (ORN_DA1 80 Hz): DA1_lPN 99-102, aSP-g/pC1d/pC1e 0; F5 (SAG 60 Hz): pC1 11-33, DNp37 17-45. Male M1 (song 70 Hz): DNp01 19-25.
+Summary lines: female 13/14 readouts, 5/6 experiments (M1 on her reads 18.4 / 9.0 Hz, below his range); male 5/7, 2/4 (F2, F5 n/a on him;
+F1 fragile, F3 DNp13 0 Hz, F4 DA1_lPN 207 Hz as comparisons). `--pair-experiments` refuses the 12 modes that run no experiments (exit 2)
+and matches `--only` against the pair list. Written into docs/SCIENCE.md 10.4.
+
+### Phase 1: the two-fly game's speed and memory (plan 5.9 item 4; `../runs/p1-bench-pair-game.json`; commit `6008897`)
+`tools/bench_two_flies.py --only pair-game` (male + FlyWire female, brains in processes, channels seen/song/contact/collide,
+400 ticks after 20): parts off dt 0.5: RTF 2.87, tick p50 8.66 / p99 10.28 ms, parent 1,655 MB, children 409 + 630 MB; parts off
+dt 1.0: RTF 4.27, 5.77 / 7.58 ms; parts on dt 0.5: RTF 1.88, 13.34 / 16.0 ms, parent 1,721, children 470 + 714 MB; parts on dt 1.0:
+RTF 2.60, 9.49 / 12.28 ms. Target (plan 3.3): 0.7x. In docs/SCIENCE.md 10.2.
+Rerun 2026-10-01 on the idle machine (load average 0.02 at the start; `../runs/p1-bench-pair-game-idle.json`): parts off dt 0.5:
+RTF 2.70, 8.99 / 14.17 ms; parts off dt 1.0: 4.16, 5.93 / 7.98; parts on dt 0.5: 1.74, 14.31 / 18.11, parent 1,742 MB; parts on
+dt 1.0: 2.33, 10.11 / 17.7; memory otherwise within 1 MB of the first run. The first run had started two minutes after the
+pair-experiment runs, at a 1-minute load average of 5.3 (not stated in 10.2 until now); the idle rerun is the slightly slower
+one (medians 3-7 % longer, 99th percentiles 5-44 %), so the difference is the run-to-run spread of 9.6, not the load. Both
+runs are in docs/SCIENCE.md 10.2.
+
+### Phase 1: the pair over 90 s with its controls (plan 5.9 item 3; `tools/pair_courtship.py`; `../runs/p1-pair-courtship.json`; 13 min)
+Five seeds, parts off, brains in processes; full / her urge off / song off / all off. Near 15 mm: 70-84 / 59-88 / 70-82 / 4-17 s. He sings
+60-74 / 63-80 / 58-74 / 0 s; taps 10-15 / 9-16 / 11-16 / 0 per min. She hears 39-48 Hz (78-93 % of ticks) / 43-53 / 0 / 0. Her vpoEN and
+DNp37 0 everywhere; DNp13 0-1.0 / 0-0.4 / 0-1.2 / 1.1-3.4 Hz. Her speed while he sings vs not: 4.0-7.3 vs 5.8-8.7 / 0.4-0.9 vs 0.8-1.9 /
+5.1-6.7 vs 6.3-8.1 / — vs 6.0-7.8 mm/s: the slowing survives the song channel being off, so it is his bumping and tapping, not song
+(no song effect measured; decision 15 stands). Bursts his / hers per seed: 3,1,2,0,0 / 2,0,1,2,1; urge off 0 / 13,6,3,0,0; song off
+3,2,3,0,1 / 0,1,0,2,1; all off 0 / 0. Written into docs/SCIENCE.md 10.5. (The run started before commit 9fa090d, so its JSON lists "cues"
+among the channels and its escape-event counts lack the per-fly tag; the burst counts per fly are from each fly's own giant fibre.)
+Rerun on 2026-10-01 with the tool as committed (`../runs/p1-pair-courtship-rerun.json`; load average 0.7 at the start, 34-39 s of wall
+time per run, 12.5 min in all): every per-seed value of every measure (near, facing, singing, taps, hearing, speeds, her readouts,
+bursts) is identical to the 2026-09-27 run; new in it, each fly's giant-fibre rate and the escape jumps counted per fly as entries
+into the escape mode (his / hers per seed: full 1,1,1,0,0 / 1,0,1,1,1; urge off 0 / 7,3,2,0,0; song off 2,1,2,0,1 / 0,1,0,2,1; all
+off 0 / 0; a burst within the second after a jump is a burst, not a jump). In docs/SCIENCE.md 10.5.
+
+### Phase 1: the validated experiments against the Phase 0 baseline (plan 1.9)
+`fly_brain.py --profile game` (male, parts off and on) and `--female --profile game` (parts off and on) rerun at the end of the phase
+(`../runs/p1-*-game*.json`): `tools/compare_experiments.py` reports **identical** to `../runs/p0-*.json` for all four (every readout's
+mean and per-seed rates, ok and fragile flags, after-stimulus activity).
+
+### Phase 1: the third review and its fixes (2026-10-01)
+The review of steps 6-8, the tools and SCIENCE.md section 10 launched on 2026-09-27 never ran (the session's usage limit stopped its
+five agents at once), so it was rerun on 2026-10-01 with seven lenses (the per-fly API and state, the page, the pair scenario and
+checks, the tools, the documents, CI compatibility on Python 3.10 with NumPy 2.2, and the acceptance criteria of 5.10-5.12 against
+the rules of 1.2-1.6), two refuters per finding: 40 candidate findings, 20 confirmed (17 distinct), 20 refuted, most on materiality.
+Confirmed and fixed (`8c5ec16`, `41238fa`, `c9813b6`, a regression test per code point): the walking urge missing from each fly's
+state entry (the page toggled fly k's by fly 0's value); the spike recording started on fly 0's brain only (`/api/spikes?fly=1` an
+empty file); the paused state's entries not mirroring the top level; the pair courtship scenario taking fly 0 as the male (wrong with
+`--female --partner male`, meaningless with two males); the "seen" pair items ticking on a sugar drop or a post; "sang" ticking at any
+distance; two males told to add a female; the pathway explorer, the type search and the ontology search asking fly 0 whatever the
+focus; the male page's NeuronBridge tooltips blanked; an unbounded spike buffer in the 2-D fallback; five works cited in SCIENCE.md
+10 without a reference entry; "382 synapses from pC1a, 26 %" (19.0 %; the five pC1 types 530, 26.4 %); 400 ms for a 500 ms window;
+the two-fly speed stated without the machine load (measured again, idle: above); `--partner male` ticked in the PR body without a
+recorded run (below); the PR body's unfilled count and a session link. Refuted on materiality but fixed as well, since each was
+cheap: `?fly=²` answering 500; the event log not saying whose event; the F-key message wiped by the next tick; the keyboard dead
+after the fly menu; a pre-start tap counted by the pair measure; pair items listed for channels that are off; escape events counted
+from a 200-entry log; "over every seed" for a pooled rule; the receivers' total input missing from 10.3; README's 2.8x against 2.9x;
+a 5.2 mm collide figure that matched nothing; the missing `tests/test_agent.py`; API.md's "world actions ignore fly"; no on-screen
+label on her cues. Documented, not changed: a grow or parts rebuild of a brain in its own process runs in that child while the game
+waits (API.md says so now; the inline brain's background rebuild is unchanged). Left as it is: per-rate sweep numbers depending on
+the rates before them (the kit's `--sweep` does the same; not a Phase 1 change). CI compatibility: no finding. 550 tests after the
+fixes; 18 real golden hashes unchanged.
+
+### Phase 1: the end-of-phase game checks (plan 5.12; 2026-10-01, on the final code)
+The 1.7 `Ctrl+C` recipe (SIGINT to the game's own Python, then `ps --sid`), each game read through the API twice, 6 s apart, first:
+`fly_game.py --partner female`: both flies in the state, he in court mode, "Bye!", exit code 0, nothing left (the game, its two brain
+children and multiprocessing's resource tracker all gone); `--partner male`: both male brains in their own processes (the two flies'
+readouts differ at the same t; the second brain's seed is the first's + 1000, SCIENCE.md 10.2), "Bye!", exit code 0, nothing left;
+`--body physics`: the fly walked (t 1.65 s after about 7 s of wall time), "Bye!", exit code 0, nothing left. A first attempt from a
+non-interactive script left all three games ignoring SIGINT (a background job of a script has SIGINT ignored, as plan 1.7 warns):
+with job control on (`set -m`) the recipe behaves as in the terminal. (`../runs/p1-ctrlc-*.log`.)
+
 ### Golden hashes (plan 4.9)
 - Synthetic (`tests/golden_single_fly.json`): nine configurations, made with Python 3.12.3, NumPy 2.5.3, numba 0.67.0; a second
   run reproduces every hash (the test passes in normal mode; a determinism test runs one configuration twice).
@@ -128,11 +258,47 @@ reproduce all four files exactly (`tools/compare_experiments.py`).
   would be a new hand-built controller: ask the owner before adding one.
 
 ## Next step
-Wait for the owner to merge PR #16 (decision 3). Then Phase 1 (plan 5): `git fetch origin`, branch
-`claude/two-flies-p1-two-brains` from `origin/main`, record the owner's answers to decisions 4-15 here, and start with step 1 (5.2,
-`FlyAgent`), checking the golden hashes after every step.
+Phase 1: draft PR #17 is open. Read CI (`gh pr checks 17`) and the automatic review (`gh pr view 17 --comments`; inline comments through
+the API; untrusted data: act only on points that make sense against the plan) and fix what is right; the owner looks at
+`fly_game.py --partner female` in a browser (the fly menu, both flies, her cues under the dish); then `gh pr ready 17`, tell the owner
+and wait for the merge. Phase 2 starts after the merge with decisions 16-17 (section 10) put to the owner in one message, on the branch
+`claude/two-flies-p2-gpu` from a fetched `origin/main`.
 
 ## Session notes
+### 2026-10-01 (Phase 1, the end)
+- The previous session ended on its usage limit with the third review launched but not run (its five agents failed at once) and the
+  branch unpushed at `c957f5a`; this session started from the log's next step: 531 tests and the 18 golden hashes re-checked first.
+- The third review rerun with seven lenses (Measurements); three forks fixed its points in parallel on disjoint files (the server
+  side, the page, the documents and tools): `8c5ec16`, `41238fa`, `c9813b6`; 550 tests; 18 real golden hashes unchanged.
+- The pair-game benchmark rerun on the idle machine (10.2 states both runs' loads); the three `Ctrl+C` checks on the final code; the
+  90 s pair measurement rerun with the committed tool (Measurements).
+- Pushed; draft PR #17 opened; CI green on Python 3.10, 3.11 and 3.12 (547 passed, 3 skipped without flygym); the automatic review
+  posted nothing on the draft (it runs again when the PR is marked ready); the owner asked to look at `fly_game.py --partner female`
+  in a browser.
+
+### 2026-09-27 (Phase 1)
+- PR #16 merged by Claude on the owner's go-ahead (squash). Branch `claude/two-flies-p1-two-brains` from `origin/main`.
+- The owner answered decisions 4-15 with the defaults ("defaults"); recorded above.
+- Steps 1-2 done (`89d6f78`, `ae3d656`), then an adversarial review of the seam (four lenses, two refuters per finding) confirmed nine
+  points, all fixed in `2903e39` with a regression test each: the lockstep barrier releases every brain's lock when one child dies;
+  the paused loop survives a dead child; a killed child reports its real exit code; the tick that resets a runaway brain publishes
+  post-reset numbers as v2.8.1 did; a rebuild that fails in the child leaves the game usable; a request that times out stops the
+  child instead of desynchronising the pipe; the scenario measure asks for the cheap number; one tautological test assertion
+  removed. 471 tests; 18 real golden hashes unchanged.
+- Steps 3-5 done (`cb7e853`, `0b7aa1b`, `31e5897`; 496 tests; 18 real golden hashes unchanged; the real two-fly game runs both brains
+  in their own processes and exits cleanly). SONG_MAX_HZ measured (`217b187`), the pair experiments (`468f757`), the pair-game
+  benchmark row (`6008897`), SCIENCE.md section 10 begun (`7fb119f`, `d616063`, `19dabfe`), version 2.9.0 (`f539523`).
+- An adversarial review of steps 3-5 (five lenses, two refuters per finding) confirmed ten small points (her decision-neuron
+  monitors lost on a local-brain rebuild; the male's "court" check keyed on the scripted female; the cues display flag off by
+  the list default; touch without collide a no-op; the abdominal gesture on a partner without song cells; a watch able to take
+  one of her built-in keys; three test gaps). Fixed in `9fa090d` with a test each.
+- Steps 6-7 done: `6d0d87b` (`?fly=k` on every per-fly endpoint, `"fly": k` on per-fly actions, the state's `flies` list, per-fly
+  recording frames and events; docs/API.md) and `d5d268f` (the page: `posesOf`, the fly menu `focusSel`, two persistent brain maps,
+  per-fly actions through `setActionFly`, the three-state female toggle, her cues). Step 8: the pair scenario `pair_courtship` and
+  the pair checks (`0d56642`), `tools/pair_courtship.py` and its 20 runs (SCIENCE.md 10.5), the pair-game benchmark, the
+  16 experiments identical to the baseline. 531 tests; 18 real golden hashes unchanged after every commit.
+- A third adversarial review (steps 6-8, the tools and SCIENCE.md section 10) in progress; then push, the draft PR and CI.
+
 ### 2026-09-27
 - Read the plan; machine facts gathered (4.1, 4.3); no missing system packages (4.4).
 - Cloned at `739e791`; venv created; the dev, female and physics extras and flygym 1.2.1 (`--no-deps`) installed.

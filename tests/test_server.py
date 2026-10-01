@@ -392,14 +392,19 @@ def test_ctrl_c_stops_the_game_loop_before_serve_returns(conn, monkeypatch, caps
     """After Ctrl+C the loop thread finishes its tick and ends before serve() returns: a daemon thread still inside
     MuJoCo while Python shuts down crashed the process (the physics body)."""
     game = Game(build_brain(conn, "game", seed=0), autopilot=False, seed=2)
-    ticked, threads = threading.Event(), []
-    tick = game.tick
+    ticked, threads, closed = threading.Event(), [], []
+    tick, close = game.tick, game.close
 
     def counted_tick():
         threads.append(threading.current_thread())
         tick()
         ticked.set()
+
+    def counted_close():                                    # the brains are let go only once the loop thread is gone
+        closed.append(threads[-1].is_alive() if threads else None)
+        close()
     monkeypatch.setattr(game, "tick", counted_tick)
+    monkeypatch.setattr(game, "close", counted_close)
 
     class Server(ThreadingHTTPServer):
         def serve_forever(self, poll_interval=0.5):
@@ -409,15 +414,28 @@ def test_ctrl_c_stops_the_game_loop_before_serve_returns(conn, monkeypatch, caps
     server = S.serve(game, port=0, open_browser=False)
     assert "Bye!" in capsys.readouterr().out
     assert game.stop_loop.is_set() and threads and not threads[-1].is_alive()
+    assert closed == [False]                                # Game.close() ran once, after the loop thread had ended
     assert server.socket.fileno() == -1                     # and the port is let go
 
 
-def test_play_refuses_flags_it_cannot_honour(capsys):
+def test_play_refuses_flags_it_cannot_honour(capsys, monkeypatch):
     from virtual_fly import play
-    for argv, err in ((["--port", "70000"], "70000 is not a port"), (["--stride-average"], "only applies to the physics body")):
-        with pytest.raises(SystemExit):
+    monkeypatch.setattr(play, "load_connectome", lambda **k: pytest.fail("loaded the data first"))
+    for argv, err in ((["--port", "70000"], "70000 is not a port"), (["--stride-average"], "only applies to the physics body"),
+                      # the partner's flags (docs/TWO_FLIES_PLAN.md 5.4), checked before anything loads and before the
+                      # physics body's own check
+                      (["--social", "seen"], "--social only applies with --partner female or male; add it, or leave out --social"),
+                      (["--partner-body", "drawn"], "--partner-body only applies with --partner female or male"),
+                      (["--partner", "female", "--body", "physics"], "Phase 4"),
+                      (["--partner", "female", "--body", "physics"], "run the same command without --body physics"),
+                      (["--partner", "female", "--social", "seen,sogn"], "unknown social channel 'sogn'"),
+                      (["--partner", "male", "--social", "mating:maybe"], "mating takes mating:virgin or mating:mated"),
+                      (["--partner", "cat"], "invalid choice: 'cat'")):
+        with pytest.raises(SystemExit) as e:
             play.main(argv)
-        assert err in capsys.readouterr().err
+        assert e.value.code == 2
+        out = capsys.readouterr().err
+        assert err in out and "Traceback" not in out, (argv, out)
     with pytest.raises(SystemExit):
         play.main(["--help"])
     help_text = " ".join(capsys.readouterr().out.split())

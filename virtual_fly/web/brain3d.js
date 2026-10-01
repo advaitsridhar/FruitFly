@@ -14,6 +14,9 @@ export const REGION_COLORS = [
   "#c792ff", // MBON / DAN
 ];
 
+// the 2-D fallback keeps each tick's spikes until the map is drawn; a map that is not shown (the other fly's, two flies)
+// keeps at most this many ticks, dropping the oldest, so nothing piles up for as long as it stays out of focus
+const PENDING_MAX = 8;
 const hex2rgb = (h) => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
 
 const VS = `
@@ -231,7 +234,8 @@ export class BrainView {
     if (!list || !list.length) return;
     const lt = this.lastT, so = this.slotOf;
     for (let j = 0; j < list.length; j++) { const k = so[list[j]]; if (k >= 0) lt[k] = nowSec; }
-    if (this.gl) this.dirtyT = true; else this.pending.push(list);
+    if (this.gl) this.dirtyT = true;
+    else { if (this.pending.length >= PENDING_MAX) this.pending.shift(); this.pending.push(list); }
   }
   setPath(indices) { this.path = indices && indices.length ? indices : null; }
 

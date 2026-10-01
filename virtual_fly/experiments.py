@@ -21,6 +21,7 @@ from dataclasses import dataclass, field, replace
 import numpy as np
 
 from .brain import FlyBrain
+from .senses.social import SONG_MAX_HZ            # the male's song on the listener's Johnston's organ (measured, social.py)
 
 # --- stimulus sets (real sensory neuron types from neuPrint) ---
 SUGAR = {"LB3b,LB3c": 120, "PhG1a,PhG1b,PhG1c": 100, "LgLG3": 80}   # labellar, pharyngeal and leg sugar cells
@@ -134,6 +135,54 @@ GENETIC = [
                [R("DNp01", "giant fibre (escape)", 250, 400, PROBE), R("TTMn", "TTMn jump muscle motor neuron", 40, 100, PROBE)],
                tags=("genetic", "escape"), profile="game", silence=("gene:fru",),
                note="control: the escape circuit is not fruitless-dependent"),
+]
+
+
+# The pair experiments (docs/TWO_FLIES_PLAN.md 5.9 item 2): what one fly's signals do in the other fly's wiring. Each is
+# written for the fly its name starts with (F: the FlyWire female, M: the MaleCNS male); on the other fly it is a comparison,
+# as the 16 are on the female (docs/SCIENCE.md 9.3). Not part of all_experiments() or survival(): run them with
+# `python fly_brain.py --female --pair-experiments` (F1-F5) and `python fly_brain.py --pair-experiments` (M1). Their ranges
+# are PROVISIONAL: the direction comes from the cited paper, the range from a five-seed measurement on the real connectome
+# (game profile, 2026-09-27; docs/SCIENCE.md section 10 has the numbers), so passing them says "as measured", not "as a fly".
+# Each range spans the parts list off and on: lo is the floor of the smallest per-seed rate, hi the ceiling of the largest;
+# a readout that was 0.0 on every seed is 0-0 (with the 1 Hz margin every rate passes: it pins "nothing gets through").
+PAIR_SOURCE = "provisional, measured on the real connectome (docs/SCIENCE.md section 10)"
+SONG_SPEC = "prefix:JO-A,prefix:JO-B"       # the game's SOUND spec: what the other fly's song drives (senses/social.py)
+PC2L = "AVLP567,AVLP568,AVLP569,AVLP570,CL313,SIP200f,SIP201f,!body:720575940610359758"   # 38 cells; the name: Nojima et al. 2021
+PAIR: list[Experiment] = [
+    Experiment("F1 female hears song", {SONG_SPEC: SONG_MAX_HZ}, 600,
+               [R("vpoEN", "vpoEN, song-tuned input to vpoDN", 0, 0, PAIR_SOURCE),
+                R(PC2L, "pC2l pulse-song detectors (38 cells)", 0, 0, PAIR_SOURCE),
+                R("DNp37", "DNp37 (vpoDN), plate-opening command; rises with song in real virgins", 0, 0, PAIR_SOURCE),
+                R("DNp13", "DNp13, extrusion command; rises with song in real virgins", 0, 0, PAIR_SOURCE),
+                R("DNp01", "giant fibre (song must not startle her)", 7, 20, PAIR_SOURCE)],
+               tags=("pair", "hearing"), profile="game",
+               note="his song at SONG_MAX_HZ on her Johnston's organ; in real virgins both vaginal plate opening (DNp37/vpoDN) and "
+                    "ovipositor extrusion (DNp13) rise with song (Wang K et al. 2021; Wang F et al. 2020 Curr Biol; Deutsch et al. "
+                    "2019; Baker et al. 2022)"),
+    Experiment("F2 pC1 drives the plate-opening command", {"prefix:pC1_": 80}, 600,
+               [R("DNp37", "DNp37 (vpoDN), plate-opening command", 72, 86, PAIR_SOURCE)],
+               tags=("pair", "courtship"), profile="game",
+               note="pC1 to DNp37 is 382-530 synapses in FlyWire 783 (Wang K et al. 2021: pC1 excites vpoDN)"),
+    Experiment("F3 pC2l drives the extrusion command", {PC2L: 80}, 600,
+               [R("DNp13", "DNp13, extrusion command", 105, 113, PAIR_SOURCE)],
+               tags=("pair", "courtship"), profile="game",
+               note="pC2l to DNp13 is 974 synapses, 20.6 % of its input (Wang F et al. 2020 Curr Biol; the name pC2l: Nojima et al. 2021)"),
+    Experiment("F4 cVA", {"ORN_DA1": 80}, 600,
+               [R("DA1_lPN", "DA1 projection neurons", 99, 102, PAIR_SOURCE),
+                R("aSP-g1,aSP-g2,aSP-g3A,aSP-g3B", "aSP-g (cVA-responsive, female)", 0, 0, PAIR_SOURCE),
+                R("pC1d", "pC1d", 0, 0, PAIR_SOURCE), R("pC1e", "pC1e", 0, 0, PAIR_SOURCE)],
+               tags=("pair", "smell"), profile="game",
+               note="the male pheromone cVA on her DA1 receptor neurons (Kohl et al. 2013; Taisz et al. 2023); the cVA channel is off by default"),
+    Experiment("F5 SAG to pC1", {"AN_SMP_2": 60}, 600,
+               [R("prefix:pC1_", "pC1 (a-e)", 11, 33, PAIR_SOURCE), R("DNp37", "DNp37 (vpoDN), plate-opening command", 17, 45, PAIR_SOURCE)],
+               tags=("pair", "courtship"), profile="game",
+               note="the SAG ascending neurons (AN_SMP_2) carry mating status to pC1: 872 synapses (Feng et al. 2014); the mating switch is off by default"),
+    Experiment("M1 song does not startle him", {SONG_SPEC: SONG_MAX_HZ}, 600,
+               [R("DNp01", "giant fibre", 19, 25, PAIR_SOURCE)],
+               tags=("pair", "hearing"), profile="game",
+               note="a design check: the song level is the loudest steady drive at which fewer than 1 % of 50 ms windows hold a giant-fibre "
+                    "burst (tools/song_startle.py: 0.50 % with the parts list off, 0.80 % on, at 70 Hz); this experiment reads the mean rate"),
 ]
 
 

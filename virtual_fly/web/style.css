@@ -22,6 +22,8 @@ header .stats .w6 { min-width: 6ch; } header .stats .w7 { min-width: 7ch; } head
 .linkbtn { background: none; border: 1px solid var(--line); border-radius: 999px; padding: 4px 11px; cursor: pointer; color: var(--ink); white-space: nowrap; }
 .linkbtn:hover { border-color: var(--accent); }
 .linkbtn.round { width: 28px; height: 28px; padding: 0; flex: none; }
+/* two flies: the header's fly menu (which fly the panels follow); hidden until the state lists flies */
+header select.focus { background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 999px; padding: 3px 8px; font: inherit; font-size: 13px; }
 
 /* ---------------------------------------------------------------- layout */
 main { display: grid; grid-template-columns: minmax(0, 1fr) 400px; gap: 14px; padding: 12px 16px 16px; height: calc(100% - 50px); }
@@ -108,6 +110,7 @@ body.dragging, body.dragging * { cursor: grabbing !important; }
   opacity: 0; transition: opacity .25s; max-width: 90%; text-align: center; z-index: 3; }
 .toast.show { opacity: 1; }
 .hint { color: var(--muted); font-size: 12.5px; text-align: center; min-height: 18px; }
+.cuesnote { font-size: 11px; min-height: 0; cursor: help; }
 .retina { position: absolute; right: 8px; top: 8px; background: rgba(6,9,13,.85); border: 1px solid var(--line); border-radius: 8px; padding: 4px 6px 2px; pointer-events: none; }
 .retina canvas { display: block; }
 .retlabels { display: flex; justify-content: space-between; font-size: 10px; color: var(--muted); padding: 0 2px; }
@@ -134,6 +137,11 @@ body.dragging, body.dragging * { cursor: grabbing !important; }
 #brain { background: #06090d; border-radius: 8px; display: block; width: 100%; height: 330px; cursor: grab; touch-action: none; }
 #brain.drag { cursor: grabbing; }
 #brainOverlay { position: absolute; inset: 0; width: 100%; height: 330px; pointer-events: none; }
+/* two flies: a second brain map, one canvas pair per fly, only the focused one shown (never re-created on a switch) */
+#brain2 { background: #06090d; border-radius: 8px; display: block; width: 100%; height: 330px; cursor: grab; touch-action: none; }
+#brain2.drag { cursor: grabbing; }
+#brainOverlay2 { position: absolute; inset: 0; width: 100%; height: 330px; pointer-events: none; }
+#brain[hidden], #brain2[hidden], #brainOverlay[hidden], #brainOverlay2[hidden] { display: none; }
 .brainbtns { position: absolute; right: 6px; top: 6px; display: flex; gap: 4px; }
 .legend { display: flex; flex-wrap: wrap; gap: 3px 10px; font-size: 11.5px; color: var(--muted); margin-top: 6px; }
 .legend i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; }
@@ -170,6 +178,7 @@ body.dragging, body.dragging * { cursor: grabbing !important; }
 .rows { display: grid; grid-template-columns: 112px 1fr 64px 40px; gap: 3px 8px; align-items: center; font-size: 12.5px; }
 .rows .grp { grid-column: 1 / -1; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .6px; margin-top: 6px; display: flex; justify-content: space-between; }
 .rows .grp .mini { font-size: 10px; padding: 0 6px; }
+.rows .grp .note { text-transform: none; letter-spacing: 0; cursor: help; }
 .rows .name { display: flex; align-items: center; gap: 2px; min-width: 0; }
 .rows .name > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; }
 .rows .name button { flex: none; }
@@ -302,6 +311,7 @@ body.dragging, body.dragging * { cursor: grabbing !important; }
 .events { list-style: none; margin: 0; padding: 0; height: 190px; overflow-y: auto; overflow-anchor: none; font-size: 12px; display: flex; flex-direction: column; gap: 2px; scrollbar-width: thin; }
 .events li { display: grid; grid-template-columns: 8px 56px 1fr; gap: 6px; align-items: baseline; }
 .events li .t { white-space: nowrap; }
+.events li .who { margin-right: 4px; color: var(--pink); }
 .events li i { width: 7px; height: 7px; border-radius: 50%; display: inline-block; background: var(--muted); position: relative; top: -1px; }
 .events li .t { color: var(--muted); font-variant-numeric: tabular-nums; }
 .events li.sense i { background: var(--accent); } .events li.world i { background: #5b8cff; } .events li.learning i { background: var(--green); }

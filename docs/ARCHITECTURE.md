@@ -30,11 +30,19 @@ virtual_fly/
     olfaction.py   odours -> glomeruli -> ORN rates, with adaptation
     taste.py       mouth and foreleg taste
     mechano.py     wind, sound, touch, dust, proprioception
-  game.py          the sensorimotor loop: senses -> brain -> decoder -> body; internal state; events
-  scenarios.py     scripted protocols (conditioning, courtship, plume, escape)
-  server.py        HTTP + Server-Sent Events API (docs/API.md)
+    social.py      how one fly reaches another (Phase 1 of the two-flies work): seen, song, contact, collide, cVA,
+                   mating status, body touch; every channel a labelled hand-built encoder with a switch
+  agent.py         one fly: its brain handle, senses, decoder, body and bookkeeping (FlyAgent); the game holds the dish
+  brainio.py       the seam between a fly and its brain: LocalBrain (in this process) or ProcessBrain (a child process,
+                   one per brain when there are two flies), the same spikes either way; advance_all is the lockstep
+  game.py          the sensorimotor loop over every fly: senses -> brains (in lockstep) -> decoders -> bodies; the world's
+                   clock; internal state; events; the actions from the browser
+  scenarios.py     scripted protocols (conditioning, courtship, plume, escape; with a partner, the two-fly courtship)
+  server.py        HTTP + Server-Sent Events API (docs/API.md); every per-fly endpoint takes ?fly=k, actions a "fly" field
   play.py          `python fly_game.py ...`
-  web/             the browser page (no build step, no dependencies)
+  web/             the browser page (no build step, no dependencies); with a partner it shows both flies, a fly menu
+                   (`#focusSel`) picks which one the panels, retina and brain map follow, per-fly actions carry that
+                   fly's id (`setActionFly` in util.js), and two brain maps stay alive so no WebGL context is rebuilt
 tools/
   build_vfb_data.py    fbbt.obo (+ the connector overlay) -> data/fbbt_map.json.gz, data/fbbt_tree.json.gz
   merge_vfb_harvest.py a Virtual Fly Brain connector harvest -> tools/vfb_overlay.json, data/vfb_receptors.json.gz
@@ -80,12 +88,22 @@ Every tick is 25 ms of fly time:
 8. **The world** steps: puffs drift and grow, the female walks, the drum turns.
 9. **State** is serialised to JSON and pushed to every browser subscriber.
 
-## Threads
+## Threads and processes
 
 The game loop runs in one thread; the HTTP server handles requests in others. Anything that
-changes the wiring (silence, modulate, forget) takes `brain.lock`; reads of `state_json` are
-atomic swaps of an immutable bytes object; actions are checked on arrival (a bad one is refused with
-its reason), queued, and applied at the start of a tick.
+changes the wiring (silence, modulate, forget) goes through the fly's `BrainIO` seam: with the brain
+in this process that takes `brain.lock`; with the brain in a child process every request-and-reply
+pair holds the brain's own lock, so the game thread's tick and an HTTP thread's query never
+interleave on the pipe. Reads of `state_json` are atomic swaps of an immutable bytes object; actions
+are checked on arrival (a bad one is refused with its reason), queued, and applied at the start of a tick.
+
+With `--partner` each brain runs in its own child process (`spawn`, as the re-test child does; the
+parent warms the numba cache first so the children load it). A tick sends every brain its rates,
+then waits for every `BrainTick` (the lockstep), then moves the bodies; a child that dies or stops
+answering is reported and stopped, never waited on, and the other brain's lock is released. After
+`Ctrl+C`, `server.serve` stops and joins the loop thread and only then `Game.close()` closes the
+children (the order that keeps a MuJoCo body from being torn down mid-step). The re-test of a
+rebuilt brain is a third child, at low priority, as before.
 
 ## Performance notes
 

@@ -469,12 +469,18 @@ class Retina:
         has_columns = conn is not None and bool((conn.hex1 >= 0).any())
         self.columnar = ColumnarMotion(conn, self.eyes, COLUMNAR_AXES) if (columnar and has_columns) else None
 
-    def objects(self, pose) -> list[VisibleObject]:
+    def objects(self, pose, others=()) -> list[VisibleObject]:
+        """What this fly can see: posts, food, the scripted female, the other simulated flies (``others``: their
+        start-of-tick poses, each seen as the scripted female is: a small dark object, drawn scale; the two-flies
+        work, docs/TWO_FLIES_PLAN.md 5.5 channel 1) and the lure or the hand. With no ``others`` the list is the
+        single fly's."""
         w = self.world
         objs = [VisibleObject(o.x, o.y, o.r, 15.0, "post", 0.1) for o in w.obstacles]
         objs += [VisibleObject(f.x, f.y, f.r, 0.6, "food", 0.5) for f in w.food]
         if w.female is not None:
             objs.append(VisibleObject(w.female.x, w.female.y, 1.6, 2.2, "fly", 0.12))
+        for o in others:
+            objs.append(VisibleObject(o.x, o.y, 1.6, 2.2, "fly", 0.12))
         if w.hand is not None and pose.jump is None:
             hx, hy = w.hand
             if w.tool == "lure":
@@ -483,11 +489,12 @@ class Retina:
                 objs.append(VisibleObject(hx, hy, 6.0, 5.0, "hand", 0.1))
         return objs
 
-    def look(self, pose, dt: float, turn_command: float = 0.0) -> tuple[dict[str, float], np.ndarray, np.ndarray]:
+    def look(self, pose, dt: float, turn_command: float = 0.0, others=()) -> tuple[dict[str, float], np.ndarray, np.ndarray]:
         """Render both eyes and compute the visual neuron rates. ``turn_command`` is the fly's own
         commanded yaw (-1..1): an *efference copy* damps the wide-field motion signal while the fly
-        turns on purpose, as in real flies (Kim, Fitzgerald & Maimon 2015). Hand-built."""
-        objs = self.objects(pose)
+        turns on purpose, as in real flies (Kim, Fitzgerald & Maimon 2015). Hand-built. ``others``: the other
+        simulated flies' poses, seen as small dark objects (:meth:`objects`)."""
+        objs = self.objects(pose, others)
         for eye in self.eyes.values():
             eye.render(pose.x, pose.y, pose.h, objs, self.world.arena_r,
                        getattr(self.world, "stripes", 0), getattr(self.world, "stripe_phase", 0.0))

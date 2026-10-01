@@ -15,6 +15,10 @@ Start the game: ``python fly_game.py`` or ``python -m virtual_fly.play``.
     --parts              start with the genes as each neuron's parts list (the Genome card toggles it)
     --body physics       walk with NeuroMechFly v2 legs in MuJoCo instead of the drawn body (needs flygym;
                          runs at about a tenth of real time)
+    --partner female     a second simulated fly in the dish, with a brain of its own (FlyWire's female, or
+                         `male` for a second MaleCNS brain); each brain then runs in its own process
+    --social LIST        which of the hand-built channels between the two flies are on (default
+                         seen,song,contact,collide; also cva, mating:virgin, mating:mated, touch, cues)
 """
 
 from __future__ import annotations
@@ -24,6 +28,7 @@ import sys
 
 from .connectome import load_connectome
 from .game import Game
+from .senses.social import CHANNELS, DEFAULT_CHANNELS, SocialConfig
 from .server import serve
 from .settings import PROFILES, build_brain
 
@@ -84,7 +89,36 @@ def _main(argv=None):
     ap.add_argument("--stride-average", action="store_true",
                     help="physics body: the senses see the body's pose averaged over one stride (hand-built, a stand-in for "
                          "gaze stabilisation) instead of the stride-by-stride wobble")
+    ap.add_argument("--brain-procs", choices=("auto", "on", "off"), default="auto",
+                    help="where the brain runs: auto (in this process for one fly; one process per brain with a partner), "
+                         "on (its own process even for one fly), off (always in this process)")
+    ap.add_argument("--partner", choices=("none", "female", "male"), default="none",
+                    help="a second simulated fly in the dish, sensing the first only through the world: female = FlyWire's "
+                         "whole brain (release 783, built on first use, needs pyarrow); male = a second MaleCNS brain; "
+                         "with --female the protagonist is the female and --partner male gives her a male partner")
+    ap.add_argument("--social", metavar="LIST", default=None,
+                    help=f"with --partner: the channels between the flies that are on, a comma list (default {DEFAULT_CHANNELS}; "
+                         f"the channels are {', '.join(CHANNELS)}, mating as mating:virgin or mating:mated)")
+    ap.add_argument("--partner-body", choices=("drawn",), default=None,
+                    help="with --partner: the partner's body (only drawn until the physics pair of Phase 4)")
     args = ap.parse_args(argv)
+    # the partner's flags are checked before anything is loaded (and before the physics body's own check, which
+    # stops with an install hint wherever flygym is missing)
+    partner = None if args.partner == "none" else args.partner
+    if args.social is not None and partner is None:
+        ap.error("--social only applies with --partner female or male; add it, or leave out --social")
+    if args.partner_body is not None and partner is None:
+        ap.error("--partner-body only applies with --partner female or male; add it, or leave out --partner-body")
+    if partner is not None and args.body == "physics":
+        ap.error("--body physics with a partner is Phase 4's (one MuJoCo world for two flies); until then run the same "
+                 "command without --body physics")
+    if args.social is not None:
+        try:
+            social = SocialConfig.from_list(args.social)
+        except ValueError as e:
+            ap.error(str(e))
+    else:
+        social = SocialConfig.from_list(None)
     if args.body == "physics":
         from .physics import available, unavailable_reason
         if not available():
@@ -130,9 +164,22 @@ def _main(argv=None):
     if args.body == "physics":
         print("Body: physics (NeuroMechFly v2 legs in MuJoCo; about a tenth of real time"
               + ("; the senses see the pose averaged over a stride)." if args.stride_average else ")."), file=sys.stderr)
+    partner_spec = None
+    if partner is not None:
+        print("Loading the partner's nervous system...", file=sys.stderr)
+        pconn = load_connectome(female=(partner == "female"))
+        partner_spec = {"conn": pconn, "brain_kwargs": {k: v for k, v in overrides.items() if k != "parts"},
+                        "parts": parts_list if args.parts else False, "autopilot": not args.no_autopilot}
     game = Game(brain, autopilot=not args.no_autopilot, seed=args.seed, columnar=not args.no_columnar,
                 profile_name=profile, brain_factory=lambda c, **kw: build_brain(c, profile, **{**overrides, **kw}),
-                parts_list=parts_list, brain_kwargs={k: v for k, v in overrides.items() if k != "parts"}, body=args.body, stride_average=args.stride_average)
+                parts_list=parts_list, brain_kwargs={k: v for k, v in overrides.items() if k != "parts"}, body=args.body,
+                stride_average=args.stride_average, brain_procs=args.brain_procs, partner=partner_spec, social=social)
+    del brain                                    # the game owns it now (or, in its own process, has let it go)
+    if partner_spec is not None:
+        where = "in its own process" if game.brain_procs != "off" else "in this process"
+        print(f"Partner: {pconn.dataset} ({pconn.sex}), its brain {where}, as is the first fly's; "
+              f"the channels between them: {', '.join(social.names()) or 'none'} (hand-built, see What's real here?).",
+              file=sys.stderr)
     if args.no_learning:
         game.learning_on = False
     if args.grow:

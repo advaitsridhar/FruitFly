@@ -19,8 +19,17 @@ export const esc = (s) => String(s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;",
 export const fmt = (v, d = 1) => (v == null || isNaN(v)) ? "–" : Number(v).toFixed(d);
 export const pct = (v) => Math.round(100 * v) + " %";
 
+// Two flies (docs/API.md, "Two flies"): the actions that act on one fly take "fly": k. The page's panels all post through
+// here, so the fly the page is focused on (app.js setActionFly) is added to those actions unless the caller named one.
+const PER_FLY = new Set(["zap", "silence", "unsilence", "modulate", "watch", "unwatch", "learning", "grow", "parts", "state",
+                         "place_fly", "calm", "autopilot", "dust", "shock", "sound"]);
+let actionFly = 0;
+export function setActionFly(k) { actionFly = k | 0; }
+export function getActionFly() { return actionFly; }
+
 /** POST an action to the game. Never throws. */
 export async function post(data) {
+  if (actionFly > 0 && data && PER_FLY.has(data.type) && data.fly === undefined) data = { ...data, fly: actionFly };
   try {
     const r = await fetch("api/action", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
     return await r.json();

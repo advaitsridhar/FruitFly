@@ -76,7 +76,9 @@ export class Arena {
 
   // ---------------------------------------------------------------- main draw
   draw(dt, view) {
+    // `flies`: every simulated fly's pose (two flies: docs/API.md); `pose` the one the camera follows; `female` the scripted one
     const { S, pose, female, pointer, tool, sees, hz, stripes } = view, c = this.ctx, R = this.R;
+    const flies = view.flies || (pose ? [pose] : []);
     c.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     c.clearRect(0, 0, this.w, this.h);
     this._camera(dt, pose);
@@ -102,11 +104,9 @@ export class Arena {
     for (const f of w.food || []) this.drawFood(f);
     this.drawParticles(dt);
     if (female) this.drawFly(female, { female: true });
-    if (pose) {
-      if (sees) this.drawSees(pose, S, w, female);
-      this.drawFly(pose, { female: false, hz });
-      if (performance.now() < this.shockUntil) this.drawShock(pose);
-    }
+    if (pose && sees) this.drawSees(pose, S, w, female, flies.filter((f) => f !== pose));
+    for (const f of flies) this.drawFly(f, { female: f.sex === "female", hz: f === pose ? (f.hz || hz) : f.hz, sim: true, cues: view.cues });
+    if (pose && performance.now() < this.shockUntil) this.drawShock(pose);
     if (w.wind && w.wind.speed > 0) this.drawWindArrow(w.wind);
     if (pose && performance.now() - this.clapAt < 600) this.drawClap(pose);
     if (pointer && pointer.inside) this.drawPointer(pointer.px, pointer.py, tool, pointer.ang || 0, pointer.speed || 0, pointer.food);
@@ -206,12 +206,13 @@ export class Arena {
     }
     c.restore();
   }
-  drawSees(pose, S, w, female) {
-    const sm = (S.senses && S.senses.small) || "", lo = (S.senses && S.senses.loom) || "";
+  drawSees(pose, S, w, female, others = []) {
+    const senses = pose.senses || S.senses || {}, sm = senses.small || "", lo = senses.loom || "";
     if (!sm && !lo) return;
     const c = this.ctx, cands = [];
     if (w.hand && (w.tool === "lure" || w.tool === "hand")) cands.push({ x: w.hand[0], y: w.hand[1], kind: w.tool });
     if (female) cands.push({ x: female.x, y: female.y, kind: "fly" });
+    for (const o of others) cands.push({ x: o.x, y: o.y, kind: "fly" });      // the other simulated fly, seen the same way
     for (const o of w.obstacles || []) cands.push({ x: o.x, y: o.y, kind: "post" });
     for (const o of cands) {
       const b = wrap(Math.atan2(o.y - pose.y, o.x - pose.x) - pose.h), side = b > 0 ? "L" : "R";
@@ -263,11 +264,12 @@ export class Arena {
     const jump = f.jump == null ? 0 : Math.sin(Math.PI * f.jump), lift = 1 + 0.35 * jump;
     const walking = f.walking, mode = f.mode || "walk";
     const wl = f.wingL || 0, wr = f.wingR || 0, ab = f.abdomen || 0;
-    const song = !fem && mode !== "escape" && f.jump == null && (wl > 0.35 || wr > 0.35);
+    const song = mode !== "escape" && f.jump == null && (wl > 0.35 || wr > 0.35) && (!fem || o.sim);   // she sings only with song cells
+    const sim = !!o.sim, receptive = fem && !sim && f.receptive > 0.05;                                   // the glow: the scripted female's interest
     const sz = fem ? 1.32 : 1.25;
     c.save();
     c.translate(X, Y);
-    if (fem && f.receptive > 0.05) {  // her interest: a warm glow
+    if (receptive) {  // her interest: a warm glow (the scripted female; a simulated one has readouts instead)
       const g = c.createRadialGradient(0, 0, 2 * k, 0, 0, 9 * k);
       g.addColorStop(0, `rgba(255,154,213,${0.35 * f.receptive})`); g.addColorStop(1, "rgba(255,154,213,0)");
       c.fillStyle = g; c.beginPath(); c.arc(0, 0, 9 * k, 0, 2 * Math.PI); c.fill();
@@ -311,6 +313,15 @@ export class Arena {
     c.strokeStyle = fem ? "rgba(60,40,25,.6)" : "rgba(30,18,10,.8)"; c.lineWidth = 0.22;
     for (const sx of [-2.3, -1.7, -1.1]) { const px = abX + (sx + 1.5) * (abLen / 1.6); c.beginPath(); c.ellipse(px, 0, 0.18, 0.85, 0, -Math.PI / 2, Math.PI / 2); c.stroke(); }
     if (ab > 0.1) { c.fillStyle = "#2a1a10"; c.beginPath(); c.ellipse(abX - abLen + 0.1, 0.15 * ab, 0.35, 0.3, 0, 0, 2 * Math.PI); c.fill(); }
+    // her cues (hand-built readout displays, never a verdict: docs/SCIENCE.md 10.1): DNp37, the vaginal plate opening
+    // command, as an opening arc at the tip of her abdomen; DNp13, the ovipositor extrusion command, as a short spine
+    // drawn out of it. Both scale with the rate from 20 Hz per cell to the bar's maximum (thresholds provisional)
+    if (fem && sim && o.cues !== false && f.hz) {
+      const norm = (v, top) => Math.max(0, Math.min(1, ((v || 0) - 20) / Math.max(1, top - 20)));
+      const n37 = norm(f.hz.DNp37, (o.max && o.max.DNp37) || 60), n13 = norm(f.hz.DNp13, (o.max && o.max.DNp13) || 60), tip = abX - abLen;
+      if (n37 > 0) { c.strokeStyle = `rgba(255,127,200,${0.35 + 0.65 * n37})`; c.lineWidth = 0.14; c.beginPath(); c.arc(tip + 0.15, 0, 0.35 + 0.3 * n37, Math.PI * 0.55, Math.PI * 1.45); c.stroke(); }
+      if (n13 > 0) { c.strokeStyle = `rgba(255,127,200,${0.35 + 0.65 * n13})`; c.lineWidth = 0.2; c.beginPath(); c.moveTo(tip, 0); c.lineTo(tip - 0.9 * n13, 0); c.stroke(); }
+    }
     // thorax
     g = c.createRadialGradient(0.8, -0.2, 0.1, 0.6, 0, 1.2);
     if (fem) { g.addColorStop(0, "#c9a878"); g.addColorStop(1, "#8a6a48"); } else { g.addColorStop(0, "#b08a5a"); g.addColorStop(1, "#6d4f31"); }
@@ -332,21 +343,22 @@ export class Arena {
     c.restore();
     // labels
     if (fem) {
-      if (f.receptive > 0.5) {
+      if (!sim && f.receptive > 0.5) {
         c.font = `${Math.round(9 + 8 * f.receptive)}px system-ui`; c.textAlign = "center"; c.textBaseline = "bottom";
         c.fillStyle = `rgba(255,120,180,${0.5 + 0.5 * f.receptive})`; c.fillText("♥", X + 4 * k, Y - 5 * k - 2 * Math.sin(t * 3));
       }
       c.font = "600 10px system-ui"; c.textAlign = "center"; c.textBaseline = "bottom"; c.fillStyle = "rgba(255,154,213,.7)";
       c.fillText("♀", X, Y - 6.5 * k);
-      return;
+      if (!sim) return;                       // the scripted female has no mode; a simulated one is labelled like the male
     }
     const label = (mode === "escape" || f.jump != null) ? "ESCAPE!" : song ? "♪ singing" : mode === "feed" ? "eating" :
       mode === "groom" ? "grooming" : mode === "backward" ? "backing up" : mode === "court" ? "courting" : "";
     if (label) {
       c.font = "600 12px system-ui"; c.textAlign = "center"; c.textBaseline = "bottom";
       const w = c.measureText(label).width + 12;
-      c.fillStyle = "rgba(10,14,19,.8)"; c.fillRect(X - w / 2, Y - 6.2 * k - 18, w, 17);
-      c.fillStyle = mode === "escape" ? "#ff8a8a" : song ? "#ff9ad5" : "#e7edf4"; c.fillText(label, X, Y - 6.2 * k - 3);
+      const ly = fem ? Y - 6.5 * k - 12 : Y - 6.2 * k;          // hers sits above the ♀ mark
+      c.fillStyle = "rgba(10,14,19,.8)"; c.fillRect(X - w / 2, ly - 18, w, 17);
+      c.fillStyle = mode === "escape" ? "#ff8a8a" : song ? "#ff9ad5" : "#e7edf4"; c.fillText(label, X, ly - 3);
     }
   }
 }

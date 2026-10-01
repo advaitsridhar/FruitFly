@@ -1,7 +1,7 @@
 // app.js — Virtual Fly: the page that shows a simulated whole fly nervous system driving a fly in a dish.
 // Data comes from the Python server (see docs/API.md): one layout fetch, then a stream of state ticks.
 "use strict";
-import { $, setText, setClass, setShown, esc, fmt, post, getJSON, el } from "./util.js";
+import { $, setText, setClass, setShown, esc, fmt, post, getJSON, el, setActionFly } from "./util.js";
 import { Arena, lerpAngle } from "./arena.js";
 import { BrainView, REGION_COLORS } from "./brain3d.js";
 import { RetinaView } from "./retina.js";
@@ -14,6 +14,10 @@ let S = null, Sprev = null, Stime = 0, Sgap = 25, lastSeq = 0, lastStateAt = 0, 
 let tool = "lure", odourFood = "", pointer = null, lastSent = 0, sees = false;
 let arena = null, brain = null, retina = null, layout = null;
 const panels = {};
+// two flies (docs/API.md "Two flies"): the state then lists `flies`; `focus` is the one the panels, the eye inset, the brain
+// map and the camera follow; each fly has its own layout (api/layout?fly=k) and its own brain map, kept alive side by side
+let focus = 0, pairReady = false;
+const layouts = {}, brains = [];
 const ZOOMS = [1, 1.5, 2, 3, 4];
 let toolOrder = ["lure", "hand", "sugar", "bitter", "water", "dust", "shock", "post"];
 const HINTS = {
@@ -38,12 +42,14 @@ async function loadLayout() {
   arena = new Arena($("arena"), $("stage"), L);
   new ResizeObserver(() => arena.resize()).observe($("stage"));
   retina = new RetinaView($("retina"), L.retina || {});
-  brain = new BrainView($("brain"), $("brainOverlay"), L);
+  layouts[0] = L; L.fly_id = 0;
+  brain = brains[0] = new BrainView($("brain"), $("brainOverlay"), L);
   setText($("brainCount"), `${brain.m.toLocaleString()} somas`);
-  const has = new Set(L.region);                     // only the regions this fly has (the female fly has no nerve cord)
-  $("legend").innerHTML = L.regions.map((r, i) => has.has(i) ? `<span><i style="background:${REGION_COLORS[i]}"></i>${esc(r)}</span>` : "").join("");
+  setLegend(L);
   setText($("genomeSyn"), `${Math.round(L.synapses / 1e6)} million`);
   wireBrain();
+  attachPick(brain);
+  $("focusSel").onchange = (e) => { setFocus(parseInt(e.target.value) || 0); e.target.blur(); };   // (keys are ignored while a menu has the focus)
   panels.why = new P.WhyPanel(L);
   panels.keys = new P.KeyNeurons(L);
   panels.drives = new P.DrivesPanel();
@@ -62,6 +68,65 @@ async function loadLayout() {
   setTool("lure");
   connect();
 }
+
+function setLegend(Lk) {
+  const has = new Set(Lk.region);                    // only the regions this fly has (the female fly has no nerve cord)
+  $("legend").innerHTML = Lk.regions.map((r, i) => has.has(i) ? `<span><i style="background:${REGION_COLORS[i]}"></i>${esc(r)}</span>` : "").join("");
+}
+
+// ---------------------------------------------------------------- two flies: the second fly's layout and map, the focus
+async function setupPair(s) {
+  pairReady = true;
+  for (const f of s.flies) {
+    if (layouts[f.id]) continue;
+    let Lk = null;
+    while (!Lk) {
+      try { const r = await fetch(`api/layout?fly=${f.id}`); if (!r.ok) throw new Error(r.status); Lk = await r.json(); }
+      catch (e) { await new Promise((res) => setTimeout(res, 1000)); }
+    }
+    Lk.fly_id = f.id; layouts[f.id] = Lk;
+    if (f.id === 1 && !brains[1]) brains[1] = new BrainView($("brain2"), $("brainOverlay2"), Lk);   // kept alive from now on
+    if (brains[f.id]) attachPick(brains[f.id]);
+  }
+  const sel = $("focusSel"); sel.innerHTML = "";
+  for (const f of s.flies) {
+    const o = document.createElement("option"); o.value = String(f.id);
+    o.textContent = `${f.sex === "female" ? "♀" : "♂"} ${f.sex} (fly ${f.id}${f.id === 0 ? ", the one you play" : ", the partner"})`;
+    sel.appendChild(o);
+  }
+  sel.value = String(focus); setShown(sel, true);
+  // the female toggle: the scripted female is single-fly play's; here she is simulated and always in the dish
+  const fem = $("femaleToggle"); fem.checked = true; fem.disabled = true;
+  setText($("femaleText"), "♀ female: simulated");
+  $("femaleLabel").title = "A simulated female with a brain of her own is in the dish (--partner); the scripted female is for single-fly play";
+  setShown($("cuesNote"), s.flies.some((f) => f.sex === "female"));       // her abdomen marks are hand-built cues: say so under the dish
+  const names = s.flies.map((f) => `${f.sex} (${layouts[f.id] ? layouts[f.id].dataset : "…"})`).join(" and ");
+  setText($("sub"), `two flies: ${names} · ${(L.n + (layouts[1] ? layouts[1].n : 0)).toLocaleString()} neurons in two brains`);
+  buildDialogs();
+}
+function setFocus(k) {
+  if (!layouts[k] || !brains[k]) return;
+  focus = k; setActionFly(k);
+  const Lk = layouts[k];
+  brains.forEach((b, i) => { if (!b) return; setShown(b.canvas, i === k); setShown(b.overlay, i === k); });
+  brain = brains[k]; brain._resize(); wireBrain();
+  setText($("brainCount"), `${brain.m.toLocaleString()} somas`);
+  setLegend(Lk);
+  // the panels built from the layout are rebuilt for this fly; the ones that only read the state keep their DOM
+  panels.why = new P.WhyPanel(Lk);
+  panels.keys = new P.KeyNeurons(Lk);
+  panels.checks = new P.ChecksPanel(Lk);
+  panels.lab.relayout(Lk);
+  panels.paths.refocus(brain);
+  panels.genetics.relayout(Lk);
+  panels.genome = new P.GenomePanel(Lk);
+  panels.model = new P.ModelPanel(Lk);
+  setText($("genomeSyn"), `${Math.round(Lk.synapses / 1e6)} million`);
+  if (S) { const V = viewOf(S); for (const key in panels) panels[key].update(V); panels.why.update(V); }
+  $("focusSel").value = String(k);
+}
+/** The state as the focused fly sees it: with two flies, fly k's entry laid over the shared fields (docs/API.md). */
+function viewOf(s) { return focus && s.flies && s.flies[focus] ? { ...s, ...s.flies[focus] } : s; }
 
 function buildToolbar() {
   const box = $("odourTools"); box.innerHTML = "";
@@ -122,13 +187,17 @@ function onState(s) {
   const now = performance.now();
   if (S) Sgap = Math.min(200, Math.max(15, 0.7 * Sgap + 0.3 * (now - Stime)));
   Sprev = S; S = s; Stime = now; lastStateAt = now;
-  brain.setSpikes(s.spikes, now / 1000);
-  panels.keys.ingest(s);
+  if (s.flies && !pairReady) setupPair(s);
+  const V = viewOf(s);
+  if (s.flies) for (const f of s.flies) { if (brains[f.id]) brains[f.id].setSpikes(f.spikes, now / 1000); }
+  else brain.setSpikes(s.spikes, now / 1000);
+  panels.keys.ingest(V);
   panels.events.ingest(s);
   renderPending = true;
 }
-function renderState(s) {
+function renderState(s0) {
   if (!firstState) { firstState = true; setShown($("loading"), false); }
+  const s = viewOf(s0);                              // the focused fly's numbers over the shared ones
   setText($("stSps"), (s.sps || 0).toLocaleString());
   const partsOn = !!(s.genome && s.genome.parts && s.genome.parts.on);
   const graded = Math.min(s.graded_eps || 0, s.sps || 0);   // the parts list's graded cells release quanta, not spikes
@@ -147,7 +216,7 @@ function renderState(s) {
 function syncControls(s) {
   const ap = $("autopilot"); if (document.activeElement !== ap) ap.checked = !!s.autopilot;
   setText($("pauseBtn"), s.paused ? "Resume" : "Pause");
-  const fem = $("femaleToggle"); if (document.activeElement !== fem) fem.checked = !!(s.world && s.world.female);
+  const fem = $("femaleToggle"); if (!s.flies && document.activeElement !== fem) fem.checked = !!(s.world && s.world.female);
   if (!speedDrag && !held("speed")) { const sp = $("speed"); if (Math.abs(parseFloat(sp.value) - s.speed) > 0.01) sp.value = s.speed; setText($("speedVal"), fmt(s.speed, 2) + "×"); }
   const w = s.world && s.world.wind;
   const st = s.world && s.world.stripes;
@@ -174,21 +243,31 @@ function slowHint(s) {
   }
   $("hint").__slow = true; setText($("hint"), `Your computer is running the brain at ${fmt(s.rtf, 2)}× real time, so the fly's world is in slow motion to keep up. Closing other programs helps.`);
 }
-let toastText = "";
-function toast(msg) {
+let toastText = "", toastHold = 0;
+/** Show the server's message (sent with every tick), or, with `holdMs`, a page-local one that the next ticks'
+ *  empty `msg` leaves in place until the hold runs out (the server's own message still replaces it). */
+function toast(msg, holdMs = 0) {
+  const now = performance.now();
+  if (holdMs) toastHold = now + holdMs;
+  else if (!msg && now < toastHold) return;
   if (msg && msg !== toastText) { $("toast").textContent = msg; $("toast").classList.add("show"); }
   if (!msg && toastText) $("toast").classList.remove("show");
   toastText = msg || "";
 }
 
 // ---------------------------------------------------------------- poses, interpolated between ticks
-function flyPose() {
-  const f = S.fly, walking = f.mode === "walk" || f.mode === "backward" || f.mode === "court" || Math.abs(f.v) > 0.5;
-  if (!Sprev) return { ...f, walking };
-  const t = Math.min(1, (performance.now() - Stime) / Sgap), p = Sprev.fly;
-  return { ...f, walking, x: p.x + (f.x - p.x) * t, y: p.y + (f.y - p.y) * t, h: lerpAngle(p.h, f.h, t) };
+function onePose(f, p, sex, id, hz, senses) {
+  const walking = f.mode === "walk" || f.mode === "backward" || f.mode === "court" || Math.abs(f.v) > 0.5;
+  if (!p) return { ...f, walking, sex, id, hz, senses };
+  const t = Math.min(1, (performance.now() - Stime) / Sgap);
+  return { ...f, walking, sex, id, hz, senses, x: p.x + (f.x - p.x) * t, y: p.y + (f.y - p.y) * t, h: lerpAngle(p.h, f.h, t) };
 }
-function femalePose() {
+/** Every simulated fly's pose this frame (one with a single fly; each of `S.flies` with two), by fly id. */
+function posesOf(s) {
+  if (!s.flies) return [onePose(s.fly, Sprev && Sprev.fly, L.sex, 0, s.hz, s.senses)];
+  return s.flies.map((f) => onePose(f.fly, Sprev && Sprev.flies && Sprev.flies[f.id] && Sprev.flies[f.id].fly, f.sex, f.id, f.hz, f.senses));
+}
+function scriptedFemalePose() {
   const f = S.world && S.world.female; if (!f) return null;
   const p = Sprev && Sprev.world && Sprev.world.female;
   if (!p) return { ...f, walking: false };
@@ -342,18 +421,24 @@ function wireBrain() {
   vb.onclick = () => { brain.setView(!brain.mode3d); refresh(); };
   sb.onclick = () => { brain.spin = !brain.spin; if (brain.spin) brain.setView(true); refresh(); };
   $("brainReset").onclick = () => { brain.resetView(); refresh(); };
-  if (!brain.gl) setText($("brainHint"), "WebGL is unavailable here, so this is the flat map. Click a dot to look up that neuron.");
-  brain.spin = true; brain.pitch = 0.3; refresh();
-  const pop = $("neuronPop");
-  brain.onPick = async (i, px, py) => {
+  setText($("brainHint"), brain.gl ? "Drag to rotate, wheel to zoom, click a dot to look up that neuron."
+    : "WebGL is unavailable here, so this is the flat map. Click a dot to look up that neuron.");
+  if (brain.__wired) { refresh(); return; }
+  brain.__wired = true; brain.spin = true; brain.pitch = 0.3; refresh();
+}
+/** The neuron popover of one brain map (each fly's map looks its neurons up in its own connectome: api/neuron?fly=k). */
+function attachPick(view) {
+  if (view.onPick) return;
+  const pop = $("neuronPop"), Lk = view.L, fly = Lk.fly_id ? `&fly=${Lk.fly_id}` : "";
+  view.onPick = async (i, px, py) => {
     if (i < 0) { setShown(pop, false); return; }
     const wrap = $("brainCard").querySelector(".brainwrap").getBoundingClientRect();
     pop.style.left = Math.max(4, Math.min(wrap.width - 268, px > wrap.width / 2 ? px - 272 : px + 12)) + "px";
     pop.style.top = Math.max(4, Math.min(wrap.height - 40, py - 20)) + "px";
     pop.innerHTML = `<button class="close">✕</button><h5>neuron #${i}</h5><div class="feedback">looking it up…</div>`;
     setShown(pop, true);
-    pop.querySelector(".close").onclick = () => { setShown(pop, false); brain.picked = -1; };
-    const r = await getJSON(`api/neuron?index=${i}`);
+    pop.querySelector(".close").onclick = () => { setShown(pop, false); view.picked = -1; };
+    const r = await getJSON(`api/neuron?index=${i}${fly}`);
     if (!r || !r.ok) { pop.querySelector(".feedback").textContent = (r && r.error) || "no answer"; return; }
     const n = r.neuron, spec = !n.type ? `index:${n.index}` : n.side ? `${n.type}/${n.side}` : n.type;   // an unannotated cell by itself
     const list = (rows) => rows.slice(0, 4).map((p) => `<li><b>${esc(p.type)}${p.side ? "/" + p.side : ""}</b> <span class="${p.sign > 0 ? "pos" : "neg"}">${p.sign > 0 ? "+" : "−"}</span> ${p.synapses} syn · ${p.neurons} cell${p.neurons === 1 ? "" : "s"}</li>`).join("") || "<li>none</li>";
@@ -365,19 +450,19 @@ function wireBrain() {
         ${vfbRows(n)}
         <span class="k">connections</span><span class="v">${n.n_inputs} in · ${n.n_outputs} out</span>
         <span class="k">firing now</span><span class="v">${fmt(n.rate_hz, 1)} Hz</span>
-        <span class="k">region</span><span class="v">${esc(L.regions[L.region[i]] || "")}</span>
+        <span class="k">region</span><span class="v">${esc(Lk.regions[Lk.region[i]] || "")}</span>
         <span class="k">genes</span><span class="v">${(n.genes || []).length ? n.genes.map((g) => `<a href="${g.flybase}" target="_blank" rel="noopener" title="${esc(g.why)} · FlyBase">${esc(g.symbol)}</a>`).join(", ") : "none known here"}${n.dimorphism ? ` · ${esc(n.dimorphism)}` : ""}</span>
         ${receptorRow(n.receptors)}
       </div>
       ${n.vfb && n.vfb.definition ? `<details><summary>what is this cell type?</summary><div class="def">${esc(n.vfb.definition)}</div></details>` : ""}
       <b>strongest inputs</b><ul>${list(n.inputs || [])}</ul>
       <b>strongest outputs</b><ul>${list(n.outputs || [])}</ul>
-      <div class="row wrap">${L.sex === "female"
+      <div class="row wrap">${Lk.sex === "female"
         ? `<span class="muted" title="FlyWire root id (release 783): search for it in FlyWire Codex">root id <code>${esc(n.body_ref || String(n.body_id))}</code></span> <a href="https://codex.flywire.ai" target="_blank" rel="noopener">FlyWire Codex ↗</a>`
         : `<a href="https://neuprint.janelia.org/view?bodyid=${esc(n.body_ref || String(n.body_id))}&dataset=male-cns%3Av1.0" target="_blank" rel="noopener">neuPrint ↗</a>`}
         ${n.vfb ? `<a href="${esc(n.vfb.url)}" target="_blank" rel="noopener" title="${esc(n.vfb.label)} on Virtual Fly Brain">VFB ↗</a>` : ""}
         <button class="mini" data-act="lab">to the lab</button><button class="mini" data-act="watch">watch ${esc(spec)}</button></div>`;
-    pop.querySelector(".close").onclick = () => { setShown(pop, false); brain.picked = -1; };
+    pop.querySelector(".close").onclick = () => { setShown(pop, false); view.picked = -1; };
     pop.querySelector("[data-act=lab]").onclick = () => { $("spec").value = spec; $("spec").focus(); };
     pop.querySelector("[data-act=watch]").onclick = () => post({ type: "watch", spec });
     pop.querySelectorAll(".crumb").forEach((a) => (a.onclick = () => { $("spec").value = `fbbt:${a.dataset.fbbt}`; $("spec").focus(); }));
@@ -424,15 +509,30 @@ function receptorRow(rx) {
 }
 
 // ---------------------------------------------------------------- dialogs and keyboard
+const INTRO_FEMALE = (Lk) => `The fly's brain is a simulation of the whole female fruit-fly brain: all ${Lk.n.toLocaleString()} ` +
+  `neurons of FlyWire's connectome, release 783 (Dorkenwald et al., Nature 2024), without the nerve cord. Every neuron is the same ` +
+  `simple "leaky integrate-and-fire" unit, and every connection's strength comes from the synapse count in the wiring diagram ` +
+  `(Shiu et al., Nature 2024, the model as published). Nothing is trained.`;
 function buildDialogs() {
-  if (L.sex === "female") setText($("realIntro"), `The fly's brain is a simulation of the whole female fruit-fly brain: all ${L.n.toLocaleString()} ` +
-    `neurons of FlyWire's connectome, release 783 (Dorkenwald et al., Nature 2024), without the nerve cord. Every neuron is the same ` +
-    `simple "leaky integrate-and-fire" unit, and every connection's strength comes from the synapse count in the wiring diagram ` +
-    `(Shiu et al., Nature 2024, the model as published). Nothing is trained.`);
+  const other = layouts[1];
+  if (other) {
+    const who = (Lk) => Lk.sex === "female" ? `the whole female brain, FlyWire release 783 (${Lk.n.toLocaleString()} neurons, no nerve cord)`
+      : `the whole male central nervous system, MaleCNS v1.0 (${Lk.n.toLocaleString()} neurons, nerve cord included)`;
+    setText($("realIntro"), `Two simulated flies share this dish, each a whole connectome run as the same simple "leaky integrate-and-fire" ` +
+      `network (Shiu et al., Nature 2024): fly 0 is ${who(L)}, fly 1 is ${who(other)}. They reach each other only through the world, ` +
+      `through hand-built senses listed below; nothing links one brain to the other, and nothing is trained.`);
+  } else if (L.sex === "female") setText($("realIntro"), INTRO_FEMALE(L));
   const wr = L.whats_real || {};
   $("realWiring").innerHTML = (wr.wiring || []).map((t) => `<li>${esc(t)}</li>`).join("");
   $("realHand").innerHTML = (wr.hand_built || []).map((t) => `<li>${esc(t)}</li>`).join("");
   $("realNot").innerHTML = (wr.not_modelled || []).map((t) => `<li>${esc(t)}</li>`).join("");
+  setShown($("realOtherHead"), !!other); setShown($("realOther"), !!other);
+  if (other) {                                          // the other fly's own wiring facts, the ones the first fly's list lacks
+    const mine = new Set([...(wr.wiring || []), ...(wr.hand_built || []), ...(wr.not_modelled || [])]), ow = other.whats_real || {};
+    const items = [["wiring", ow.wiring], ["hand-built", ow.hand_built], ["not modelled", ow.not_modelled]]
+      .flatMap(([tag, list]) => (list || []).filter((t) => !mine.has(t)).map((t) => `<li><small class="tag">${tag}</small> ${esc(t)}</li>`));
+    $("realOther").innerHTML = items.join("");
+  }
 }
 $("realBtn").onclick = () => $("realDlg").showModal();
 $("keysBtn").onclick = () => $("keysDlg").showModal();
@@ -446,16 +546,16 @@ window.addEventListener("keydown", (e) => {
   if (/^[0-9]$/.test(e.key)) { const k = e.key === "0" ? 9 : parseInt(e.key) - 1; if (toolOrder[k]) setTool(toolOrder[k]); return; }
   switch (e.key) {
     case " ": e.preventDefault(); post({ type: "pause", on: !(S && S.paused) }); break;
-    case "f": case "F": post({ type: "female", on: !(S && S.world && S.world.female) }); break;
+    case "f": case "F": if (S && S.flies) toast("The female is simulated here (--partner); the scripted female is for single-fly play.", 3000); else post({ type: "female", on: !(S && S.world && S.world.female) }); break;
     case "c": case "C": clap(); break;
     case "s": case "S": $("seesToggle").checked = sees = !sees; break;
     case "e": case "E": $("retinaToggle").checked = retinaOn = !retinaOn; setShown($("retinaBox"), retinaOn); break;
-    case "w": case "W": post({ type: "autopilot", on: !(S && S.autopilot) }); break;
+    case "w": case "W": { const V = S ? viewOf(S) : null; post({ type: "autopilot", on: !(V && V.autopilot) }); break; }
     case "n": case "N": post({ type: "reset" }); break;
     case "h": case "H": if (layout) layout.toggleSidebar(); break;
     case "+": case "=": zoomStep(1); break;
     case "-": case "_": zoomStep(-1); break;
-    case "Escape": setShown($("neuronPop"), false); if (brain) brain.picked = -1; $("clearMenu").hidden = true; break;
+    case "Escape": setShown($("neuronPop"), false); for (const b of brains) if (b) b.picked = -1; $("clearMenu").hidden = true; break;
   }
 });
 
@@ -472,8 +572,8 @@ function frame(now) {
     const dt = Math.min(0.1, (now - last) / 1000); last = now;
     if (L && arena) {
       if (renderPending && S) { renderPending = false; guard("panels", () => renderState(S)); }
-      const pose = S ? flyPose() : null, female = S ? femalePose() : null;
-      guard("the dish", () => arena.draw(dt, { S, pose, female, pointer, tool, sees, handAng: S ? serverHandAngle() : 0, stripes: S ? stripesNow() : null }));
+      const poses = S ? posesOf(S) : [], pose = poses[focus] || poses[0] || null, female = S ? scriptedFemalePose() : null;
+      guard("the dish", () => arena.draw(dt, { S, pose, flies: poses, female, pointer, tool, sees, cues: true, handAng: S ? serverHandAngle() : 0, stripes: S ? stripesNow() : null }));
       guard("the brain map", () => brain.frame(dt, now / 1000));
       guard("the key-neuron sparklines", () => panels.keys.drawSparks(now));
       setShown($("disc"), lastStateAt > 0 && now - lastStateAt > 3000);

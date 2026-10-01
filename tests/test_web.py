@@ -78,3 +78,82 @@ def test_the_why_line_wraps_to_two_lines_and_keeps_its_full_text_as_a_tooltip():
     js = (WEB / "panels.js").read_text(encoding="utf-8")
     update = js[js.index("class WhyPanel"):js.index("class KeyNeurons")]
     assert "drv.title = why" in update
+
+
+def test_the_two_fly_controls_exist_and_no_verdict_is_written():
+    # two flies (docs/TWO_FLIES_PLAN.md 5.8): a fly menu in the header, a second brain canvas kept alive beside the first
+    # (a WebGL context is never created and destroyed on a focus switch), and her decision neurons are shown as readouts,
+    # never called acceptance or rejection anywhere on the page
+    ids = set(_ids())
+    assert {"focusSel", "brain", "brain2", "brainOverlay", "brainOverlay2", "realOther"} <= ids
+    text = (WEB / "index.html").read_text(encoding="utf-8") + "".join(js.read_text(encoding="utf-8") for js in sorted(WEB.glob("*.js")))
+    assert not re.search(r"accept(ance|ed)|reject(ion|ed)", text, re.I)
+    css = (WEB / "style.css").read_text(encoding="utf-8")
+    assert _rule(css, "#brain2") and "display: block" in _rule(css, "#brain2") and "display: none" in _rule(css, "#brain[hidden], #brain2[hidden], #brainOverlay[hidden], #brainOverlay2[hidden]")
+    js = (WEB / "app.js").read_text(encoding="utf-8")
+    assert "setActionFly" in js and "posesOf" in js and "flyPose(" not in js and "femalePose(" not in js
+
+
+def _js(name):
+    return (WEB / name).read_text(encoding="utf-8")
+
+
+def test_the_page_asks_the_focused_fly_for_its_types_ontology_and_routes():
+    # two flies: the lab's live type search, the ontology search and the pathway explorer name the fly in focus
+    # (api/types, api/ontology and api/trace take ?fly=k), so the female's wiring is searched when she is in focus,
+    # and a route traced in one fly's wiring is cleared when the other fly's map takes its place
+    js = _js("panels.js")
+    assert re.search(r"api/types\?q=[^`]*\$\{this\.flyQ\(\)\}", js)
+    assert re.search(r"api/ontology\?q=[^`]*\$\{this\.flyQ\(\)\}", js)
+    assert re.search(r"api/trace\?from=[^`]*\$\{fly\}", js) and "fly_id ? `&fly=${this.brain.L.fly_id}`" in js
+    assert "refocus(brain) {" in js and "this.brain.setPath(null)" in js
+    assert "panels.paths.refocus(brain)" in _js("app.js")
+    assert "if (onto && !this.ontoWired) this.wireOntology();" in js
+
+
+def test_the_walking_urge_control_follows_the_focused_fly():
+    # each fly's state entry carries its own `autopilot` (docs/API.md "Two flies"): the checkbox shows the focused fly's,
+    # and the W key toggles it from its own value, not from fly 0's; the fly menu lets go of the keyboard after a choice
+    js = _js("app.js")
+    assert "if (document.activeElement !== ap) ap.checked = !!s.autopilot;" in js and "!focus) ap.checked" not in js
+    assert "on: !(V && V.autopilot)" in js and "on: !(S && S.autopilot)" not in js
+    assert re.search(r'\$\("focusSel"\)\.onchange = \(e\) => \{[^\n]*e\.target\.blur\(\)', js)
+
+
+def test_a_page_local_message_outlives_the_next_tick():
+    # the server's `msg` arrives with every tick and is empty most of the time; a message the page itself shows
+    # (the F key with a simulated partner) is held for a few seconds instead of being wiped 25 ms later
+    js = _js("app.js")
+    assert "toastHold" in js and "function toast(msg, holdMs = 0)" in js
+    assert re.search(r'toast\("The female is simulated here[^"]*", 3000\)', js)
+
+
+def test_the_male_page_keeps_its_neuronbridge_tooltips():
+    # the two NeuronBridge buttons are disabled for a female (MaleCNS bodies only); on a male page they keep the
+    # tooltips index.html gives them instead of an empty one
+    html = (WEB / "index.html").read_text(encoding="utf-8")
+    assert 'id="lineBtn" title="Which MaleCNS neurons does this line label? (NeuronBridge, needs internet)"' in html
+    assert 'id="linesBtn" title="Which driver lines label these neurons? (NeuronBridge, needs internet)"' in html
+    js = _js("panels.js")
+    assert "b.dataset.title = b.title" in js and ": b.dataset.title;" in js
+    assert not re.search(r'\.title = this\.sex === "female" \? "[^"]*" : "";', js)
+
+
+def test_a_hidden_brain_map_keeps_a_bounded_spike_buffer():
+    # in the 2-D fallback the map not in focus (the other fly's) is never drawn, so its pending spike lists are capped
+    js = _js("brain3d.js")
+    assert re.search(r"const PENDING_MAX = \d+;", js)
+    assert "if (this.pending.length >= PENDING_MAX) this.pending.shift();" in js
+
+
+def test_her_cues_are_labelled_hand_built_on_screen_and_events_say_whose_they_are():
+    # plan 1.5 rule 2: the marks at her abdomen are hand-built cues with provisional thresholds, said under the dish
+    # and on the 'Her decisions' group; with two flies each per-fly event row starts with whose it is
+    html = (WEB / "index.html").read_text(encoding="utf-8")
+    assert 'id="cuesNote" hidden' in html and "hand-built cues, provisional" in html
+    js = _js("panels.js")
+    assert "const CUES_NOTE" in js and "hand-built cues" in js and 'if (g === "Her decisions") grp.title = CUES_NOTE;' in js
+    assert 'class="who"' in js and "S.flies.find((x) => x.id === e.fly)" in js
+    assert 'setShown($("cuesNote"), s.flies.some((f) => f.sex === "female"))' in _js("app.js")
+    css = (WEB / "style.css").read_text(encoding="utf-8")
+    assert _rule(css, ".events li .who") and _rule(css, ".rows .grp .note") and _rule(css, ".cuesnote")

@@ -320,7 +320,7 @@ Two things made single verdicts less trustworthy than they looked.
   about 4 s with the after-stimulus test on every seed (parts list on).
 
 The ranges are unchanged. The model's absolute rates are not comparable with recordings
-(section 10), so there is no measured value to move most of them to; the fragile mark says where a
+(section 11), so there is no measured value to move most of them to; the fragile mark says where a
 range edge sits inside the model's own spread instead. The tables elsewhere in this document were
 measured on seed 0 and are left as they were measured.
 
@@ -364,7 +364,7 @@ settled. The split is shown, and the verdict stays on the total (calm below 1,00
 50,000). Counting spikes only would turn all ten of the male's RUNAWAY seed-runs into small loops with
 no change in the dynamics. Over the 13 distinct stimulus conditions (65 seed-runs), the male fly is
 calm in 34, a small loop in 31 and a runaway in none with the parts off; with the parts on, 43 / 12 / 10
-(v2.7's rule: 24 / 2 / 39). Section 10, limitation 3, says what keeps firing.
+(v2.7's rule: 24 / 2 / 39). Section 11, limitation 3, says what keeps firing.
 
 **The game's re-test runs in a separate process (v2.8).** When the parts list is switched or a fly is
 grown, the Genome card re-tests the reflexes while the game keeps running. In a thread of the game's own
@@ -2297,9 +2297,228 @@ game tick is shorter than his, but her process is twice as large, because her fi
 saturates at "real time" (`Game.loop` averages `min(1, budget/used)`), so a speed above real time can only
 be read from this tool.
 
+## 10. Two flies in one dish (v2.9)
+
+Until v2.8 the game had one simulated fly and, at most, a scripted female with no brain (section 6.1). Since v2.9
+`python fly_game.py --partner female` puts two *simulated* brains in one dish: the male (MaleCNS v1.0) and the
+female (FlyWire 783, section 9), each in its own process, lockstepped every 25 ms tick, each sensing the other
+only through the world. `--partner male` gives a second male brain instead; with `--female` the protagonist is
+the female and `--partner male` gives her a male. Without `--partner` nothing changes: the single fly's every
+frame is byte-identical to v2.8.1's (the golden hashes of `tests/test_golden_single_fly.py` and
+`tools/golden_hashes.py`, made before this work began and unchanged after it).
+
+### 10.1 What is wired and what is hand-built
+
+The two brains never touch synapse to synapse. Each channel between them is a hand-built encoder in
+`virtual_fly/senses/social.py`, with a switch (`--social`, a comma list; default `seen,song,contact,collide`),
+a line in "What's real here?", and nothing to do when there is no other fly. What the sensory neurons do
+next is the wiring. Cell counts are from the kit's files (male / female); the distances say which scale they
+are in, because the drawn fly is about three times real size while the dish is in real millimetres.
+
+| channel | sender | receiver | hand-built part | default |
+|---|---|---|---|---|
+| seen | the other fly's position | the retina, then the small-object and looming detectors → `LC10a` (275 / 234), `LC11`, `LC4`, `LPLC2` | the other fly is drawn to the retina exactly as the scripted female was (radius 1.6 mm, height 2.2 mm, drawn scale); the detectors are the kit's | on |
+| song | the singer's decoded song (`pIP10`, male only) | the hearer's `prefix:JO-A,prefix:JO-B` (138 / 359) | a steady rate of song × falloff(d) × 70 Hz on every cell; full within 6 mm, fading linearly to nothing at 15 mm (real centre-to-centre mm; provisional, no source); 70 Hz is the calibration of 10.3; a fly never hears itself | on |
+| contact | a foreleg tip within 3.4 mm (drawn scale) of the other fly's centre | the toucher's leg taste cells `LgLG1a,LgLG1b` (270 / **0**) at 60 Hz when the touched fly is female, and, for a male toucher, the kit's pC1 arousal (`prefix:pC1_` up to 60 Hz for 2.5 s, section 6.1) | the same rule as for the scripted female; the arousal is off for a female toucher (`contact_pc1`), because her file has no leg taste cells and adding a drive would override the data | on |
+| collide | both drawn bodies | both bodies | each body is a capsule (half-length 1.2 mm, radius 1.2 mm, drawn scale); a step into the other's start-of-tick capsule is refused as a step into the wall is, and any overlap left after both have moved is pushed apart symmetrically; a head-on tap still lands (head to head the centres can come within 2 × (1.2 + 1.2) = 4.8 mm, where a foreleg tip, 3.2 mm from its own centre at 35° off the axis, is 2.9 mm from the other's centre, inside the 3.4 mm tap rule, which holds up to a centre distance of about 5.5 mm: geometry from `body.py`, not a measurement) | on |
+| cVA | each male, within 5 mm (real; Taisz et al. 2023) | the receiver's `ORN_DA1` (204 / 126) | a rate on the receptor neurons; provisional | off |
+| mating status | a world switch | the female's SAG cells `AN_SMP_2` (0 / 2) | virgin = a tonic drive, mated = silenced; the sex-peptide route itself is in the uterus, which FlyWire lacks | off |
+| body touch | overlap of the bodies | the head bristles `prefix:BM_InOm` (745 / 1,113) | a collision fed to the bristles as a wall bump | off |
+
+Her decisions are readouts, not scripts: the rates of `DNp37` (vpoDN, the vaginal plate opening motor command;
+Wang K et al. 2021) and `DNp13` (the ovipositor extrusion motor command; Wang F et al. 2020) are shown as
+watches, with `vpoEN`, the 38 `pC2l` cells (Nojima et al. 2021), `DNp55`, the `oviDN`s and `SAG`. None of them
+is called "acceptance" or "rejection": song drives both plate opening and extrusion, extrusion deters a male only
+from a mated female, and mating status is not modelled here. Her walking is the hand-built walking urge, as the
+male's is; her brain changes it only through the decoder's thresholds (10.5 measures how much). A partner without
+`pIP10` never enters the court mode (its wing gesture is a male behaviour).
+The checklist's pair items (he saw her, sang, tapped; she heard, saw him, was tapped) are hand-built rules on the
+encoders' outputs, for the page only: "seen" needs a small moving object in an eye whose field (8° across the midline
+to 165°) holds the other fly within 30 mm, since the retina does not say which object moved; "sang" a song within the
+song channel's 15 mm; an item whose channel is off is not listed; a partner of the fly's own sex gets the eyes' item
+only (a tap tastes nothing, there is no song to hear), and with a male partner the male's own "court" item is left
+out, since no scripted female can be added then.
+
+### 10.2 Processes and lockstep
+
+With one fly the brain steps inline, as before. With two, each brain lives in its own child process
+(`virtual_fly/brainio.py`, `ProcessBrain`, modelled on the re-test child of section 2.3), because the Python
+around the compiled kernels does not release the interpreter lock. Every tick the game sends each brain its
+sensory rates and receives a `BrainTick` (readout rates, the giant-fibre spikes, the counts, a sample of spikes to
+draw, the learning summary), then moves every body. All flies sense the same start-of-tick snapshot, all brains
+advance together, all bodies move, so sensing and collisions do not depend on the order of the flies (a test swaps
+them and gets the mirror result). Fly 0 keeps the game's random stream; fly *k* gets `random.Random(f"{seed}:fly{k}")`
+and brain seed `seed + 1000k`. A single fly run through a process brain gives the same golden hashes as inline.
+
+Measured twice on the machine of section 9.6 (`tools/bench_two_flies.py --only pair-game`: the male with a FlyWire
+female partner, both brains in their own processes, the four default channels on, game profile, 400 ticks after 20
+of warm-up, each row in its own process at `nice 10`): run 1 on 2026-09-27, started two minutes after the pair
+experiments had finished, at a 1-minute load average of 5.3 (4.1 over 5 minutes); run 2 on 2026-10-01 with nothing
+else running, load average 0.02. The pipe alone costs about 0.6 ms per tick (real male, drawn body, 400 ticks:
+inline tick median 7.0-7.1 ms, through a process 7.6-7.8 ms).
+
+| two-fly game | real-time factor, run 1 / run 2 | tick, median / 99th percentile: run 1; run 2 | peak memory: game process, his brain child, hers |
+|---|---|---|---|
+| parts list off, `dt` 0.5 | 2.9 / 2.7 | 8.7 / 10.3 ms; 9.0 / 14.2 ms | 1,655-1,656 / 409 / 630 MB |
+| parts list off, `dt` 1.0 (`--fast`) | 4.3 / 4.2 | 5.8 / 7.6 ms; 5.9 / 8.0 ms | 1,656 / 408 / 630 MB |
+| parts list on, `dt` 0.5 | 1.9 / 1.7 | 13.3 / 16.0 ms; 14.3 / 18.1 ms | 1,721-1,742 / 470 / 714 MB |
+| parts list on, `dt` 1.0 | 2.6 / 2.3 | 9.5 / 12.3 ms; 10.1 / 17.7 ms | 1,721 / 470 / 713-714 MB |
+
+**What this shows.** Two busy brains in two processes hold 2.7-2.9× real time with the parts list off and 1.7-1.9×
+with it on, against the plan's target of 0.7×. The loaded run was not the slower one: the idle run's medians are
+3-7 % longer and its 99th percentiles 5-44 % longer, the run-to-run spread section 9.6 describes, so read the first
+decimal of the real-time factor as its precision. The game process is large (1.7 GB) because, as `fly_game.py`
+does, it builds the first fly's brain before handing it to a child and holds both connectomes for the API. A
+`Ctrl+C` closes both children; the game exits with code 0.
+
+### 10.3 How loud can his song be? (`tools/song_startle.py`)
+
+The song reaches her as a rate on her Johnston's organ, and in this model Johnston's organ also reaches the giant
+fibre (section 6.3), so a loud enough song would be a startle. Since v2.8.1 an escape needs a burst, 5 or more
+`DNp01` spikes over two consecutive 25 ms ticks (section 5.7), so the calibration counts windows, not mean rates:
+`SONG_MAX_HZ` is the highest swept rate at which fewer than 1 % of 50 ms windows hold a burst, the windows pooled
+over five seeds (995 per rate and parts setting), 5 s each, game profile, parts list off and on. Male, share of
+windows with a burst (largest window in brackets):
+
+| JO-A/B Hz | 40 | 50 | 60 | 70 | 80 | 90 | 100 |
+|---|---|---|---|---|---|---|---|
+| parts list off | 0 % (4) | 0.20 % (5) | 0.10 % (5) | **0.50 % (5)** | 1.21 % (6) | 3.12 % (6) | 6.73 % (7) |
+| parts list on | 0 % (4) | 0.20 % (5) | 0.10 % (5) | **0.80 % (5)** | 2.21 % (6) | 4.42 % (6) | 10.15 % (6) |
+| giant fibre, Hz per cell (off / on) | 14.0 / 14.0 | 16.8 / 16.8 | 19.4 / 19.4 | 22.6 / 23.2 | 25.7 / 26.4 | 27.9 / 29.0 | 31.0 / 32.2 |
+
+**What this shows.** 70 Hz is the loudest steady drive that does not startle him (every burst window at 70 Hz
+holds exactly the 5 spikes of the threshold); 80 Hz crosses the line. Seed by seed the share at 70 Hz is 0-1.0 %
+with the parts list off (2 bursts in 199 windows on seeds 0 and 4) and 0-1.5 % with it on (3 on seed 4), so a rule
+applied per seed would have chosen 60 Hz (at most 1 burst in 199 windows on any seed); the pooled count is the rule
+as decided. So `SONG_MAX_HZ` = 70 Hz, a hand-built calibration taken from the male connectome and the burst rule:
+what his own hearing would tolerate is applied to her 359 sound cells (his 138), a total input of 359 × 70 = 25,130
+spikes per second into her Johnston's organ against 138 × 70 = 9,660 into his (cells × Hz: arithmetic from the
+counts, not a measurement). Under the same drive her giant fibre never bursts (largest window 4 with the parts
+list off, 3 with it on; 0 % at every rate up to 100 Hz), so his song cannot make her jump.
+
+What the sweep does to each fly's readouts (`fly_brain.py --sweep`, five seeds, game profile, Hz per cell):
+
+| JO-A/B Hz | his DNp01 | his pC1 | her DNp01 (off / on) | her vpoEN | her pC2l | her DNp37 | her DNp13 | her DNp55 (off / on) |
+|---|---|---|---|---|---|---|---|---|
+| 30 | 12.0 | 0 | 4.0 / 0.2 | 0 | 0 | 0 | 0 | 0 / 0 |
+| 50 | 13.5 | 0 | 12.8 / 4.5 | 0 | 0 | 0 | 0 | 0 / 0 |
+| 70 | 21.2 | 0 | 18.8 / 8.8 | 0 | 0 | 0 | 0 | 0.5 / 0.5 |
+| 100 | 28.0 | 0 | 26.5 / 15.8 | 0 | 0 | 0 | 0 | 4.8 / 4.8 |
+
+**What this shows.** In this data his song reaches her Johnston's organ and her giant fibre but not her song-tuned
+neurons: `vpoEN`, the `pC2l` pulse-song detectors, `DNp37` and `DNp13` stay at 0.0 Hz on every seed at every rate up to
+100 Hz, with the parts list off and on. Baker et al. (2022) found "a large number of false negatives" among the
+automatically detected Johnston's-organ synapses in FlyWire's synapse table v274 and used membrane contacts
+instead; the v783 table the kit builds from looks the same to the model. This is reported as measured: no
+compensating gain was added (it would be hand-built, and it would decide the result).
+
+### 10.4 The pair experiments (provisional)
+
+`python fly_brain.py --female --pair-experiments` runs six new experiments (`experiments.PAIR`, tag `pair`) that are
+**not** among the 16 validated ones or the 11 of the re-test: their direction comes from the literature, their
+ranges from this measurement (five seeds, game profile, parts list off and on, real connectome; lo = the smallest
+per-seed value, hi = the largest), so passing them says "as measured", not "as a fly". Hz per cell over the last
+500 ms of a 600 ms stimulus, its first 100 ms left out (the convention at the top of this document); per seed, parts
+list off / on.
+
+| experiment | stimulus | readout | parts list off, seeds 0-4 | parts list on | range |
+|---|---|---|---|---|---|
+| F1 she hears song | `prefix:JO-A,prefix:JO-B` at 70 Hz (`SONG_MAX_HZ`) | vpoEN, pC2l (38), DNp37, DNp13 | 0 on every seed | 0 on every seed | 0-0 each |
+| | | DNp01 | 20, 19, 19, 16, 18 | 11, 7, 10, 9, 8 | 7-20 |
+| F2 pC1 drives the plate-opening command | `prefix:pC1_` at 80 Hz | DNp37 (vpoDN) | 72, 75, 73, 86, 76 | 73, 74, 74, 85, 77 | 72-86 |
+| F3 pC2l drives the extrusion command | the 38 pC2l cells at 80 Hz | DNp13 | 111, 107, 109, 113, 109 | 113, 105, 109, 113, 109 | 105-113 |
+| F4 cVA | `ORN_DA1` at 80 Hz | DA1_lPN | 99-101 | 99-101 | 99-102 |
+| | | aSP-g, pC1d, pC1e | 0 | 0 | 0-0 each |
+| F5 SAG to pC1 | `AN_SMP_2` at 60 Hz | pC1 (a-e) | 32.8, 25.0, 27.2, 28.6, 32.2 | 15.8, 15.4, 11.6, 11.4, 13.4 | 11-33 |
+| | | DNp37 | 45, 34, 40, 37, 41 | 24, 20, 18, 17, 20 | 17-45 |
+| M1 song does not startle him (male) | `prefix:JO-A,prefix:JO-B` at 70 Hz | DNp01 | 25, 21, 19, 20, 19 | the same | 19-25; bursts in 0.50 % / 0.80 % of 50 ms windows (10.3) |
+
+**What this shows.** The two motor commands are reachable from inside her brain: pC1 to DNp37 (530 synapses from
+the five pC1 types, 26.4 % of its 2,008 input synapses; 382 of them from pC1a alone, 19.0 %) carries at 80 Hz, and
+the pC2l cells to DNp13 (974 synapses, 20.6 % of its 4,720) carry even better; SAG's 872 synapses onto pC1 reach
+both pC1 and, through it, DNp37; cVA's receptor neurons reach their projection
+neurons (DA1_lPN, 5,556 synapses) but not the aSP-g or pC1d/e cells beyond them. What does not carry is the
+input she would need from him: song stops at Johnston's organ and the giant fibre (F1; 10.3), and cVA stops at the
+projection neurons (F4). So in this data a simulated male can be heard and smelt by her, but neither reaches the
+neurons whose activity would be her decision. Every female experiment leaves her brain calm one second after the
+stimulus. The same experiments run on the male as comparisons (he has vpoEN, DNp13, DA1_lPN and the pC2l type
+names): his F1 DNp01 is fragile against her range (seed 0 at 25 Hz), his F3 DNp13 reads 0 Hz and his F4 DA1_lPN
+207 Hz, outside her ranges, and F2 and F5 cannot be done on him (no DNp37, no SAG).
+
+Hand-built, still: the stimulus rates (80 Hz, 60 Hz, and 70 Hz from 10.3). Not modelled: the sex peptide's own
+route (uterine sensory neurons, absent in FlyWire), mating status. Cost: about a minute for the six on either fly.
+
+### 10.5 What the female does next to him (provisional)
+
+`tools/pair_courtship.py`: the male and the simulated FlyWire female placed as the courtship scenario places them (he at
+(−10, −8) heading 0.3 rad, she at (14, 10) facing her own way), 90 s, seeds 0-4, game profile, parts list off, both
+brains in their own processes, and the three controls the plan asks for: her walking urge off, the song channel off
+(he still sings), and every channel off (a partner in the dish that neither can sense). Distances are real
+centre-to-centre millimetres; "near" is within 15 mm; "facing" is her centre within ±30° of his heading while near;
+speeds are the drawn body's, jump ticks left out; a burst is 5 or more giant-fibre spikes over two ticks (the escape
+rule); a jump is the escape mode entered (a burst within the second after a jump is a burst, not a jump: the game's
+cooldown). Ranges over the five seeds, mean in brackets. Measured on 2026-09-27 and again on 2026-10-01 with the tool as
+committed: every per-seed value came back identical (seeded games stepped tick by tick are deterministic).
+
+| | full (seen, song, contact, collide) | her walking urge off | song channel off | every channel off |
+|---|---|---|---|---|
+| time within 15 mm, of 90 s | 70-84 s (79) | 59-88 (80) | 70-82 (77) | 4-17 (9) |
+| her centre within ±30° of his heading, while near | 12-33 % (22) | 12-32 % (25) | 17-25 % (23) | 2-40 % (22) |
+| time he sings (song > 0.3) | 60-74 s (69) | 63-80 (75) | 58-74 (67) | 0 |
+| his taps, per minute | 10-15 (13) | 9-16 (12) | 11-16 (13) | 0 |
+| his pC1 / pIP10, Hz per cell | 37-46 / 46-56 | 38-50 / 48-61 | 35-47 / 44-58 | 0 / 0 |
+| his LC10a left / right, Hz per cell | 6-13 / 7-22 | 10-21 / 3-9 | 6-11 / 8-19 | 0 / 0 |
+| her Johnston's organ, Hz per cell while it sounds (share of ticks) | 39-48 (78-93 %) | 43-53 (65-98 %) | 0 | 0 |
+| her vpoEN / DNp37 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| her DNp13, Hz per cell | 0-1.0 (0.5) | 0-0.4 (0.1) | 0-1.2 (0.5) | 1.1-3.4 (1.9) |
+| her speed while he sings / while he does not, mm/s | 4.0-7.3 (5.6) / 5.8-8.7 (7.4) | 0.4-0.9 (0.6) / 0.8-1.9 (1.4) | 5.1-6.7 (5.9) / 6.3-8.1 (7.3) | — / 6.0-7.8 (6.9) |
+| his speed, mm/s | 4.0-5.7 (5.0) | 3.9-5.9 (5.0) | 3.9-5.6 (5.0) | 6.2-7.0 (6.5) |
+| his modes: court / walk / feed | 62 / 19 / 12 % | 72 / 15 / 11 % | 59 / 21 / 13 % | 0 / 82 / 0 % |
+| her modes: walk / idle / groom | 95 / 1 / 3 % | 67 / 32 / 1 % | 94 / 1 / 4 % | 83 / 3 / 14 % |
+| giant-fibre bursts in 90 s, his / hers, per seed | 3,1,2,0,0 / 2,0,1,2,1 | 0,0,0,0,0 / 13,6,3,0,0 | 3,2,3,0,1 / 0,1,0,2,1 | 0 / 0 |
+| escape jumps in 90 s, his / hers, per seed | 1,1,1,0,0 / 1,0,1,1,1 | 0,0,0,0,0 / 7,3,2,0,0 | 2,1,2,0,1 / 0,1,0,2,1 | 0 / 0 |
+
+**What this shows.**
+
+* **He courts her, and the wiring is what makes him.** With the channels on he is within 15 mm of her for 70-84 of
+  90 s, sings for 60-74 s and taps her 10-15 times a minute, against 4-17 s near, no song and no tap when the flies
+  cannot sense each other. The chase is her image on his retina driving `LC10a` and, through the wiring, `DNa02`
+  (section 6.1); the song is pC1 → pIP10, where pC1 is fired by his taps through the kit's hand-built arousal
+  (the leg taste cells' own route being about 8× too weak, section 6.1). His proboscis motor neuron also fires while he
+  taps her (a "feed" mode 11-13 % of the time, in single-fly courtship too): a wiring route from the contact
+  senses to MN9 that the scripted-female game already had.
+* **She hears him and nothing follows.** His song sounds on her Johnston's organ at 39-48 Hz per cell for 78-93 % of
+  the time, yet `vpoEN` and `DNp37` never fire and `DNp13` stays under 1.2 Hz, as 10.3 and 10.4 predicted. Her one
+  measurable change is the other way: `DNp13` reads 1.1-3.4 Hz when she cannot sense him and 0-1.2 Hz when she can,
+  with the song channel on or off, so what she sees or feels of him lowers it a little; her hearing has no part in it.
+* **"Song slows her" is not measured.** She walks slower while he sings (4.0-7.3 against 5.8-8.7 mm/s, in every
+  seed), but she does exactly the same with the song channel off (5.1-6.7 against 6.3-8.1): he sings when he is at
+  her, bumping and tapping, and the collision rule is what slows her. Deutsch et al. (2019) found that song slows a
+  receptive virgin; this model cannot show it, because the song does not reach the neurons that would. Her
+  orientation to him is no better than chance in every condition (12-33 % within ±30° against 2-40 % when nothing is
+  sensed).
+* **Her movement is the walking urge.** With it off she covers 0.4-1.9 mm/s, mostly the push of his bumping; her
+  descending neurons drive nothing on their own (section 9.4). Every claim about "what she does" is a claim about a
+  hand-built drive perturbed by him, which is why the controls are reported with the numbers.
+* **Escapes.** Alone in a drawn dish neither fly jumps (section 5.7). In the pair he bursts 0-3 times in 90 s (0-2 jumps) and she
+  0-2 (0-1 jumps), both from the partner looming on the retina or a tap (never from song: the song channel off changes neither
+  count); with her walking urge off she stands where he keeps arriving and bursts 0-13 times (0-7 jumps), the more he looms.
+  Jump ticks are left out of the speeds above.
+
+Hand-built, still: every channel (10.1), the placement, the 15 mm and ±30° of the measures. Not modelled: the sex
+peptide's route, mating status, her song, copulation. Cost: 90 s of the pair takes 34-39 s of wall time per run here
+(2026-10-01, load average 0.7 at the start; 34-43 s on 2026-09-27, load not recorded); the twenty runs 12-13 minutes.
+
+### 10.6 Not modelled
+
+Female song; the male pheromone 7-T reaching her (her leg and antennal routes are unknown or in the nerve cord);
+kicking and wing flicking; copulation; pulse against sine song (pC1 does not reach vPR6 in the model, and a 36 ms
+inter-pulse interval does not fit a 25 ms tick: a pulse envelope would be a per-step stimulus, a later switch);
+two flies in one physics world (Phase 4); more than two flies in the physics world.
+
 ---
 
-## 10. Honest limitations
+## 11. Honest limitations
 
 The starter kit's list, extended. These are the things a neuroscientist would point at first.
 
@@ -2356,7 +2575,9 @@ The starter kit's list, extended. These are the things a neuroscientist would po
    axes are calibrated from the data but are approximations (the lattice is treated as flat and
    uniform; a and c axes are 97° apart, not 90°). Photoreceptors and the lamina do nothing.
 10. **Courtship is primed by hand.** The pheromone route to pC1 is real but ~8x too weak here, so
-    tapping the female also drives pC1 directly (section 6.1). The female the male courts in the game has no brain.
+    tapping the female also drives pC1 directly (section 6.1). The scripted female the male courts in single-fly
+    play has no brain; with `--partner female` (section 10) she has one, but his song does not reach her
+    song-tuned neurons in this data (10.3), so what she does next to him comes mostly from her walking urge.
 11. **Wind is a whisper**, deliberately: the wind-sensing neurons drive grooming and backing in
     this model and no descending neuron encodes wind direction (section 6.4), so upwind search is
     hand-built.
@@ -2383,7 +2604,7 @@ The starter kit's list, extended. These are the things a neuroscientist would po
 
 ---
 
-## 11. References
+## 12. References
 
 * Ache JM, Polsky J, Alghailani S, Parekh R, Breads P, Peek MY, Bock DD, von Reyn CR, Card GM
   (2019). Neural basis for looming size and velocity encoding in the *Drosophila* giant fiber
@@ -2401,6 +2622,9 @@ The starter kit's list, extended. These are the things a neuroscientist would po
   Heberlein U, Preat T, Branson KM, Tanimoto H, Rubin GM (2014b). Mushroom body output neurons
   encode valence and guide memory-based action selection in *Drosophila*. *eLife* 3:e04580.
   doi:10.7554/eLife.04580
+* Baker CA, McKellar C, Pang R, Nern A, Dorkenwald S, Pacheco DA, Eckstein N, Funke J, Dickson BJ,
+  Murthy M (2022). Neural network organization for courtship-song feature detection in *Drosophila*.
+  *Current Biology* 32(15):3317-3333.e7. doi:10.1016/j.cub.2022.06.019
 * Behnia R, Clark DA, Carter AG, Clandinin TR, Desplan C (2014). Processing properties of ON and OFF
   pathways for *Drosophila* motion detection. *Nature* 512:427-430. doi:10.1038/nature13427
 * Berg S, Beckett IR, Costa M, Schlegel P, Januszewski M, et al. (2026). Sexual dimorphism in the
@@ -2447,6 +2671,9 @@ The starter kit's list, extended. These are the things a neuroscientist would po
 * Davis FP, Nern A, Picard S, Reiser MB, Rubin GM, Eddy SR, Henry GL (2020). A genetic, genomic,
   and computational resource for exploring neural circuit function. *eLife* 9:e50901.
   doi:10.7554/eLife.50901
+* Deutsch D, Clemens J, Thiberge SY, Guan G, Murthy M (2019). Shared song detector neurons in
+  *Drosophila* male and female brains drive sex-specific behaviors. *Current Biology*
+  29(19):3200-3215.e5. doi:10.1016/j.cub.2019.08.008
 * Dorkenwald S, Matsliah A, Sterling AR, Schlegel P, Yu SC, et al. (2024). Neuronal wiring diagram of an
   adult brain. *Nature* 634:124-138. doi:10.1038/s41586-024-07558-y (FlyWire, the female fly)
 * Eckstein N, Bates AS, Champion A, Du M, Yin Y, Schlegel P, Lu AK, Rymer T, et al. (2024).
@@ -2556,6 +2783,9 @@ The starter kit's list, extended. These are the things a neuroscientist would po
   *Nature Neuroscience* 14:208-216. doi:10.1038/nn.2725
 * Namiki S, Dickinson MH, Wong AM, Korff W, Card GM (2018). The functional organization of
   descending sensory-motor pathways in *Drosophila*. *eLife* 7:e34272. doi:10.7554/eLife.34272
+* Nojima T, Rings A, Allen AM, Otto N, Verschut TA, Billeter J-C, Neville MC, Goodwin SF (2021). A
+  sex-specific switch between visual and olfactory inputs underlies adaptive sex differences in
+  behavior. *Current Biology* 31(6):1175-1191.e6. doi:10.1016/j.cub.2020.12.047
 * Özel MN, Simon F, Jafari S, Holguera I, Chen Y-C, Benhra N, El-Danaf RN, Kapuralin K, Malin
   JA, Konstantinides N, Desplan C (2021). Neuronal diversity and convergence in a visual system
   developmental atlas. *Nature* 589(7840):88-95. doi:10.1038/s41586-020-2879-3
@@ -2602,6 +2832,10 @@ The starter kit's list, extended. These are the things a neuroscientist would po
 * Suver MP, Matheson AMM, Sarkar S, Damiata M, Schoppik D, Nagel KI (2019). Encoding of wind
   direction by central neurons in *Drosophila*. *Neuron* 102(4):828-842.
   doi:10.1016/j.neuron.2019.03.012
+* Taisz I, Donà E, Münch D, Bailey SN, Morris BJ, Meechan KI, Stevens KM, Varela-Martínez I,
+  Gkantia M, Schlegel P, Ribeiro C, Jefferis GSXE, Galili DS (2023). Generating parallel
+  representations of position and identity in the olfactory system. *Cell* 186(12):2556-2573.e22.
+  doi:10.1016/j.cell.2023.04.038
 * Takemura S-y, Nern A, Chklovskii DB, Scheffer LK, Rubin GM, Meinertzhagen IA (2017). The
   comprehensive connectome of a neural substrate for 'ON' motion detection in *Drosophila*. *eLife*
   6:e24394. doi:10.7554/eLife.24394
@@ -2618,6 +2852,9 @@ The starter kit's list, extended. These are the things a neuroscientist would po
 * Wang F, Wang K, Forknall N, Parekh R, Dickson BJ (2020). Circuit and behavioral mechanisms of
   sexual rejection by *Drosophila* females. *Current Biology* 30(19):3749-3760.e3.
   doi:10.1016/j.cub.2020.07.083
+* Wang K, Wang F, Forknall N, Yang T, Patrick C, Parekh R, Dickson BJ (2021). Neural circuit
+  mechanisms of sexual receptivity in *Drosophila* females. *Nature* 589(7843):577-581.
+  doi:10.1038/s41586-020-2972-7
 * Wang-Chen S, Stimpfling VA, Lam TKC, Özdil PG, Genoud L, Hurtak F, Ramdya P (2024). NeuroMechFly v2:
   simulating embodied sensorimotor control in adult *Drosophila*. *Nature Methods* 21(12):2353-2362.
   doi:10.1038/s41592-024-02497-y

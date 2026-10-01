@@ -59,12 +59,13 @@ def versions() -> dict:
     return {"python": platform.python_version(), "numpy": numpy.__version__, "numba": nb, "platform": sys.platform}
 
 
-def run_hash(conn, name: str, ticks: int | None = None) -> str:
-    """One configuration on ``conn``: the SHA-1 over every state_json frame, in order."""
+def run_hash(conn, name: str, ticks: int | None = None, game_kwargs: dict | None = None) -> str:
+    """One configuration on ``conn``: the SHA-1 over every state_json frame, in order. ``game_kwargs`` are added to
+    the Game call (a test runs the same configuration with the brain in its own process, brain_procs="on")."""
     from virtual_fly.game import Game
     from virtual_fly.settings import build_brain
     kwargs, before, at_100 = CONFIGS[name]
-    game = Game(build_brain(conn, "game", seed=0), seed=0, **kwargs)
+    game = Game(build_brain(conn, "game", seed=0), seed=0, **{**kwargs, **(game_kwargs or {})})
     n = ticks_for(name) if ticks is None else ticks
     h = hashlib.sha1()
     for tick in range(n):
@@ -74,6 +75,7 @@ def run_hash(conn, name: str, ticks: int | None = None) -> str:
                 raise RuntimeError(f"{name}: action {a} was refused: {reply}")
         game.tick()
         h.update(game.state_json)
+    game.close()
     return h.hexdigest()
 
 
