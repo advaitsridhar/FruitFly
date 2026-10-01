@@ -7,7 +7,7 @@ Plan: docs/TWO_FLIES_PLAN.md. Newest session notes first.
 |---|---|---|---|---|
 | 0 | claude/two-flies-p0-baseline | #16 | merged (squash, `3631770`) | 2026-09-27 |
 | 1 | claude/two-flies-p1-two-brains | #17 | merged (squash, `f70d8be`) | 2026-10-01 |
-| 2 | claude/two-flies-p2-gpu | #18 | draft PR open | 2026-10-01 |
+| 2 | claude/two-flies-p2-gpu | #18 | PR open, CI green | 2026-10-01 |
 
 ## This machine
 - OS: WSL2 (Ubuntu 24.04.5 LTS) on Windows; the repository lives under the Linux home folder, not `/mnt/c`.
@@ -78,6 +78,8 @@ All on 2026-09-27, this machine, `nice -n 10`, one job at a time, machine otherw
   (plan 4.9 item 3).
 - CI on PR #17 (2026-10-01, the same matrix): **547 passed, 3 skipped** on 3.10, 3.11 and 3.12 (the same three tests); here
   550 passed, 0 skipped with the physics extra.
+- CI on PR #18 (2026-10-01, the same matrix, no CuPy): **570 passed, 42 skipped** on 3.10, 3.11 and 3.12 (the 39 GPU tests and the
+  three physics ones); here 612 passed, 0 skipped with CuPy and the physics extra.
 
 ### Validated experiments, the baseline JSONs (plan 4.7; game profile, five seeds, numba)
 | run | file (work folder) | result |
@@ -389,7 +391,7 @@ put to the owner in one message, on `claude/two-flies-p3-3d-view` from a fetched
   a stream race fixed, six kernels per step, a warp per hit target, one upload and one download per chunk, the host's
   bookkeeping per chunk; then the two brains overlapped in the server (Measurements): the two-fly game at 3.6x real time on the
   GPU against 2.8x on the CPU. SCIENCE.md 11, README, ARCHITECTURE.md written with the measured numbers.
-- Pushed; draft PR #18 opened; CI; the owner asked whether to merge.
+- Pushed; draft PR #18 opened; CI green on 3.10-3.12 (570 passed, 42 skipped without CuPy); marked ready; the owner asked whether to merge.
 
 ### 2026-10-01 (Phase 1, the end)
 - The previous session ended on its usage limit with the third review launched but not run (its five agents failed at once) and the
