@@ -89,9 +89,10 @@ def _main(argv=None):
     ap.add_argument("--stride-average", action="store_true",
                     help="physics body: the senses see the body's pose averaged over one stride (hand-built, a stand-in for "
                          "gaze stabilisation) instead of the stride-by-stride wobble")
-    ap.add_argument("--brain-procs", choices=("auto", "on", "off"), default="auto",
-                    help="where the brain runs: auto (in this process for one fly; one process per brain with a partner), "
-                         "on (its own process even for one fly), off (always in this process)")
+    ap.add_argument("--brain-procs", choices=("auto", "on", "off", "server"), default="auto",
+                    help="where the brain runs: auto (in this process for one fly; one process per brain with a partner; one "
+                         "process for every brain with --backend cupy), on (its own process even for one fly), off (always in "
+                         "this process), server (one brain process for every fly)")
     ap.add_argument("--partner", choices=("none", "female", "male"), default="none",
                     help="a second simulated fly in the dish, sensing the first only through the world: female = FlyWire's "
                          "whole brain (release 783, built on first use, needs pyarrow); male = a second MaleCNS brain; "
@@ -136,6 +137,9 @@ def _main(argv=None):
         reason = unavailable_reason()
         if reason is not None:
             ap.error(f"--backend cupy: {reason} (or leave out --backend to use the CPU)")
+        if args.brain_procs == "on":
+            ap.error("--brain-procs on cannot hold a GPU brain: with --backend cupy one brain process serves every fly "
+                     "(leave --brain-procs at auto), or use --brain-procs off to keep it in this process")
     overrides = {"seed": args.seed, "dt": 1.0 if args.fast else args.dt, "backend": args.backend}
     if args.fatigue is not None:
         overrides["fatigue_mv"] = args.fatigue
@@ -153,9 +157,12 @@ def _main(argv=None):
         overrides["parts"] = parts_list
     print("Loading the fly's nervous system...", file=sys.stderr)
     conn = load_connectome(female=args.female)
-    brain = build_brain(conn, profile, **overrides)
-    if brain.backend == "cupy":
-        print("Brain integrator: the GPU (CuPy), as asked with --backend cupy.", file=sys.stderr)
+    # with a GPU brain in the brain process (6.5) the copy built here only feeds the process its settings and the parts
+    # counts line below: it is built on the CPU, so this process opens no CUDA context of its own
+    gpu_here = args.backend == "cupy" and args.brain_procs == "off"
+    brain = build_brain(conn, profile, **{**overrides, "backend": args.backend if gpu_here or args.backend != "cupy" else "auto"})
+    if args.backend == "cupy":
+        pass                                     # said once the game exists, from the brain process's own settings
     elif brain.backend == "numba":
         print("Brain integrator: compiled (numba).", file=sys.stderr)
     elif args.backend == "numpy":
@@ -182,8 +189,15 @@ def _main(argv=None):
                 parts_list=parts_list, brain_kwargs={k: v for k, v in overrides.items() if k != "parts"}, body=args.body,
                 stride_average=args.stride_average, brain_procs=args.brain_procs, partner=partner_spec, social=social)
     del brain                                    # the game owns it now (or, in its own process, has let it go)
+    if args.backend == "cupy":
+        backend = game.flies[0].io.settings().get("backend")
+        where = "in the brain process" if game.brain_mode == "server" else "in this process"
+        if backend == "cupy":
+            print(f"Brain integrator: the GPU (CuPy) {where}, as asked with --backend cupy.", file=sys.stderr)
+        else:
+            print(f"Brain integrator: {backend} {where} (the GPU was asked for with --backend cupy).", file=sys.stderr)
     if partner_spec is not None:
-        where = "in its own process" if game.brain_procs != "off" else "in this process"
+        where = {"server": "in the one brain process", "procs": "in its own process"}.get(game.brain_mode, "in this process")
         print(f"Partner: {pconn.dataset} ({pconn.sex}), its brain {where}, as is the first fly's; "
               f"the channels between them: {', '.join(social.names()) or 'none'} (hand-built, see What's real here?).",
               file=sys.stderr)

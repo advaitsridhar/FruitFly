@@ -308,9 +308,10 @@ class Game:
         senses.social.SocialConfig, or its comma list (default "seen,song,contact,collide")."""
         from .agent import PARTNER_HOME, FlyAgent          # (agent.py imports this module's constants)
         from .senses.social import SocialConfig
-        if brain_procs not in ("auto", "on", "off"):
-            raise ValueError("brain_procs must be 'auto', 'on' or 'off'")
-        self.brain_procs = brain_procs                   # auto: in this process for one fly, a process per brain with more
+        if brain_procs not in ("auto", "on", "off", "server"):
+            raise ValueError("brain_procs must be 'auto', 'on', 'off' or 'server'")
+        self.brain_procs = brain_procs                   # auto: in this process for one fly, a process per brain with more,
+        #                                                  one process for every brain with a GPU brain (6.5); server: that one
         self.social = social if isinstance(social, SocialConfig) else SocialConfig.from_list(social)
         self.profile_name = profile_name
         self.rng = random.Random(seed)
@@ -323,13 +324,22 @@ class Game:
         self.scenario = ScenarioRunner(self)
         if partner is not None and body == "physics":
             raise ValueError("a partner with the physics body is Phase 4's (docs/TWO_FLIES_PLAN.md D10): use the drawn body")
-        procs = brain_procs == "on" or (brain_procs == "auto" and partner is not None)   # a process per brain with two
+        # where the brains run: "local" (this process), "procs" (a process per brain), "server" (one process for every
+        # brain: the GPU's way, docs/TWO_FLIES_PLAN.md 6.5, chosen by auto when a fly's brain_kwargs say backend cupy)
+        self.brain_mode = self._brain_mode(brain_procs, brain_kwargs, partner)
+        self.brain_server = None
+        io_factory = None
+        if self.brain_mode == "server":
+            from .brainio import GpuBrainServer          # (brainio.py imports this module's constants)
+            self.brain_server = GpuBrainServer()
+            io_factory = self.brain_server.attach
+        procs = self.brain_mode != "local"
         # the flies: fly 0 keeps the game's own random stream and seed; fly k gets random.Random(f"{seed}:fly{k}") and
         # brain seed + 1000 k, and never draws from World.rng (docs/TWO_FLIES_PLAN.md D11)
         self.flies = [FlyAgent(self, 0, brain, sex=getattr(brain.conn, "sex", "male"), rng=self.rng, seed=seed,
                                autopilot=autopilot, columnar=columnar, body=body, stride_average=stride_average,
                                parts_list=parts_list, brain_factory=brain_factory, brain_kwargs=brain_kwargs, retest=retest,
-                               brain_procs=procs, pair=partner is not None)]
+                               brain_procs=procs, pair=partner is not None, io_factory=io_factory)]
         del brain                                        # a process brain has been built from it: let it go
         if partner is not None:
             k = len(self.flies)
@@ -341,7 +351,7 @@ class Game:
                                        rng=random.Random(f"{seed}:fly{k}"), seed=seed + 1000 * k,
                                        autopilot=partner.get("autopilot", True), columnar=columnar, body="drawn",
                                        parts_list=parts_list, brain_kwargs=kw, retest=retest, brain_procs=procs,
-                                       parts=partner.get("parts", False), pair=True, home=PARTNER_HOME))
+                                       parts=partner.get("parts", False), pair=True, home=PARTNER_HOME, io_factory=io_factory))
             if self.social.mating == "mated":                # channel 6 (off by default): a mated female's SAG is silent
                 from .senses.social import SAG_SPEC
                 for f in self.flies:
@@ -365,12 +375,36 @@ class Game:
         """The k-th fly in the dish (fly 0: the protagonist)."""
         return self.flies[k]
 
+    @staticmethod
+    def _brain_mode(brain_procs: str, brain_kwargs: dict | None, partner: dict | None) -> str:
+        """``local``, ``procs`` or ``server`` from the brain_procs setting and the flies' backends: a GPU brain (backend
+        ``cupy`` in a fly's brain_kwargs) only ever lives in the one shared brain process, or in this process with
+        brain_procs off (docs/TWO_FLIES_PLAN.md 6.5); the two flies must use the same backend."""
+        kw0 = brain_kwargs or {}
+        gpu0 = kw0.get("backend") == "cupy"
+        gpu = gpu0
+        if partner is not None:
+            pkw = partner.get("brain_kwargs") if partner.get("brain_kwargs") is not None else kw0
+            gpu1 = pkw.get("backend") == "cupy"
+            if gpu0 != gpu1:
+                raise ValueError("the two flies' brains must use the same backend, and fly 0's is "
+                                 f"{kw0.get('backend', 'auto')} while the partner's is {pkw.get('backend', 'auto')}")
+            gpu = gpu0 or gpu1
+        if brain_procs == "on" and gpu:
+            raise ValueError("brain_procs='on' cannot hold a cupy brain: one brain process serves every fly on the GPU "
+                             "(brain_procs='auto' or 'server'), or brain_procs='off' keeps it in this process")
+        if brain_procs == "auto":
+            return "server" if gpu else ("procs" if partner is not None else "local")
+        return {"on": "procs", "off": "local", "server": "server"}[brain_procs]
+
     def close(self):
         """Stop the loop (it returns after the tick it is in) and let every fly's brain process go. server.serve calls
         this after Ctrl+C, once the loop thread has been joined, so no child is closed while a tick is still using it."""
         self.stop_loop.set()
         for a in self.flies:
             a.io.close()
+        if self.brain_server is not None:            # every handle's close reached it already; once more is harmless
+            self.brain_server.close()
 
     # ------------------------------------------------------------------ world
     def reset_world(self, first: bool = False):

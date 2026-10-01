@@ -85,11 +85,13 @@ class FlyAgent:
     def __init__(self, game, id: int, brain=None, *, conn=None, sex: str, rng, seed: int, autopilot: bool = True,
                  columnar: bool = True, body: str = "drawn", stride_average: bool = False, parts_list=None,
                  brain_factory=None, brain_kwargs: dict | None = None, retest: str = "auto", brain_procs: bool = False,
-                 parts=False, pair: bool = False, home: tuple | None = None):
+                 parts=False, pair: bool = False, home: tuple | None = None, io_factory=None):
         """``brain``: a built FlyBrain (the protagonist's, as play.py builds it); or ``brain=None`` with ``conn``: a fly
         whose brain is built from ``brain_kwargs`` and ``parts`` (False, True or a PartsList), in its own process when
         ``brain_procs`` is set, else here (a partner, docs/TWO_FLIES_PLAN.md 5.4). ``pair``: this fly shares the dish
-        with another simulated fly (a female then shows her decision neurons, 5.6). ``home``: where a new fly stands."""
+        with another simulated fly (a female then shows her decision neurons, 5.6). ``home``: where a new fly stands.
+        ``io_factory``: with ``brain_procs``, ``io_factory(spec, fly)`` makes the seam instead of a ProcessBrain of its
+        own (the game's shared brain process, brainio.GpuBrainServer.attach, 6.5)."""
         self.game, self.id, self.sex, self.rng, self.seed = game, id, sex, rng, seed
         self.pair = pair
         self.home = tuple(home) if home is not None else HOME
@@ -130,9 +132,10 @@ class FlyAgent:
         if pair and sex == "female":                     # her decision neurons, watched (5.6; never a verdict)
             self._readout_specs += [(r[0], r[1]) for r in FEMALE_READOUTS]
         # the brain: here, or in a child process built from this brain's settings (then this one is let go)
+        make_io = io_factory or (lambda spec, fly: ProcessBrain(spec, fly=fly))
         if brain is None:
             if brain_procs:
-                self.io = ProcessBrain(self.child_spec(None), fly=id)
+                self.io = make_io(self.child_spec(None), id)
             else:
                 from .settings import build_brain
                 self.io = LocalBrain(build_brain(self.conn, self.profile_name, **self._brain_kwargs,
@@ -141,7 +144,7 @@ class FlyAgent:
         else:
             self._learning_on = brain.plasticity is not None
             if brain_procs:
-                self.io = ProcessBrain(self.child_spec(brain), fly=id)
+                self.io = make_io(self.child_spec(brain), id)
                 del brain
             else:
                 self.io = LocalBrain(brain)
@@ -354,8 +357,19 @@ class FlyAgent:
     def _default_brain_factory(self, conn, **extra):
         from .settings import build_brain
         kw = {k: v for k, v in self.io.settings().items() if k in self._BRAIN_KWARGS}
-        kw.update(extra)
+        if kw.get("backend") == "cupy" and not isinstance(self.io, LocalBrain):
+            kw["backend"] = "auto"                   # a GPU brain lives in the brain process only (6.5): anything built
+        kw.update(extra)                             # here beside it (the re-test's thread fallback) runs on the CPU
         return build_brain(conn, self.profile_name, **kw)
+
+    def _cpu_only(self) -> dict:
+        """The keyword that keeps a brain built in this process off the GPU when the seam's brain is a GPU brain in
+        the brain process (plan 6.5: the re-test always uses the CPU, whose spikes are the same)."""
+        try:
+            backend = self.io.settings().get("backend")
+        except Exception:                            # a dead brain process: the caller reports it
+            backend = None
+        return {"backend": "auto"} if backend == "cupy" else {}
 
     def parts_arg(self, on: bool):
         """The ``parts=`` argument for a rebuild: the PartsList this game was started with (its curated
@@ -496,6 +510,8 @@ class FlyAgent:
             return None
         kw = {k: v for k, v in self.io.settings().items() if k in self._BRAIN_KWARGS}
         kw.update(self._brain_kwargs)
+        if kw.get("backend") == "cupy":
+            kw["backend"] = "auto"                   # the re-test child always uses the CPU (plan 6.5): same spikes, no second GPU context
         kw["parts"] = self.parts_arg(self.parts_on)
         wiring_ = None
         if conn is not self.real_conn:                   # a grown fly: send its wiring, the neurons are the same
@@ -508,6 +524,7 @@ class FlyAgent:
         generator, so the same wiring, profile, brain settings and parts list always give the same rows."""
         kw = {k: v for k, v in self.io.settings().items() if k in self._BRAIN_KWARGS}
         kw.update(self._brain_kwargs or {})
+        kw.pop("backend", None)                      # every integrator gives the same spikes: the report does not depend on it
         return (conn.dataset, int(conn.n_edges), self.profile_name, repr(sorted(kw.items())),
                 repr(self.parts_arg(self.parts_on)))
 
@@ -558,7 +575,7 @@ class FlyAgent:
                 if failed is not None:
                     handle = None
             if cached is None and handle is None:
-                brain = self.brain_factory(conn, parts=self.parts_arg(self.parts_on))
+                brain = self.brain_factory(conn, parts=self.parts_arg(self.parts_on), **self._cpu_only())
                 rows = survival_report(brain, profile=self.profile_name, on_progress=progress,
                                        should_stop=lambda: self._survival_token is not token)
                 where = "thread"
