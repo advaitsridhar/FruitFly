@@ -127,7 +127,9 @@ process instead (the way `fly_brain.py` runs it).
   order and no float atomics decide a result. Ten steps (five at `dt` 1.0) form one chunk captured
   as a CUDA graph; the host draws the chunk's random numbers ahead in the CPU's order, uploads them
   with the staged tone gain and any changed weights, launches, downloads the spike log, sorts each
-  step's list and replays the host-side work. GPU_PERF_PLACEHOLDER
+  step's list and replays the host-side work. Measured (docs/SCIENCE.md 11.3): 61 µs per step for the busy male
+  against numba's 131 on one core, 69 against 108 for the female; about 1.9 ms of device time per 25 ms tick
+  and 1.3-2.3 ms of host work. GAME_PERF_ARCH_PLACEHOLDER
 * `FlyBrain.step` has two interchangeable integrators that produce the same spikes to the last
   one (the test suite checks this on every optional mechanism, and `--backend` picks one). The
   NumPy one is the starter kit's dense loop: a handful of passes over the 176k-element state arrays

@@ -2578,7 +2578,29 @@ section 9.6: an RTX 4070 Laptop GPU, compute capability 8.9, CuPy 14.2.0, CUDA 1
 
 ### 11.3 Speed
 
-MEASURED_SPEED_PLACEHOLDER
+Measured on 2026-10-01 on the machine of section 9.6 (an RTX 4070 Laptop GPU: 36 multiprocessors, 8 GB on a 128-bit bus, a
+measured 225 GB/s device-to-device copy; CuPy 14.2.0, CUDA 13.4 through the Windows driver under WSL2; numba 0.67.0 on one core
+of the i9-14900HX), `tools/bench_gpu.py` and `tools/bench_two_flies.py`, 1-minute load average 1.1-1.3, one job at a time.
+
+One brain under the busy input of the benchmark (game profile, plasticity on, 2 s after 300 ms of warm-up, stepped a 25 ms
+tick at a time: `advance(50)`, chunks of 10 and 20 steps as captured graphs), microseconds per 0.5 ms step, median / 99th
+percentile, and the real-time factor:
+
+| brain | numba (one core) | the GPU | GPU events per second |
+|---|---|---|---|
+| male, parts list off | 131 / 238 µs (3.8x) | **61 / 78 µs (8.2x)** | 131,000 |
+| male, parts list on | 229 / 269 (2.2x) | 90 / 105 (5.6x) | 185,000 |
+| female, parts list off | 108 / 127 (4.7x) | 69 / 81 (7.3x) | 113,000 |
+| female, parts list on | 248 / 296 (2.0x) | 137 / 280 (3.7x) | 229,000 |
+
+A `step()` on its own (one launch per step, no graph) costs 500-630 µs on the GPU: the single step is for the tests and the
+API, the chunks are the way the kit runs. The equality runs of 11.2, which step numba and the GPU side by side with the
+other input, give the same picture: male 0.083 against 0.144 ms per step, female 0.089 against 0.125, parts on 0.119 against
+0.252 and 0.148 against 0.265. Where the time goes on the GPU (the profile of the speed work, male, 40 monitors with 25 ms bins
+as the game has): about 1.9 ms per tick on the device (per step: the dense pass 12 µs, the pull 10, the send 8, the hit list
+3, the rest 5) and 1.3-2.3 ms on the host (its own plasticity block, the monitors, the random draws, the replay loop).
+
+GAME_SPEED_PLACEHOLDER
 
 ### 11.4 Tried, not adopted, and what is left
 

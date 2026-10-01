@@ -133,7 +133,9 @@ or newer (CUDA 13; `nvidia-smi` shows the version) on a Turing card or newer:
 the R525-R579 series: `cupy-cuda12x "cuda-toolkit[nvrtc,cudart]==12.*"` instead. About 70 MB of wheels, under
 NVIDIA's own licence; the first run compiles the kernels (a few seconds, cached in `~/.cupy/kernel_cache`). Then
 `py fly_game.py --partner female --backend cupy` (the terminal says "Brain integrator: the GPU (CuPy)") or
-`py fly_brain.py --backend cupy`. GPU_SPEED_PLACEHOLDER
+`py fly_brain.py --backend cupy`. Measured here (an RTX 4070 Laptop GPU, `docs/SCIENCE.md` 11.3): one busy brain steps
+about twice as fast as numba on one core (the male 8x real time against 4x, the female 7x against 5x; with the parts list
+on 6x and 4x against 2x), spike for spike the same. GAME_SPEED_README_PLACEHOLDER
 
 **If something goes wrong**
 
