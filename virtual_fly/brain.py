@@ -742,26 +742,33 @@ class FlyBrain:
             weights = weights * np.repeat(x, lengths).astype(np.float32)
         np.add.at(target, self.post_idx[edges], weights)
 
-    def advance(self, n_steps: int) -> np.ndarray:
-        """Advance ``n_steps`` steps and return every spike of those steps in order (each step's sorted indices,
-        step after step): what the game reads per 25 ms tick. On the CPU this is ``n_steps`` calls of :meth:`step`,
-        identical by construction; the GPU backend runs whole chunks of steps at once."""
-        chunks = []
+    def advance_steps(self, n_steps: int) -> list:
+        """Advance ``n_steps`` steps and return ``[(t, spikes), ...]`` for every step that had spikes, in order:
+        ``t`` the step's own number (before it was counted) and ``spikes`` its sorted indices, as :meth:`step`
+        returns them. On the CPU this is ``n_steps`` calls of :meth:`step`, identical by construction; the GPU
+        backend runs whole chunks of steps at once and replays the host-side work from its spike log."""
+        out = []
         for _ in range(int(n_steps)):
+            t = self.t
             s = self.step()
             if s.size:
-                chunks.append(s)
-        return np.concatenate(chunks) if chunks else self._empty
+                out.append((t, s))
+        return out
+
+    def advance(self, n_steps: int) -> np.ndarray:
+        """Advance ``n_steps`` steps and return every spike of those steps in order (each step's sorted indices,
+        step after step): what the game reads per 25 ms tick (:meth:`advance_steps` without the step numbers)."""
+        steps = self.advance_steps(n_steps)
+        return np.concatenate([s for _, s in steps]) if steps else self._empty
 
     def run(self, ms: float, record: bool = False):
-        """Simulate ``ms`` milliseconds. With ``record=True`` returns a list of (time_ms, spike indices)."""
+        """Simulate ``ms`` milliseconds. With ``record=True`` returns a list of (time_ms, spike indices), each
+        stamped with the time after its step (``advance_steps`` gives the step numbers before)."""
         steps = int(round(ms / self.dt))
-        rec = [] if record else None
-        for _ in range(steps):
-            s = self.step()
-            if record and s.size:
-                rec.append((self.t * self.dt, s))
-        return rec
+        rec = self.advance_steps(steps)
+        if not record:
+            return None
+        return [((t + 1) * self.dt, s) for t, s in rec]
 
     def run_until_quiet(self, max_ms: float = 2000.0, check_ms: float = 100.0) -> float:
         """Run with the current input until the brain is silent (or ``max_ms``); returns ms simulated."""
