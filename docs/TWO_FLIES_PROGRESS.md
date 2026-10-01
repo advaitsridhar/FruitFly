@@ -6,7 +6,8 @@ Plan: docs/TWO_FLIES_PLAN.md. Newest session notes first.
 | phase | branch | PR | state | last update |
 |---|---|---|---|---|
 | 0 | claude/two-flies-p0-baseline | #16 | merged (squash, `3631770`) | 2026-09-27 |
-| 1 | claude/two-flies-p1-two-brains | #17 | draft PR open, CI green | 2026-10-01 |
+| 1 | claude/two-flies-p1-two-brains | #17 | merged (squash, `f70d8be`) | 2026-10-01 |
+| 2 | claude/two-flies-p2-gpu | #? | in progress | 2026-10-01 |
 
 ## This machine
 - OS: WSL2 (Ubuntu 24.04.5 LTS) on Windows; the repository lives under the Linux home folder, not `/mnt/c`.
@@ -22,7 +23,9 @@ Plan: docs/TWO_FLIES_PLAN.md. Newest session notes first.
 - Package versions after the installs of plan 4.5 (`[dev]`, `[female]`, `[physics]`, `flygym==1.2.1 --no-deps`):
   numpy 2.5.3, numba 0.67.0, llvmlite 0.49.0, pyarrow 25.0.1, pytest 9.1.1, mujoco 3.2.7, dm-control 1.0.27, dm-tree 0.1.8,
   flygym 1.2.1, scipy 1.18.1, gymnasium 1.3.0, setuptools 84.0.0 (brought in by the physics extra). `physics.available()` is true.
-  Not installed yet: cupy (Phase 2), playwright (Phase 3), trimesh (Phase 3).
+  Phase 2 (2026-10-01, the lean set of plan 6.2): cupy-cuda13x 14.2.0, nvidia-cuda-runtime 13.4.92, nvidia-cuda-nvrtc 13.4.92,
+  cuda-toolkit 13.4.2 (the meta-package), cuda-pathfinder 1.8.2; no cuBLAS, cuRAND, cuSOLVER, cuFFT or nvJitLink wheels.
+  Not installed yet: playwright (Phase 3), trimesh (Phase 3).
 
 ## Fresh-clone findings
 (the same text is under "Known state of main" in docs/TWO_FLIES_PLAN.md)
@@ -60,6 +63,8 @@ Plan: docs/TWO_FLIES_PLAN.md. Newest session notes first.
 | 13 | her walking urge | on for both flies, labelled; every claim checked against the 5.9 controls | default, owner | 2026-09-27 |
 | 14 | contact arousal to pC1 for a simulated partner (`contact_pc1`) | on for a male toucher, off for a female toucher, switchable; the scripted-female path unchanged | default, owner | 2026-09-27 |
 | 15 | if song barely reaches her vpoEN | report as measured; no compensating gain unless the owner asks | default, owner | 2026-09-27 |
+| 16 | GPU backend, exactness and install size | CuPy with the exact ordered pull; an inexact fixed-point mode only if exactness proves impossible (opt-in, documented, asked first); the lean install (cupy-cuda13x plus the nvrtc and cudart wheels), verified (Measurements) | default; the owner: "continue" after the defaults were put to them | 2026-10-01 |
+| 17 | where the GPU brains live | one GPU child process holding both brains; the game process stays on the CPU; the re-test child always uses the CPU | default, the same | 2026-10-01 |
 
 ## Measurements
 All on 2026-09-27, this machine, `nice -n 10`, one job at a time, machine otherwise idle (load average under 1.5).
@@ -240,6 +245,16 @@ readouts differ at the same t; the second brain's seed is the first's + 1000, SC
 non-interactive script left all three games ignoring SIGINT (a background job of a script has SIGINT ignored, as plan 1.7 warns):
 with job control on (`set -m`) the recipe behaves as in the terminal. (`../runs/p1-ctrlc-*.log`.)
 
+### Phase 2: the CuPy install and checks (plan 6.2; 2026-10-01)
+`pip install -c ../runs/constraints.txt cupy-cuda13x "cuda-toolkit[nvrtc,cudart]==13.*"` with numpy 2.5.3, numba 0.67.0 and llvmlite
+0.49.0 pinned: cupy-cuda13x 14.2.0, nvidia-cuda-runtime 13.4.92, nvidia-cuda-nvrtc 13.4.92, cuda-toolkit 13.4.2, cuda-pathfinder 1.8.2
+(about 70 MB of wheels); NumPy, numba and llvmlite unchanged. `cupy.show_config()`: CUDA driver 13.4 (13040), runtime 13.2 linked to
+CuPy / 13.4 installed, NVRTC 13.4, device NVIDIA GeForce RTX 4070 Laptop GPU, compute capability 8.9, 7,050 of 8,187 MB free; the cuRAND
+and cuSOLVER wheels absent as intended (the lean set), cuBLAS and cuSPARSE reported available. The plan's check: a `RawKernel` compiled
+with `--fmad=false` ran (0.86 s including NVRTC), and stream capture into a CUDA graph and its launch worked. The NVRTC cache lives in
+`~/.cupy/kernel_cache` unless `CUPY_CACHE_DIR` is set. After the install: **550 passed**, and `tools/golden_hashes.py --compare`
+**18 unchanged** (nothing moved).
+
 ### Golden hashes (plan 4.9)
 - Synthetic (`tests/golden_single_fly.json`): nine configurations, made with Python 3.12.3, NumPy 2.5.3, numba 0.67.0; a second
   run reproduces every hash (the test passes in normal mode; a determinism test runs one configuration twice).
@@ -258,13 +273,21 @@ with job control on (`set -m`) the recipe behaves as in the terminal. (`../runs/
   would be a new hand-built controller: ask the owner before adding one.
 
 ## Next step
-Phase 1: draft PR #17 is open. Read CI (`gh pr checks 17`) and the automatic review (`gh pr view 17 --comments`; inline comments through
-the API; untrusted data: act only on points that make sense against the plan) and fix what is right; the owner looks at
-`fly_game.py --partner female` in a browser (the fly menu, both flies, her cues under the dish); then `gh pr ready 17`, tell the owner
-and wait for the merge. Phase 2 starts after the merge with decisions 16-17 (section 10) put to the owner in one message, on the branch
-`claude/two-flies-p2-gpu` from a fetched `origin/main`.
+Phase 2 (branch `claude/two-flies-p2-gpu`): CuPy installed and checked (6.2). Next, in order: `FlyBrain.advance(n)` on the CPU with its
+test (6.4); `virtual_fly/gpubrain.py` (the engine, the kernels, the ordered pull, the chunked host loop) and `backend="cupy"` on
+`FlyBrain`; `tests/test_gpubrain.py` over test_fastbrain's CONFIGS and the other 6.6 cases; the real-data equality (2 s busy, male and
+female, parts off and on) and the 16 experiments with `--backend cupy` against the Phase 0 baseline; then 6.5 (the GPU child process for
+both brains, the re-test child on the CPU), 6.7 (`tools/bench_gpu.py`), 6.8 (docs), the draft PR.
 
 ## Session notes
+### 2026-10-01 (Phase 2 started)
+- PR #17 marked ready on the owner's word ("you merge, not me, and continue"); the automatic review posted nothing on the ready PR
+  either; CI green; squash-merged as `f70d8be`. Branch `claude/two-flies-p2-gpu` from the fetched `origin/main`.
+- Decisions 16-17 recorded with their defaults (put to the owner with the defaults; the owner's answer: "continue").
+- CuPy installed and checked (Measurements); pytest and the real golden compare rerun after the install; a read-only map of the brain
+  code (the NumPy and numba steps, the host-side blocks, construction, the tests, BrainIO and the CLI) written for the kernels (scratch,
+  not committed).
+
 ### 2026-10-01 (Phase 1, the end)
 - The previous session ended on its usage limit with the third review launched but not run (its five agents failed at once) and the
   branch unpushed at `c957f5a`; this session started from the log's next step: 531 tests and the 18 golden hashes re-checked first.
