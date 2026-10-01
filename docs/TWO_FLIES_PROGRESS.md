@@ -6,7 +6,7 @@ Plan: docs/TWO_FLIES_PLAN.md. Newest session notes first.
 | phase | branch | PR | state | last update |
 |---|---|---|---|---|
 | 0 | claude/two-flies-p0-baseline | #16 | merged (squash, `3631770`) | 2026-09-27 |
-| 1 | claude/two-flies-p1-two-brains | #17 | draft PR open | 2026-10-01 |
+| 1 | claude/two-flies-p1-two-brains | #17 | draft PR open, CI green | 2026-10-01 |
 
 ## This machine
 - OS: WSL2 (Ubuntu 24.04.5 LTS) on Windows; the repository lives under the Linux home folder, not `/mnt/c`.
@@ -71,6 +71,8 @@ All on 2026-09-27, this machine, `nice -n 10`, one job at a time, machine otherw
   3 skipped** (the two physics tests and the golden physics configuration); 3.11 and 3.12 green too. So the synthetic golden
   hashes made here with NumPy 2.5.3 reproduce under NumPy 2.2.6 on Python 3.10: no version-dependent hash set is needed
   (plan 4.9 item 3).
+- CI on PR #17 (2026-10-01, the same matrix): **547 passed, 3 skipped** on 3.10, 3.11 and 3.12 (the same three tests); here
+  550 passed, 0 skipped with the physics extra.
 
 ### Validated experiments, the baseline JSONs (plan 4.7; game profile, five seeds, numba)
 | run | file (work folder) | result |
@@ -270,7 +272,9 @@ and wait for the merge. Phase 2 starts after the merge with decisions 16-17 (sec
   side, the page, the documents and tools): `8c5ec16`, `41238fa`, `c9813b6`; 550 tests; 18 real golden hashes unchanged.
 - The pair-game benchmark rerun on the idle machine (10.2 states both runs' loads); the three `Ctrl+C` checks on the final code; the
   90 s pair measurement rerun with the committed tool (Measurements).
-- Pushed; draft PR #17 opened; the owner asked to look at `fly_game.py --partner female` in a browser.
+- Pushed; draft PR #17 opened; CI green on Python 3.10, 3.11 and 3.12 (547 passed, 3 skipped without flygym); the automatic review
+  posted nothing on the draft (it runs again when the PR is marked ready); the owner asked to look at `fly_game.py --partner female`
+  in a browser.
 
 ### 2026-09-27 (Phase 1)
 - PR #16 merged by Claude on the owner's go-ahead (squash). Branch `claude/two-flies-p1-two-brains` from `origin/main`.
