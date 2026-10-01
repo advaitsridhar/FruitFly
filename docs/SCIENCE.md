@@ -320,7 +320,7 @@ Two things made single verdicts less trustworthy than they looked.
   about 4 s with the after-stimulus test on every seed (parts list on).
 
 The ranges are unchanged. The model's absolute rates are not comparable with recordings
-(section 11), so there is no measured value to move most of them to; the fragile mark says where a
+(section 12), so there is no measured value to move most of them to; the fragile mark says where a
 range edge sits inside the model's own spread instead. The tables elsewhere in this document were
 measured on seed 0 and are left as they were measured.
 
@@ -364,7 +364,7 @@ settled. The split is shown, and the verdict stays on the total (calm below 1,00
 50,000). Counting spikes only would turn all ten of the male's RUNAWAY seed-runs into small loops with
 no change in the dynamics. Over the 13 distinct stimulus conditions (65 seed-runs), the male fly is
 calm in 34, a small loop in 31 and a runaway in none with the parts off; with the parts on, 43 / 12 / 10
-(v2.7's rule: 24 / 2 / 39). Section 11, limitation 3, says what keeps firing.
+(v2.7's rule: 24 / 2 / 39). Section 12, limitation 3, says what keeps firing.
 
 **The game's re-test runs in a separate process (v2.8).** When the parts list is switched or a fly is
 grown, the Genome card re-tests the reflexes while the game keeps running. In a thread of the game's own
@@ -2518,7 +2518,51 @@ two flies in one physics world (Phase 4); more than two flies in the physics wor
 
 ---
 
-## 11. Honest limitations
+## 11. A GPU brain (v2.10)
+
+`python fly_brain.py --backend cupy` and `python fly_game.py --partner female --backend cupy` run the brains on an NVIDIA GPU
+through CuPy, with hand-written CUDA kernels compiled at run time (NVRTC, from pip: no CUDA toolkit to install). The CPU stays
+the default; without `--backend cupy` nothing changes. The point of the backend is not a different model but the same one,
+spike for spike and bit for bit, on hardware that can run both flies' brains well above real time.
+
+### 11.1 The same arithmetic, on purpose
+
+The CPU step (section 1.2; `virtual_fly/brain.py`, and its compiled twin in `virtual_fly/fastbrain.py`) is a sequence of float32
+operations whose order decides the last bit of every voltage. The kernels in `virtual_fly/gpubrain.py` keep that order:
+
+| what the CPU does | what the GPU does |
+|---|---|
+| constants `decay_m`, `decay_s`, `coupling` computed once as float32 on the host | passed to the kernels as the host's float32 values, never recomputed on the device |
+| a delayed-input ring of `delay_steps + 1` slots; the slot that arrives this step is scaled by the tone gain (the gain of the *previous* block), added to `g`, then zeroed | the same ring on the device; the new block's gain is staged and copied in only after the first step of the block has read the old one |
+| background noise: Poisson draws on the brain's own generator, one `+ noise_mv` per hit | the same draws on the host, in the same order (noise count, then hits, then stimulus), uploaded; the device adds `noise_mv` once per hit (identical addends, so the order among threads cannot change the sum) |
+| refractory neurons (reset in the last `ref_steps - 1` steps) keep their input and sit at reset | a last-reset step per neuron; the same freeze |
+| leak and integrate: `v *= decay_m; v += g * coupling; g *= decay_s`, four separate float32 operations | the same four, with the compiler forbidden to fuse a multiply and an add (`--fmad=false`, and the rounded intrinsics) |
+| every 20 steps: the fatigue fade `thr = (thr - theta_i) * f + theta_i` with `f = float32(decay_f ** 20)`, the tone and APL blocks, then values below a microvolt snapped to zero | the fade and the flush on the device with the host's float32 factor; the tone and APL blocks on the host, their results uploaded before the block's first step |
+| stimulated neurons fire when a uniform draw falls under their probability, even while refractory | the draws on the host; the forced list uploaded per step |
+| graded cells (parts list) accumulate release in proportion to depolarisation, one event per quantum | the same float32 accumulation per graded cell |
+| short-term depression: `(1 - x)` in float32, promoted to float64, times `exp(-elapsed / tau)` in float64; the kick is `w * float32(x)` | the same mixed precision; the exponential comes from a host-computed float64 table indexed by the steps since the last spike (CUDA's double `exp` is not correctly rounded) |
+| every target receives its kicks in ascending presynaptic order, added one by one in float32 to the slot's value | the "ordered pull": spiking neurons mark their outgoing edges in a bitmap; each hit target walks its incoming edges in presynaptic order and adds the marked kicks one by one, from the slot's value |
+| tone deposits, the APL tally, the plasticity tallies and blocks, monitors, recording, callbacks | on the host, replayed step by step from the spike log the device returns (each step's list sorted) |
+| the quiet path: a brain at rest with nothing on the way skips the maths; waking fades the fatigue analytically | the host tracks it the same way; the sleep check is a device reduction every 200 steps; the analytic fade is one kernel with the host's float32 factor |
+
+Why not a library: a sparse matrix-vector product touches every connection every step (0.4-1 ms per step on the female's 15 million
+connections in others' measurements, most of a 0.5 ms step) and is not deterministic on CUDA; float atomics are not even
+run-to-run deterministic. The event-driven pull costs time in proportion to the spikes and the hit targets' in-degree (at most
+10,356 incoming connections on the female, 324 words of bitmap), and its additions happen in one fixed order.
+
+### 11.2 Evidence of equality
+
+MEASURED_EVIDENCE_PLACEHOLDER
+
+### 11.3 Speed
+
+MEASURED_SPEED_PLACEHOLDER
+
+### 11.4 Not modelled, tried and not adopted
+
+MEASURED_NOTES_PLACEHOLDER
+
+## 12. Honest limitations
 
 The starter kit's list, extended. These are the things a neuroscientist would point at first.
 
@@ -2604,7 +2648,7 @@ The starter kit's list, extended. These are the things a neuroscientist would po
 
 ---
 
-## 12. References
+## 13. References
 
 * Ache JM, Polsky J, Alghailani S, Parekh R, Breads P, Peek MY, Bock DD, von Reyn CR, Card GM
   (2019). Neural basis for looming size and velocity encoding in the *Drosophila* giant fiber
