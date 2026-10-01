@@ -263,6 +263,12 @@ pending flags: **identical** in all four runs: male parts off 358,953 spikes; ma
 431,990. The depression table has one entry in the game profile (no depression: `std_u` 0); `math.exp` equalled `np.exp` on every
 entry. Build: numba 0.3-0.8 s, cupy 2.0-3.1 s (the first NVRTC compile is cached). The engine's own tests: 32 passed in 3.3 s.
 
+### Phase 2: the 16 validated experiments on the GPU (plan 6.6, 6.9; 2026-10-01; `../runs/p2-experiments.sh`, `../runs/p2-*-cupy.json`)
+`fly_brain.py --profile game --backend cupy` (male, parts off and on) and `--female --profile game --backend cupy` (parts off and on):
+`tools/compare_experiments.py` against `../runs/p0-*.json` reports **identical** for all four (every readout's mean and per-seed rates,
+the ok and fragile flags, the after-stimulus activity); the closing lines name the integrator "the GPU (CuPy, --backend cupy)".
+About 15-20 s of wall time per run on the first engine.
+
 ### Phase 2: where a GPU tick's time went before the speed work (2026-10-01; the profile script in the session scratchpad)
 The same input, 80 ticks, 40 monitors with 25 ms bins as the game has, plasticity on, parts off, ms per 25 ms tick: male 5.92 in all
 (4.2x real time), of which the device stream (the input upload, the ten-step graph, the two downloads) 4.26, `plasticity.step`

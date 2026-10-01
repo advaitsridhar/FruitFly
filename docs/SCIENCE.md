@@ -2572,7 +2572,9 @@ section 9.6: an RTX 4070 Laptop GPU, compute capability 8.9, CuPy 14.2.0, CUDA 1
    `spike_count`, `std_x`, `std_t`, the release accumulators, the tone levels and gains, the ring, `w`) byte for byte equal,
    and `t`, the quiet flag, the spike total and the pending flags the same.
 3. The 16 validated experiments (section 2) with `--backend cupy`, male with the parts list off and on, female with both,
-   compared with the Phase 0 baseline by `tools/compare_experiments.py`: EXPERIMENTS_PLACEHOLDER
+   compared with the Phase 0 baseline by `tools/compare_experiments.py`: **identical** in all four runs (every readout's mean and
+   per-seed rates, the ok and fragile flags, the after-stimulus activity): the male 16/16 and 16/16, the female her 3/13
+   and 1/13 with the same three not applicable, as in section 9 (`../runs/p2-*-cupy.json`).
 
 ### 11.3 Speed
 
