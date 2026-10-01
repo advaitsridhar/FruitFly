@@ -129,7 +129,7 @@ reproduce all four files exactly (`tools/compare_experiments.py`).
 `DNp13` 2 / 2; `DNp37` **0** / 2; `vpoEN` 4 / 4; `AN_SMP_2` (SAG) 0 / 2; `prefix:BM_InOm` 745 / 1,113; `DNp01` 2 / 2; `MDN` 4 / 4.
 Female only: the pC2l spec `AVLP567,AVLP568,AVLP569,AVLP570,CL313,SIP200f,SIP201f,!body:720575940610359758` 38 (39 without the
 exclusion), `DNp55` 2, `oviDNa_a,oviDNa_b,oviDNb` 6, `DA1_lPN` 15, `aSP-g1,aSP-g2,aSP-g3A,aSP-g3B` 23, `M_lvPNm43,M_lvPNm45` 10.
-Wiring spot checks (`--female --inputs`): pC1a → DNp37 382 synapses (26 % of its input), vpoEN → DNp37 169, CL313 → DNp13 678 and
+Wiring spot checks (`--female --inputs`): pC1a → DNp37 382 synapses (19.0 % of its 2,008 input synapses; the five pC1 types together 530, 26.4 %), vpoEN → DNp37 169, CL313 → DNp13 678 and
 AVLP569 142 (the pC2l types), vpoEN → DNp13 275, AN_SMP_2 → pC1 872. All as the plan's channel table says.
 
 ### Phase 1 steps 1-2 (2026-09-27)
@@ -180,6 +180,12 @@ and matches `--only` against the pair list. Written into docs/SCIENCE.md 10.4.
 400 ticks after 20): parts off dt 0.5: RTF 2.87, tick p50 8.66 / p99 10.28 ms, parent 1,655 MB, children 409 + 630 MB; parts off
 dt 1.0: RTF 4.27, 5.77 / 7.58 ms; parts on dt 0.5: RTF 1.88, 13.34 / 16.0 ms, parent 1,721, children 470 + 714 MB; parts on dt 1.0:
 RTF 2.60, 9.49 / 12.28 ms. Target (plan 3.3): 0.7x. In docs/SCIENCE.md 10.2.
+Rerun 2026-10-01 on the idle machine (load average 0.02 at the start; `../runs/p1-bench-pair-game-idle.json`): parts off dt 0.5:
+RTF 2.70, 8.99 / 14.17 ms; parts off dt 1.0: 4.16, 5.93 / 7.98; parts on dt 0.5: 1.74, 14.31 / 18.11, parent 1,742 MB; parts on
+dt 1.0: 2.33, 10.11 / 17.7; memory otherwise within 1 MB of the first run. The first run had started two minutes after the
+pair-experiment runs, at a 1-minute load average of 5.3 (not stated in 10.2 until now); the idle rerun is the slightly slower
+one (medians 3-7 % longer, 99th percentiles 5-44 %), so the difference is the run-to-run spread of 9.6, not the load. Both
+runs are in docs/SCIENCE.md 10.2.
 
 ### Phase 1: the pair over 90 s with its controls (plan 5.9 item 3; `tools/pair_courtship.py`; `../runs/p1-pair-courtship.json`; 13 min)
 Five seeds, parts off, brains in processes; full / her urge off / song off / all off. Near 15 mm: 70-84 / 59-88 / 70-82 / 4-17 s. He sings

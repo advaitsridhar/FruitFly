@@ -11,8 +11,9 @@ fibre (``DNp01``, two cells) fires a burst: ``game.GF_BURST`` (5) or more live s
 cells at that rate for ``--seconds`` of brain time on each seed, bins the giant fibre's spikes into 25 ms ticks (a monitor
 with ``bin_ms`` = one tick), adds each tick to the one before (the window slides by one tick, as the game counts it), and
 reports the share of windows holding ``GF_BURST`` or more spikes and the largest window. The plan's rule (docs/TWO_FLIES_PLAN.md
-5.9 item 1, decision 6) makes ``SONG_MAX_HZ`` the highest swept rate at which fewer than 1 % of windows hold a burst, over
-five seeds, parts list off and on: a hand-built calibration taken from the male connectome and the burst rule.
+5.9 item 1, decision 6) makes ``SONG_MAX_HZ`` the highest swept rate at which fewer than 1 % of windows hold a burst, the windows pooled
+over five seeds (995 per rate and parts setting), parts list off and on: a hand-built calibration taken from the male
+connectome and the burst rule. (Applied seed by seed the rule would give 60 Hz: docs/SCIENCE.md 10.3.)
 """
 from __future__ import annotations
 
@@ -107,7 +108,7 @@ def main(argv=None) -> int:
               f"{'':26}{s['max_window']:3d}{'':13}{s['gf_hz_per_cell']}")
     ok_rates = [hz for hz in rates if all(s["burst_share"] < 0.01 for s in summary if s["hz"] == hz)]
     chosen = max(ok_rates) if ok_rates else None
-    print(f"\nSONG_MAX_HZ by the rule (under 1 % of windows with a burst, over every seed, parts off and on): "
+    print(f"\nSONG_MAX_HZ by the rule (under 1 % of windows with a burst, pooled over the seeds, parts off and on): "
           f"{chosen if chosen is not None else 'none of the swept rates'}")
     if args.json:
         Path(args.json).write_text(json.dumps({"dataset": conn.dataset, "female": args.female, "gf_burst": GF_BURST,

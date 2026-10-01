@@ -111,9 +111,9 @@ downloads the connectome to `~/.cache/virtual-fly` instead of `data/`. `FLY_DATA
 for everything the kit downloads or builds, in an installed copy and in a checkout alike (a checkout then
 downloads into that folder rather than using `data/`).
 
-**The female fly** needs one more package, `py -m pip install pyarrow`, and the first `--female` run
-downloads about 130 MB (FlyWire's connectivity table and annotations) and builds a 45 MB file: in `data/`
-in a checkout, in `~/.cache/virtual-fly` in an installed copy, or in `FLY_DATA_DIR` when that is set.
+**The female fly** (`--female`, and `--partner female`, which puts her in the dish with the male) needs one
+more package, `py -m pip install pyarrow`, and the first run with either flag downloads about 130 MB (FlyWire's
+connectivity table and annotations) and builds a 45 MB file: in `data/` in a checkout, in `~/.cache/virtual-fly` in an installed copy, or in `FLY_DATA_DIR` when that is set.
 
 **The physics body** (`--body physics`, optional) needs Python 3.10-3.12 (flygym 1.2.1 does not install
 on 3.13 or newer) and about 680 MB of packages; in a virtual environment made with such a Python:
@@ -260,7 +260,7 @@ against 72 Hz with sugar alone. The parts list, the physics body and the
 background re-test run on her too; `docs/SCIENCE.md` section 9.5 compares each with the male. Most readouts differ from the male's, and
 `docs/SCIENCE.md` section 9 says why most of those differences are not yet sex differences.
 
-**Two simulated flies.** `py fly_game.py --partner female` puts the male and FlyWire's female in one dish, each brain in its own process (about 2.8x real time on a 16-core laptop; `--fast` if yours is slower). Nothing links the two brains but the world: she sees him as a small dark thing, hears his song through her Johnston's organ (at up to 70 Hz on her sound cells, the loudest steady drive that does not startle *him*), tastes him when a foreleg lands, and the two bodies bump. `--social seen,song` keeps only those channels; `--partner male` gives him a male rival; `--female --partner male` gives her a male. A fly menu in the page's header picks which fly the panels, the retina and the brain map follow, and the checklist gains pair items (he saw her, sang, tapped; she heard, saw him, was tapped); the Scenarios card gains "Courtship, two brains", 90 s of both flies with the numbers logged at the end. Her decision neurons (`DNp37`, the vaginal plate opening command; `DNp13`, ovipositor extrusion; `vpoEN`, `pC2l`, `SAG`) are shown as watches, never as a verdict: in this data his song reaches her hearing and her giant fibre but not those neurons (`docs/SCIENCE.md` 10.3). `py fly_brain.py --female --pair-experiments` runs the pair experiments, whose ranges are provisional and measured, not validated.
+**Two simulated flies.** `py fly_game.py --partner female` puts the male and FlyWire's female in one dish, each brain in its own process (2.7-2.9x real time in two runs on a 16-core laptop, `docs/SCIENCE.md` 10.2; `--fast` if yours is slower). Nothing links the two brains but the world: she sees him as a small dark thing, hears his song through her Johnston's organ (at up to 70 Hz on her sound cells, the loudest steady drive that does not startle *him*), tastes him when a foreleg lands, and the two bodies bump. `--social seen,song` keeps only those channels; `--partner male` gives him a male rival; `--female --partner male` gives her a male. A fly menu in the page's header picks which fly the panels, the retina and the brain map follow, and the checklist gains pair items (he saw her, sang, tapped; she heard, saw him, was tapped); the Scenarios card gains "Courtship, two brains", 90 s of both flies with the numbers logged at the end. Her decision neurons (`DNp37`, the vaginal plate opening command; `DNp13`, ovipositor extrusion; `vpoEN`, `pC2l`, `SAG`) are shown as watches, never as a verdict: in this data his song reaches her hearing and her giant fibre but not those neurons (`docs/SCIENCE.md` 10.3). `py fly_brain.py --female --pair-experiments` runs the pair experiments, whose ranges are provisional and measured, not validated.
 
 **In code**, start with `my_first_fly.py`: poke, wait, listen, in three lines. Then:
 

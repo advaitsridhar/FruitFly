@@ -15,8 +15,9 @@ the male at (-10, -8) heading 0.3 rad, the female at (14, 10) with a heading fro
 
 Her walking descending neurons stay near 0 Hz (docs/SCIENCE.md 9.4), so her speed, heading and orientation come mostly
 from the hand-built walking urge; an effect is claimed only when it exceeds the spread across seeds against these
-controls. Escape jumps are counted for each fly as ticks with GF_BURST or more live giant-fibre spikes over two ticks,
-the game's own rule; jump ticks are left out of the speed numbers.
+controls. Bursts are counted for each fly as ticks with GF_BURST or more live giant-fibre spikes over two ticks (the game's
+own rule) and escape jumps as the ticks on which that fly's mode turns to escape (a burst in the second after a jump is a
+burst but not a jump: the game's cooldown); jump ticks are left out of the speed numbers.
 """
 from __future__ import annotations
 
@@ -77,6 +78,8 @@ def run(seed: int, condition: str, seconds: float, parts: bool) -> dict:
         his = {"pC1": [], "pIP10": [], "LC10aL": [], "LC10aR": [], "GF": []}
         bursts = {"male": 0, "female": 0}
         prev_gf = {"male": 0, "female": 0}
+        escapes = {"male": 0, "female": 0}          # jumps started: rising edges of the escape mode, counted every tick
+        escaping = {"male": False, "female": False}  # (the game's event log keeps 200 entries, too few for a long run)
         modes = {"male": {}, "female": {}}
         min_d = 1e9
         for _ in range(ticks):
@@ -111,9 +114,9 @@ def run(seed: int, condition: str, seconds: float, parts: bool) -> dict:
                     bursts[name] += 1
                 prev_gf[name] = a.bt.gf
                 modes[name][a.mode] = modes[name].get(a.mode, 0) + 1
-        # with two flies every fly's event carries its id (docs/API.md); the burst counts above are the game's own rule per fly
-        escapes = {name: sum(1 for e in game.events.items if "escape" in e["text"] and e.get("fly") == a.id)
-                   for name, a in (("male", m), ("female", f))}
+                esc = a.mode == "escape"
+                escapes[name] += esc and not escaping[name]
+                escaping[name] = esc
         return {"seed": seed, "condition": condition, "parts": parts, "seconds": seconds, "ticks": ticks,
                 "channels": game.social.names(),
                 "time_near_s": round(near * TICK_MS / 1000, 1), "facing_when_near": round(facing / near, 3) if near else None,
