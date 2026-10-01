@@ -255,6 +255,26 @@ with `--fmad=false` ran (0.86 s including NVRTC), and stream capture into a CUDA
 `~/.cupy/kernel_cache` unless `CUPY_CACHE_DIR` is set. After the install: **550 passed**, and `tools/golden_hashes.py --compare`
 **18 unchanged** (nothing moved).
 
+### Phase 2: the GPU brain's equality on the real data (plan 6.6; 2026-10-01; `../runs/p2_real_equality.py`, `../runs/p2-eq-*.json`)
+Game profile, seed 0, the benchmark's busy input, 2 s = 4,000 steps stepped a tick (50 steps) at a time on numba and on the GPU
+side by side, every step's spike list compared, then every state array byte for byte (`v`, `g`, `thr`, `spike_count`, `std_x`,
+`std_t`, the release accumulators, the tone levels and gains, the ring, `w`) and `t`, the quiet flag, the spike total and the
+pending flags: **identical** in all four runs: male parts off 358,953 spikes; male parts on 440,318; female off 242,340; female on
+431,990. The depression table has one entry in the game profile (no depression: `std_u` 0); `math.exp` equalled `np.exp` on every
+entry. Build: numba 0.3-0.8 s, cupy 2.0-3.1 s (the first NVRTC compile is cached). The engine's own tests: 32 passed in 3.3 s.
+
+### Phase 2: where a GPU tick's time went before the speed work (2026-10-01; the profile script in the session scratchpad)
+The same input, 80 ticks, 40 monitors with 25 ms bins as the game has, plasticity on, parts off, ms per 25 ms tick: male 5.92 in all
+(4.2x real time), of which the device stream (the input upload, the ten-step graph, the two downloads) 4.26, `plasticity.step`
+0.53, the per-launch weight comparison 0.31, the monitors 0.17, the random draws 0.19, the rest of the replay loop 0.46; female 7.68
+(3.3x): stream 5.77, plasticity 0.53, weights 0.49, monitors 0.16, draws 0.20, loop 0.53. The equality script's own numbers (no
+monitors): male 0.139 ms per step on the GPU against numba's 0.148; male with parts 0.239 against 0.257; female 0.180 against 0.122;
+female with parts 0.350 against 0.272. So the first engine runs the male at numba's pace and the female slower, well short of the
+6.9 target (both brains in 8 ms per tick): the device time is launches (nine kernels per step) and passes over the neuron arrays
+rather than the propagation, the host time is per-step Python. The speed work (merged kernels, one download per chunk, a warp per
+hit target, a per-block plasticity step, the monitors and weights checked only when they can change) follows, with the equality
+script and the tests as the guard.
+
 ### Golden hashes (plan 4.9)
 - Synthetic (`tests/golden_single_fly.json`): nine configurations, made with Python 3.12.3, NumPy 2.5.3, numba 0.67.0; a second
   run reproduces every hash (the test passes in normal mode; a determinism test runs one configuration twice).

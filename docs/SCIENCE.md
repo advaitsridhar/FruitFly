@@ -2552,7 +2552,27 @@ run-to-run deterministic. The event-driven pull costs time in proportion to the 
 
 ### 11.2 Evidence of equality
 
-MEASURED_EVIDENCE_PLACEHOLDER
+Three layers, from the synthetic connectome of the test suite to the real flies (all measured on 2026-10-01, the machine of
+section 9.6: an RTX 4070 Laptop GPU, compute capability 8.9, CuPy 14.2.0, CUDA 13.4, NumPy 2.5.3, numba 0.67.0).
+
+1. `tests/test_gpubrain.py` (skipped without CuPy or a GPU, so CI never sees it; run here: 32 tests): on the synthetic
+   connectome every configuration of `tests/test_fastbrain.py` (the pure model, fatigue, depression, threshold jitter, noise,
+   everything at once, `dt` 1.0, the parts list, the parts list with the Kenyon cells firing so the APL releases locally),
+   the curated parts list and learning, run 540 ms on `backend="cupy"` and on NumPy and on numba: the same spikes on every
+   step, and the same bytes in `v`, `g`, `thr`, `spike_count`, `std_x`, `std_t`, the release accumulators, the tone levels and
+   gains, `w` and the APL's state; silence, modulate, snapshot and restore; a snapshot taken mid-run equal to the CPU's field
+   by field (the ring, the pending flags, the refractory lists, the generator's state) and a GPU brain restored from the
+   CPU's snapshot continuing identically; forced spikes while refractory; empty steps that launch nothing; `advance_steps(n)`
+   against `n` calls of `step()` for lengths that cross a block and the quiet check, with stimuli changed between calls; ten
+   repeated runs (fresh brains, and one brain reset between runs) with identical raster hashes and identical state bytes.
+2. The real flies under the busy input of `tools/bench_two_flies.py` (sugar, a looming object, song, odour at 80-150 Hz),
+   game profile, seed 0, 2 s = 4,000 steps, stepped a tick (50 steps) at a time on numba and on the GPU side by side
+   (`../runs/p2_real_equality.py`): male, parts list off: 358,953 spikes, every step's list identical; male, parts on:
+   440,318; female, off: 242,340; female, on: 431,990; after the 4,000 steps every state array (`v`, `g`, `thr`,
+   `spike_count`, `std_x`, `std_t`, the release accumulators, the tone levels and gains, the ring, `w`) byte for byte equal,
+   and `t`, the quiet flag, the spike total and the pending flags the same.
+3. The 16 validated experiments (section 2) with `--backend cupy`, male with the parts list off and on, female with both,
+   compared with the Phase 0 baseline by `tools/compare_experiments.py`: EXPERIMENTS_PLACEHOLDER
 
 ### 11.3 Speed
 
