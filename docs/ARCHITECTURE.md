@@ -8,6 +8,9 @@ virtual_fly/
                    the kit's MaleCNS names for FlyWire's cells (load_connectome(female=True))
   brain.py         the simulation: LIF network, optional brakes/noise/modulation, monitors, checkpoints
   fastbrain.py     the same integration step as compiled numba kernels (optional, same spikes, ~2x faster)
+  gpubrain.py      the same step as CUDA kernels through CuPy (optional, --backend cupy, same spikes to the last bit): the
+                   state lives on the GPU, chunks of steps run as one captured graph, the host replays its bookkeeping from
+                   the spike log; GpuFlyBrain is the FlyBrain subclass that FlyBrain(backend="cupy") builds
   plasticity.py    mushroom-body learning: dopamine-gated depression of KC->MBON synapses
   pathways.py      static analysis: strongest routes between populations, lesion candidates
   experiments.py   validated protocols, seeds, sweeps, lesion scans, JSON export
@@ -33,8 +36,9 @@ virtual_fly/
     social.py      how one fly reaches another (Phase 1 of the two-flies work): seen, song, contact, collide, cVA,
                    mating status, body touch; every channel a labelled hand-built encoder with a switch
   agent.py         one fly: its brain handle, senses, decoder, body and bookkeeping (FlyAgent); the game holds the dish
-  brainio.py       the seam between a fly and its brain: LocalBrain (in this process) or ProcessBrain (a child process,
-                   one per brain when there are two flies), the same spikes either way; advance_all is the lockstep
+  brainio.py       the seam between a fly and its brain: LocalBrain (in this process), ProcessBrain (a child process,
+                   one per brain when there are two flies) or a GpuBrainServer handle (one child process owning every
+                   brain, where the GPU brains live), the same spikes either way; advance_all is the lockstep
   game.py          the sensorimotor loop over every fly: senses -> brains (in lockstep) -> decoders -> bodies; the world's
                    clock; internal state; events; the actions from the browser
   scenarios.py     scripted protocols (conditioning, courtship, plume, escape; with a partner, the two-fly courtship)
@@ -105,8 +109,25 @@ answering is reported and stopped, never waited on, and the other brain's lock i
 children (the order that keeps a MuJoCo body from being torn down mid-step). The re-test of a
 rebuilt brain is a third child, at low priority, as before.
 
+With `--backend cupy` both brains live in **one** child process, the brain server (`GpuBrainServer`
+in `brainio.py`): one CUDA context, launched for both brains back to back, away from the web
+server, so a CUDA failure stops that child and is reported like a dead brain process rather than
+taking the page down. The game process keeps a CPU-built copy of the first fly only long enough to
+describe it to the child; the re-test child always runs on the CPU (its answer is about the wiring,
+and the CPU is bit-identical); a rebuild (grow, parts) happens inside the server, which then swaps
+the new GPU brain in. `--brain-procs off` with `--backend cupy` keeps the GPU brain in the game
+process instead (the way `fly_brain.py` runs it).
+
 ## Performance notes
 
+* The GPU backend (`gpubrain.py`) runs the same step as hand-written CUDA kernels: the dense pass
+  over every neuron, then an event-driven propagation (spiking neurons mark their outgoing edges
+  in a bitmap; every hit target walks its incoming edges in presynaptic order and adds the marked
+  kicks one by one, from the queue slot's value), so each target's additions happen in the CPU's
+  order and no float atomics decide a result. Ten steps (five at `dt` 1.0) form one chunk captured
+  as a CUDA graph; the host draws the chunk's random numbers ahead in the CPU's order, uploads them
+  with the staged tone gain and any changed weights, launches, downloads the spike log, sorts each
+  step's list and replays the host-side work. GPU_PERF_PLACEHOLDER
 * `FlyBrain.step` has two interchangeable integrators that produce the same spikes to the last
   one (the test suite checks this on every optional mechanism, and `--backend` picks one). The
   NumPy one is the starter kit's dense loop: a handful of passes over the 176k-element state arrays
