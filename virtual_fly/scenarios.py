@@ -29,7 +29,8 @@ class Scenario:
     description: str
     steps: list[Step] = field(default_factory=list)
     female: str = ""                     # the description for the female fly, where hers differs
-    pair: str = ""                       # the description with a simulated partner in the dish, where it differs
+    pair: str | Callable = ""            # the description with a simulated partner in the dish, where it differs: a
+                                         # string, or a function of (the protagonist's sex, the partner's sex)
 
 
 def _place_two_odours(game, a="vinegar", b="banana", with_food=None, on="a"):
@@ -119,6 +120,33 @@ def _female_enters(game):
         game.world.toggle_female(True, 14.0, 10.0)
 
 
+def _courtship_pair_text(me: str, other: str) -> str:
+    """The courtship scenario's text with a simulated partner in the dish (D9: no scripted female can enter), by the
+    protagonist's sex (``me``, fly 0) and the partner's (``other``, fly 1): the partner is placed where the scripted
+    female would have stood."""
+    if me == "male" and other == "female":
+        return ("The simulated female is placed ahead of him and both flies are left to their brains for 90 s. Nothing links "
+                "the two brains but the world: he sees her as a small moving object (LC10a → DNa02, chase), taps her (his leg "
+                "taste cells, and the kit's hand-built pC1 arousal) and sings (pIP10, one wing out); she sees him, hears his "
+                "song on her Johnston's organ and is bumped by him. The measure shows his pC1 and song and their distance.")
+    if me == "female" and other == "male":
+        return ("The simulated male is placed ahead of her and both flies are left to their brains for 90 s. Nothing links "
+                "the two brains but the world: she sees him as a small moving object (LC10a → DNa02, chase) and is bumped by "
+                "him; he sees her, taps her (his leg taste cells, and the kit's hand-built pC1 arousal) and sings (pIP10, one "
+                "wing out), which reaches her Johnston's organ. The measure shows her pC1 (this brain has no pIP10, so no "
+                "song) and their distance.")
+    if me == "male":
+        return ("A second simulated male is placed ahead of him and both flies are left to their brains for 90 s. Nothing "
+                "links the two brains but the world: each sees the other as a small moving object (LC10a → DNa02, chase) and "
+                "bumps into him; a foreleg on another male tastes nothing and starts no courtship arousal (both answer the "
+                "pheromone of the other sex), so no song is expected. The measure shows his pC1 and song and their distance.")
+    return ("A second simulated female is placed ahead of her and both flies are left to their brains for 90 s. Nothing links "
+            "the two brains but the world: each sees the other as a small moving object (LC10a → DNa02, chase) and bumps into "
+            "the other; a foreleg on another female finds no leg taste cells in this file and, for a female toucher, starts "
+            "no courtship arousal unless contact_pc1 says so (decision 14); neither sings (no pIP10). The measure shows this "
+            "fly's pC1 and their distance.")
+
+
 _add(Scenario(
     "courtship", "Courtship",
     "A female enters the dish. The male sees her as a small moving object (LC10a → DNa02, chase), "
@@ -136,10 +164,7 @@ _add(Scenario(
     female="A second female enters the dish. The fly sees her as a small moving object (LC10a → DNa02, chase); touching "
            "her drives the fly's pC1 neurons directly (hand-built: this brain has no tarsal taste neurons). The fly does "
            "not sing: this female brain has no pIP10 and no nerve cord.",
-    pair="The simulated female is placed ahead of him and both flies are left to their brains for 90 s. Nothing links "
-         "the two brains but the world: he sees her as a small moving object (LC10a → DNa02, chase), taps her (his leg "
-         "taste cells, and the kit's hand-built pC1 arousal) and sings (pIP10, one wing out); she sees him, hears his "
-         "song on her Johnston's organ and is bumped by him. The measure shows his pC1 and song and their distance."))
+    pair=_courtship_pair_text))
 
 _add(Scenario(
     "plume", "Following a plume upwind",
@@ -172,13 +197,44 @@ PAIR_SCENARIOS: dict[str, Scenario] = {}
 PAIR_NEAR_MM = 15.0                      # "near": real centre-to-centre mm, as the plan's measurements count it
 
 
+def _pair_roles(game):
+    """The male and the female of a two-fly dish, whichever index each has (fly 0 is the female with
+    ``--female --partner male``), or None when the dish has no such pair (one fly, two males, two females)."""
+    males = [f for f in game.flies if f.sex == "male"]
+    females = [f for f in game.flies if f.sex == "female"]
+    if not males or not females:
+        return None
+    return males[0], females[0]
+
+
+def pair_available(game, sid: str) -> str | None:
+    """Why a two-fly scenario cannot run in this dish (the text of the refusal), or None when it can: every one needs
+    a simulated partner, and ``pair_courtship`` a male and a female (whichever index each has). Game.action and the
+    layout read this, so a scenario is offered only where it can run."""
+    if len(game.flies) < 2:
+        return (f"{sid} is a two-fly scenario: it needs a simulated partner in the dish "
+                "(start the game with --partner female)")
+    if sid == "pair_courtship" and _pair_roles(game) is None:
+        sexes = {f.sex for f in game.flies}
+        both = f"both flies are {sexes.pop()}" if len(sexes) == 1 else "neither fly has a sex"
+        return (f"the pair courtship scenario needs a male and a female in the dish, and here {both} "
+                "(start the game with --partner female, or with --female --partner male)")
+    return None
+
+
 def _pair_start(game):
-    """Place the two flies as the courtship scenario does and start the counts afresh."""
+    """Place the male and the female as the courtship scenario does (he behind and to her left, she ahead facing
+    wherever her own dice say) and start the counts afresh. The flies' senses this tick are the tick before's
+    (Game.tick runs the actions, then the measure), so the measure skips them (``fresh``)."""
+    roles = _pair_roles(game)
+    if roles is None:
+        raise ValueError(pair_available(game, "pair_courtship"))
+    male, female = roles
     _reset_store(game)
     game.world.clear("all")
-    _female_enters(game)
-    game.body.reset(-10.0, -8.0, 0.3)
-    game.scenario.store.update(ticks=0, near=0, sang=0, taps=0, touching=False, hear_sum=0.0, hear_n=0,
+    female.body.reset(14.0, 10.0, female.rng.uniform(-math.pi, math.pi))
+    male.body.reset(-10.0, -8.0, 0.3)
+    game.scenario.store.update(fresh=True, ticks=0, near=0, sang=0, taps=0, touching=False, hear_sum=0.0, hear_n=0,
                                dnp37_sum=0.0, dnp13_sum=0.0, vpoen_sum=0.0, v_sang=[0.0, 0], v_quiet=[0.0, 0],
                                bursts=[0, 0], gf_prev=[0, 0])
 
@@ -187,14 +243,19 @@ def _pair_measure(game):
     """What the two flies are doing, this tick and so far (numbers only: none of them is a verdict). Runs at the
     start of each tick, so it reads the last completed tick."""
     from .game import GF_BURST
-    if len(game.flies) < 2:
+    roles = _pair_roles(game)
+    if roles is None:
         return {}
-    m, f = game.flies[0], game.flies[1]
+    m, f = roles                                           # the male and the female, whichever index each has
     st = game.scenario.store
     if "ticks" not in st:                                  # started by hand, without the step's action
         _pair_start(game)
-    st["ticks"] += 1
     d = math.hypot(f.body.pose.x - m.body.pose.x, f.body.pose.y - m.body.pose.y)
+    if st.pop("fresh", False):                             # the tick the flies were placed in: its senses are stale
+        return {"distance_mm": round(d, 1), "he_sings": False, "she_hears_hz": 0.0, "her_DNp37_hz": 0.0,
+                "her_DNp13_hz": 0.0, "her_vpoEN_hz": 0.0, "her_speed_mm_s": 0.0, "taps": 0, "bursts_male": 0,
+                "bursts_female": 0}
+    st["ticks"] += 1
     sings = m.m["song"] > 0.3
     st["near"] += d < PAIR_NEAR_MM
     st["sang"] += sings
@@ -242,8 +303,8 @@ def _pair_summary(game):
 
 PAIR_SCENARIOS["pair_courtship"] = Scenario(
     "pair_courtship", "Courtship, two brains",
-    "The male and the simulated female, left to their brains for 90 s: he is placed behind and to her left, she ahead "
-    "with a heading of her own. The measure shows their distance, whether he sings, what she hears, her decision "
+    "The male and the female (whichever of the two is the partner), left to their brains for 90 s: he is placed behind "
+    "and to her left, she ahead with a heading of her own. The measure shows their distance, whether he sings, what she hears, her decision "
     "neurons (vpoEN, DNp37, DNp13: readouts, not verdicts), her speed, his taps and each fly's giant-fibre bursts; the "
     "end logs the totals. Her walking is the hand-built walking urge, so compare with the same run with it off "
     "(docs/SCIENCE.md 10.5).",
@@ -266,10 +327,14 @@ class ScenarioRunner:
     def start(self, sid: str):
         if self.current is not None:
             self.stop(silent=True)
-        sc = SCENARIOS.get(sid) or (PAIR_SCENARIOS.get(sid) if len(self.game.flies) > 1 else None)
-        if sc is None:                                     # Game.action refuses these first; this is for callers in code
-            raise KeyError(f"{sid} is a two-fly scenario: it needs a simulated partner in the dish"
-                           if sid in PAIR_SCENARIOS else f"unknown scenario {sid}")
+        sc = SCENARIOS.get(sid)
+        if sc is None and sid in PAIR_SCENARIOS:           # Game.action refuses these first; this is for callers in code
+            why = pair_available(self.game, sid)
+            if why is not None:
+                raise KeyError(why)
+            sc = PAIR_SCENARIOS[sid]
+        if sc is None:
+            raise KeyError(f"unknown scenario {sid}")
         self.current = sc
         self.step_i = -1
         self.store = {}

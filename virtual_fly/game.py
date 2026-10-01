@@ -31,8 +31,8 @@ from .brain import FlyBrain
 from . import genetics
 from . import parts as partslib
 from . import wiring
-from .scenarios import PAIR_SCENARIOS, SCENARIOS, ScenarioRunner
-from .senses.social import resolve_overlaps
+from .scenarios import PAIR_SCENARIOS, SCENARIOS, ScenarioRunner, pair_available
+from .senses.social import SONG_FAR_MM, resolve_overlaps
 from .senses.olfaction import ODOURS
 from .world import World
 
@@ -162,7 +162,7 @@ TOOLS = ("lure", "hand", "sugar", "bitter", "water", "dust", "shock", "post", "n
 # checklist (and the `done` set) of the fly it describes; a male's need a female other, a female's a male other.
 PAIR_CHECKS_MALE = [
     ("pair:seen", "His eyes pick her out: LC10a fires when she crosses his view"),
-    ("pair:sang", "He sings at her: pC1 → pIP10, one wing out, within 15 mm of her"),
+    ("pair:sang", f"He sings at her: pC1 → pIP10, one wing out, within {SONG_FAR_MM:g} mm of her"),   # the song's reach
     ("pair:tapped", "He taps her: a foreleg lands, his leg taste cells fire"),
 ]
 PAIR_CHECKS_FEMALE = [
@@ -170,6 +170,10 @@ PAIR_CHECKS_FEMALE = [
     ("pair:seen_him", "She sees him: LC10a fires when he crosses her view"),
     ("pair:touched", "She was tapped (her file has no leg taste cells; nothing fires in her)"),
 ]
+PAIR_CHECKS_SAME = {   # two flies of one sex: only the eyes have anything to say (a tap tastes nothing: the leg taste
+    "male": [("pair:seen", "His eyes pick the other male out: LC10a fires when he crosses his view")],   # cells and the
+    "female": [("pair:seen", "Her eyes pick the other female out: LC10a fires when she crosses her view")],   # kit's arousal answer a female; no song)
+}
 CHECKS = [
     ("feed", "Feed it: drop sugar in its path → MN9 fires, the proboscis comes out"),
     ("bitter", "Offer bitter food → the bitter pathway keeps MN9 silent"),
@@ -488,9 +492,9 @@ class Game:
         if kind == "scenario" and a.get("id") and a["id"] not in SCENARIOS:
             if a["id"] not in PAIR_SCENARIOS:
                 return {"ok": False, "error": f"unknown scenario {a['id']}"}
-            if len(self.flies) < 2:                          # a two-fly scenario (docs/TWO_FLIES_PLAN.md 5.9 item 3)
-                return {"ok": False, "error": f"{a['id']} is a two-fly scenario: it needs a simulated partner in the dish "
-                                              "(start the game with --partner female)"}
+            why = pair_available(self, a["id"])              # a two-fly scenario (docs/TWO_FLIES_PLAN.md 5.9 item 3)
+            if why is not None:
+                return {"ok": False, "error": why}
         if kind == "grow":
             level = str(a.get("level", "type")).strip().lower()
             if not wiring.valid_level(level):
@@ -648,21 +652,24 @@ class Game:
             else:
                 self.scenario.stop()
         elif kind == "record":
-            io = self.flies[0].io
+            ios = [b.io for b in self.flies]             # every fly's brain records its spikes (/api/spikes?fly=k reads fly k's)
             if a.get("on", True):
-                if io.record("active"):                  # a restart while spikes were being recorded
-                    io.record("stop")
-                io.record("clear_kept")                  # the previous take is gone once a new one starts
+                for io in ios:
+                    if io.record("active"):              # a restart while spikes were being recorded
+                        io.record("stop")
+                    io.record("clear_kept")              # the previous take is gone once a new one starts
                 self.recording = []
                 self.record_active = True
                 self.record_spikes = bool(a.get("spikes", False))
                 if self.record_spikes:
-                    io.record("start")
+                    for io in ios:
+                        io.record("start")
                 self.events.add(self.t, "system", "recording started")
             elif self.record_active:
                 self.record_active = False               # frames are kept for download until the next start
-                if io.record("active"):
-                    io.record("stop")
+                for io in ios:
+                    if io.record("active"):
+                        io.record("stop")
                 self.events.add(self.t, "system", f"recording stopped ({len(self.recording or [])} frames)")
         elif kind == "grow":
             f._start_grow(a["level"], a["seed"])
@@ -678,6 +685,17 @@ class Game:
             f.body.reset(float(a["x"]), float(a["y"]), float(a.get("h", f.body.pose.h)))
 
     # ------------------------------------------------------------------ the loop
+    def tick_paused(self):
+        """A paused loop's turn: the queued actions, then the page kept in sync with every brain's state without a
+        step. No brain stepped, so every fly's rates read 0, as the top level's always did (with two or more flies
+        the ``flies`` entries mirror it)."""
+        self._apply_actions()
+        for f in self.flies:
+            f.graded_eps = 0.0
+            f.sps = 0.0
+        peeks = [f.io.peek(TICK_MS / 1000.0, self.seq, f.readouts) for f in self.flies]
+        self.publish(peeks[0], self.hz_shown, 0, peeks)
+
     def tick(self):
         """One 25 ms tick of every fly in the dish (docs/TWO_FLIES_PLAN.md 5.4): all flies sense the same start-of-tick
         snapshot of the others, all brains advance (in lockstep when each has its own process), then all bodies
@@ -790,11 +808,7 @@ class Game:
             t0 = time.perf_counter()
             try:
                 if self.paused:
-                    self._apply_actions()
-                    self.graded_eps = 0.0
-                    # keep the page in sync: every brain's state without a step
-                    peeks = [f.io.peek(TICK_MS / 1000.0, self.seq, f.readouts) for f in self.flies]
-                    self.publish(peeks[0], self.hz_shown, 0, peeks)
+                    self.tick_paused()
                     time.sleep(0.05)
                     continue
                 self.tick()

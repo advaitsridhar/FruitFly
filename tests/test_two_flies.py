@@ -16,7 +16,7 @@ from synthetic_connectome import build_synthetic  # noqa: E402
 from virtual_fly.agent import HOME, PARTNER_HOME, PoseView
 from virtual_fly.brainio import LocalBrain, ProcessBrain
 from virtual_fly.connectome import Connectome
-from virtual_fly.game import STILL_TICKS, TICK_MS, Game
+from virtual_fly.game import GF_BURST, STILL_TICKS, TICK_MS, Game
 from virtual_fly.settings import build_brain
 
 # the male file's bytes before the builder learnt to write a female (tests/synthetic_connectome.py): they must not move
@@ -586,7 +586,7 @@ from http.server import ThreadingHTTPServer  # noqa: E402
 
 from virtual_fly import server as S  # noqa: E402
 
-FLY_ENTRY_KEYS = {"id", "sex", "dataset", "fly", "mode", "driver", "senses", "retina", "hz", "motor", "spikes", "sps", "graded_eps",
+FLY_ENTRY_KEYS = {"id", "sex", "dataset", "fly", "mode", "autopilot", "driver", "senses", "retina", "hz", "motor", "spikes", "sps", "graded_eps",
                   "stims", "calms", "state", "learning", "silenced", "baseline", "modulated", "custom", "genome", "done"}
 STATE_KEYS_ONE = {"seq", "t", "rtf", "speed", "fly", "world", "autopilot", "paused", "senses", "retina", "hz", "motor", "driver", "mode",
                   "spikes", "sps", "stims", "calms", "msg", "silenced", "baseline", "modulated", "custom", "done", "state", "learning",
@@ -775,7 +775,7 @@ def test_the_pair_scenario_places_both_flies_measures_and_logs_its_totals(conn, 
     assert set(m) == {"distance_mm", "he_sings", "she_hears_hz", "her_DNp37_hz", "her_DNp13_hz", "her_vpoEN_hz",
                       "her_speed_mm_s", "taps", "bursts_male", "bursts_female"}
     assert m["distance_mm"] == pytest.approx(math.hypot(f1.body.pose.x - f0.body.pose.x, f1.body.pose.y - f0.body.pose.y), abs=0.5)
-    assert m["he_sings"] is False and m["taps"] == 0 and g.scenario.store["ticks"] == 4
+    assert m["he_sings"] is False and m["taps"] == 0 and g.scenario.store["ticks"] == 3      # the placing tick is not measured
     while g.scenario.current is not None:                                    # run it to its end
         g.scenario._next()
     done = [e for e in g.events.items if e["text"].startswith("two-fly courtship finished")]
@@ -792,7 +792,7 @@ def test_the_pair_scenario_places_both_flies_measures_and_logs_its_totals(conn, 
         ids = [s["id"] for s in lay["scenarios"]]
         assert ids[:len(SCENARIOS)] == list(SCENARIOS) and ids[len(SCENARIOS):] == list(PAIR_SCENARIOS)
         texts = {s["id"]: s["description"] for s in lay["scenarios"]}
-        assert texts["courtship"] == SCENARIOS["courtship"].pair and "Nothing links the two brains" in texts["courtship"]
+        assert texts["courtship"] == SCENARIOS["courtship"].pair("male", "female") and "Nothing links the two brains" in texts["courtship"]
         assert texts["pair_courtship"] == PAIR_SCENARIOS["pair_courtship"].description
         assert not any(w in json.dumps(lay["scenarios"]).lower() for w in ("acceptance", "rejection"))
 
@@ -840,12 +840,278 @@ def test_the_pair_checks_belong_to_the_fly_they_describe(conn, fconn, monkeypatc
     assert "pair:sang" in st["flies"][0]["done"] and "pair:heard" in st["flies"][1]["done"] and "pair:heard" not in st["flies"][0]["done"]
 
 
-def test_the_pair_checks_are_off_the_single_fly_and_off_a_male_partner(conn, fconn):
+def test_the_pair_checks_are_off_the_single_fly_and_two_males_get_the_eyes_item_only(conn, fconn):
     single = Game(build_brain(conn, "game", seed=0), autopilot=False, seed=1)
     assert single.flies[0].pair_checks() == [] and not any(c["id"].startswith("pair:") for c in json.loads(single._make_layout())["checks"])
-    # two males: no female in the dish, so neither fly gets the male's items; a female with a male partner gets hers
+    # two males: no female in the dish, so neither fly gets the male's items, only the eyes' (a tap on a male tastes
+    # nothing, there is no song to hear); a female with a male partner gets hers
     mm = Game(build_brain(conn, "game", seed=0), autopilot=False, seed=1, brain_procs="off", partner={"conn": conn})
-    assert mm.flies[0].pair_checks() == [] and mm.flies[1].pair_checks() == []
+    assert [i for i, _ in mm.flies[0].pair_checks()] == ["pair:seen"] == [i for i, _ in mm.flies[1].pair_checks()]
+    assert "other male" in dict(mm.flies[0].pair_checks())["pair:seen"]
     fm = Game(build_brain(fconn, "game", seed=0), autopilot=False, seed=1, brain_procs="off", partner={"conn": conn})
     assert [i for i, _ in fm.flies[0].pair_checks()] == ["pair:heard", "pair:seen_him", "pair:touched"]
     assert [i for i, _ in fm.flies[1].pair_checks()] == ["pair:seen", "pair:sang", "pair:tapped"]
+
+
+# ------------------------------------------------------------------ what the third review found (docs/TWO_FLIES_PROGRESS.md)
+import io  # noqa: E402
+import time  # noqa: E402
+
+from virtual_fly.agent import PAIR_SEEN_MM  # noqa: E402
+from virtual_fly.scenarios import pair_available  # noqa: E402
+
+
+def test_each_flys_entry_says_whether_its_walking_urge_is_on(conn, fconn):
+    """Finding 1: autopilot is a per-fly action, so each flies entry carries its own (the page's W key and checkbox
+    read the focused fly's, not the top level's, which is fly 0's)."""
+    g = pair(conn, fconn)                                                     # the fixture: his urge off, hers on
+    g.tick()
+    f0, f1 = g.state_dict["flies"]
+    assert f0["autopilot"] is False and f1["autopilot"] is True and g.state_dict["autopilot"] is False
+    assert g.action({"type": "autopilot", "on": True})["ok"] is True
+    assert g.action({"type": "autopilot", "on": False, "fly": 1})["ok"] is True
+    g.tick()
+    f0, f1 = g.state_dict["flies"]
+    assert f0["autopilot"] is True and f1["autopilot"] is False and g.state_dict["autopilot"] is True
+    assert g.flies[0].autopilot is True and g.flies[1].autopilot is False
+    single = Game(build_brain(conn, "game", seed=0), autopilot=False, seed=1)
+    single.tick()
+    assert set(single.state_dict) == STATE_KEYS_ONE                           # no new key with one fly
+
+
+def test_every_flys_brain_records_its_spikes(served_pair):
+    """Finding 2: the record action started spike recording on fly 0's brain only, so /api/spikes?fly=1 was an
+    empty file; now every fly's brain records and ?fly=k downloads fly k's."""
+    g, base = served_pair
+    assert _post(base, {"type": "record", "on": True, "spikes": True})["ok"] is True
+    for _ in range(20):
+        g.tick()
+    assert g.state_dict["recording"] == {"frames": 20, "spikes": True, "active": True}
+    sizes = {}
+    for k in (0, 1):
+        with urllib.request.urlopen(urllib.request.Request(f"{base}/api/spikes?fly={k}"), timeout=10) as r:
+            assert r.status == 200 and r.headers["Content-Type"] == "application/octet-stream"
+            z = np.load(io.BytesIO(r.read()))
+        sizes[k] = int(z["neuron"].size)
+        assert z["time_ms"].size == sizes[k] == z["body_id"].size
+        assert g.flies[k].io.record("active") is True
+    assert sizes[0] > 0 and sizes[1] > 0
+    assert _post(base, {"type": "record", "on": False})["ok"] is True
+    g.tick()
+    assert g.flies[0].io.record("active") is False and g.flies[1].io.record("active") is False
+    with urllib.request.urlopen(urllib.request.Request(f"{base}/api/spikes?fly=1"), timeout=10) as r:   # the kept take
+        assert np.load(io.BytesIO(r.read()))["neuron"].size == sizes[1]
+    assert _post(base, {"type": "record", "on": True})["ok"] is True                        # a new take without spikes
+    g.tick()
+    assert g.flies[1].io.record("active") is False
+    with urllib.request.urlopen(urllib.request.Request(f"{base}/api/spikes?fly=1"), timeout=10) as r:
+        assert np.load(io.BytesIO(r.read()))["neuron"].size == 0
+    _post(base, {"type": "record", "on": False})
+    g.tick()
+
+
+def test_a_paused_game_zeroes_every_flys_rates(conn, fconn):
+    """Finding 3: paused, the top level published sps 0 while flies[k] kept the last tick's sps and graded_eps."""
+    g = pair(conn, fconn)
+    for _ in range(24):
+        g.tick()
+    assert g.state_dict["sps"] > 0 and all(e["sps"] > 0 for e in g.state_dict["flies"])
+    g.paused = True
+    g.tick_paused()
+    st = g.state_dict
+    assert st["sps"] == 0 and st["graded_eps"] == 0 and len(st["flies"]) == 2
+    assert [(e["sps"], e["graded_eps"]) for e in st["flies"]] == [(0, 0), (0, 0)]
+    th = threading.Thread(target=g.loop, daemon=True)                       # the loop itself, paused
+    seq = g.seq
+    th.start()
+    deadline = time.time() + 10
+    while g.seq == seq and time.time() < deadline:
+        time.sleep(0.01)
+    g.stop_loop.set()
+    th.join(timeout=10)
+    assert not th.is_alive() and g.seq > seq
+    assert g.state_dict["sps"] == 0 and [e["sps"] for e in g.state_dict["flies"]] == [0, 0]
+    g.paused = False
+    g.stop_loop.clear()
+    g.tick()
+    assert g.state_dict["sps"] > 0 and g.state_dict["flies"][0]["sps"] == g.state_dict["sps"] > 0
+
+
+def test_the_pair_scenario_finds_the_male_and_the_female_by_sex(conn, fconn, monkeypatch):
+    """Finding 9: with --female --partner male the female is fly 0 and the male fly 1; the placing, the measure and
+    the summary follow the sexes, not the indices."""
+    g = Game(build_brain(fconn, "game", seed=0), autopilot=False, seed=1, brain_procs="off",
+             partner={"conn": conn, "autopilot": False})
+    her, him = g.flies
+    assert (her.sex, him.sex) == ("female", "male") and pair_available(g, "pair_courtship") is None
+    assert "pair_courtship" in {s["id"] for s in json.loads(her._make_layout())["scenarios"]}
+    assert g.action({"type": "scenario", "id": "pair_courtship"}) == {"ok": True}
+    g.tick()
+    assert (him.body.pose.x, him.body.pose.y) == pytest.approx((-10.0, -8.0), abs=0.5) and him.body.pose.h == pytest.approx(0.3, abs=0.1)
+    assert (her.body.pose.x, her.body.pose.y) == pytest.approx((14.0, 10.0), abs=0.5)
+    assert g.scenario.measure["distance_mm"] == pytest.approx(30.0, abs=0.5) and g.world.female is None
+    # he sings next to her, taps her, and his giant fibre bursts: every number lands on the right fly
+    _force_decode(him, monkeypatch, song=0.9, court=0.9)
+    place(him, 0.0, 0.0, 0.0)
+    place(her, 5.0, 0.0, math.pi)
+    for _ in range(3):
+        g.tick()
+    m = g.scenario.measure
+    assert m["he_sings"] is True and m["she_hears_hz"] > 0 and m["taps"] >= 1 and him.mode == "court"
+    st = g.scenario.store
+    assert st["bursts"] == [m["bursts_male"], m["bursts_female"]]
+    for his_gf, her_gf in ((5, 0), (0, 5)):                                   # read by the next tick's measure, with the
+        before, prev = list(st["bursts"]), list(st["gf_prev"])              # game's own two-tick rule (her brain may burst too)
+        him.bt.gf, her.bt.gf = his_gf, her_gf
+        g.tick()
+        assert st["bursts"][0] == before[0] + (his_gf + prev[0] >= GF_BURST) and st["gf_prev"][0] == his_gf
+        assert st["bursts"][1] == before[1] + (her_gf + prev[1] >= GF_BURST) and st["gf_prev"][1] == her_gf
+        assert (g.scenario.measure["bursts_male"], g.scenario.measure["bursts_female"]) == tuple(st["bursts"])
+    assert st["bursts"][0] >= 1 and st["bursts"][1] >= 1
+    sang, (his, hers) = st["sang"], st["bursts"]
+    while g.scenario.current is not None:
+        g.scenario._next()
+    text = [e for e in g.events.items if e["text"].startswith("two-fly courtship finished")][0]["text"]
+    assert f"he sang {sang * TICK_MS / 1000:.1f} s" in text and sang >= 4 and f"giant-fibre bursts: his {his}, hers {hers}" in text
+    # the pair's courtship text is from her side, and the two-fly scenario names no index
+    texts = {s["id"]: s["description"] for s in json.loads(her._make_layout())["scenarios"]}
+    assert texts["courtship"].startswith("The simulated male is placed ahead of her") and "whichever" in texts["pair_courtship"]
+
+
+def test_two_males_cannot_run_the_pair_scenario_and_are_not_told_to_add_a_female(conn, fconn):
+    """Findings 9 and 12: pair_courtship is for a male and a female; with --partner male it is neither listed nor
+    accepted, the courtship texts speak of a male partner, and no checklist item asks for a female (D9)."""
+    mm = Game(build_brain(conn, "game", seed=0), autopilot=False, seed=1, brain_procs="off",
+              partner={"conn": conn, "autopilot": False})
+    f0, f1 = mm.flies
+    lay0, lay1 = (json.loads(f._make_layout()) for f in mm.flies)
+    assert "pair_courtship" not in {s["id"] for s in lay0["scenarios"]} | {s["id"] for s in lay1["scenarios"]}
+    assert [s["id"] for s in lay0["scenarios"]] == list(SCENARIOS)
+    r = mm.action({"type": "scenario", "id": "pair_courtship"})
+    assert r["ok"] is False and "male and a female" in r["error"] and "both flies are male" in r["error"] and mm.actions.empty()
+    with pytest.raises(KeyError, match="male and a female"):
+        mm.scenario.start("pair_courtship")
+    assert mm.scenario.current is None
+    text = {s["id"]: s["description"] for s in lay0["scenarios"]}["courtship"]
+    assert text.startswith("A second simulated male") and not any(w in text for w in ("female", " her ", " she "))
+    checks = {c["id"]: c["text"] for c in lay0["checks"]}
+    assert "court" not in checks and "fruitless" in checks["genetics"] and "no song to lose" in checks["genetics"]
+    assert "add a female" not in json.dumps(lay0["checks"]).lower()
+    assert [i for i in checks if i.startswith("pair:")] == ["pair:seen"]
+    # the eyes' item ticks when the other male crosses his view, and nothing else of the pair's ever does
+    for k in range(12):
+        place(f0, 0.0, 0.0, 0.0)
+        place(f1, 10.0, -6.0 + k, math.pi)
+        mm.tick()
+    assert "pair:seen" in f0.done and {i for i in f0.done | f1.done if i.startswith("pair:")} <= {"pair:seen"}
+    assert {i for i in f0.done if i.startswith("pair:")} <= {i for i, _ in f0.pair_checks()}
+    # the plain courtship scenario still places the partner where the scripted female would have stood
+    assert mm.action({"type": "scenario", "id": "courtship"})["ok"] is True
+    mm.tick()
+    assert mm.world.female is None and (f1.body.pose.x, f1.body.pose.y) == pytest.approx((14.0, 10.0), abs=0.5)
+    # two females: the same rule, from her side
+    ff = Game(build_brain(fconn, "game", seed=0), autopilot=False, seed=1, brain_procs="off", partner={"conn": fconn})
+    assert "both flies are female" in pair_available(ff, "pair_courtship")
+    assert [i for i, _ in ff.flies[0].pair_checks()] == ["pair:seen"] and "other female" in dict(ff.flies[0].pair_checks())["pair:seen"]
+    assert {s["id"] for s in json.loads(ff.flies[0]._make_layout())["scenarios"]} == set(SCENARIOS)
+
+
+def test_a_sugar_drop_crossing_his_eye_does_not_tick_pair_seen(conn, fconn, monkeypatch):
+    """Finding 10: the retina's small-object flag does not say what moved, so the 'seen' items need the other fly
+    within PAIR_SEEN_MM in the field of the eye that saw something small move."""
+    for what in ("sugar", "post"):
+        g = pair(conn, fconn)
+        f0, f1 = g.flies
+        f1.autopilot = False
+        _force_decode(f0, monkeypatch, forward=1.0)
+        place(f0, -10.0, 0.0, 0.0)
+        place(f1, -36.0, 0.0, 0.0)                                            # 26 mm straight behind him: no eye looks there
+        if what == "sugar":
+            g.world.add_food("sugar", 2.0, 4.0)
+        else:
+            g.world.add_obstacle(20.0, 14.0, 4.0)
+        small = set()
+        for _ in range(80):
+            g.tick()
+            small |= set(f0.senses_now.get("small", ""))
+        assert small, what                                                   # it did cross his eye as a small moving object
+        assert "pair:seen" not in f0.done and f0.body.pose.x > -8.0, what      # and he walked past it
+    assert PAIR_SEEN_MM >= 20.0
+    g = pair(conn, fconn)                                                     # the partner crossing his view: ticked, as before
+    f0, f1 = g.flies
+    f1.autopilot = False
+    for k in range(12):
+        place(f0, 0.0, 0.0, 0.0)
+        place(f1, 10.0, -6.0 + k, math.pi)
+        g.tick()
+    assert "pair:seen" in f0.done
+
+
+def test_pair_sang_needs_her_within_song_range(conn, fconn, monkeypatch):
+    """Finding 11: the item says 'within 15 mm of her'; a song she cannot hear does not tick it."""
+    g = pair(conn, fconn)
+    f0, f1 = g.flies
+    f0.autopilot = f1.autopilot = False
+    _force_decode(f0, monkeypatch, song=0.9, court=0.9)
+    place(f0, -20.0, 0.0, 0.0)
+    place(f1, 20.0, 0.0, math.pi)                                             # 40 mm: beyond SONG_FAR_MM
+    for _ in range(3):
+        g.tick()
+    assert f0.mode == "court" and "court" in f0.done and "pair:sang" not in f0.done and "hears_song" not in f1.senses_now
+    assert 10.0 < social.SONG_FAR_MM < 40.0
+    place(f0, 0.0, 0.0, 0.0)
+    place(f1, 10.0, 0.0, math.pi)
+    g.tick()
+    assert "pair:sang" in f0.done and "hears_song" in f1.senses_now
+
+
+def test_fly_takes_a_few_ascii_digits_only(served_pair):
+    """Review (api lens): str.isdigit took '²' and the like, which int() refused with a 500; a 5,000-digit string
+    tripped int()'s conversion limit. Both answer the documented 404 now."""
+    g, base = served_pair
+    for q in ("%C2%B2", "1" * 5000, "%EF%BC%91", "1.0", "+1", "%201", "0x1", "-0"):
+        code, err = _get(base, f"/api/layout?fly={q}")
+        assert code == 404 and err["ok"] is False and err["error"].startswith("no fly") and len(err["error"]) < 40, q
+    assert _get(base, "/api/layout?fly=1")[0] == 200 and _get(base, "/api/layout?fly=001")[0] == 200
+    assert _get(base, "/api/layout?fly=7")[0] == 404 and _get(base, "/api/layout")[0] == 200
+
+
+def test_the_pair_measure_skips_the_senses_of_the_tick_it_started_in(conn, fconn):
+    """Review (scenario lens): Game.tick runs the actions (which place the flies) and then the measure, whose senses
+    are the tick before's; a tap from before the start is not counted."""
+    g = pair(conn, fconn)
+    f0, f1 = g.flies
+    f0.autopilot = f1.autopilot = False
+    place(f0, 0.0, 0.0, 0.0)
+    place(f1, 5.0, 0.0, math.pi)
+    g.tick()
+    assert f0.senses_now.get("touches_fly") == 1                              # nose to nose: a tap before the scenario
+    assert g.action({"type": "scenario", "id": "pair_courtship"}) == {"ok": True}
+    g.tick()
+    m = g.scenario.measure
+    assert m["taps"] == 0 and m["distance_mm"] == pytest.approx(30.0, abs=0.5) and g.scenario.store["ticks"] == 0
+    for _ in range(40):
+        g.tick()
+    assert g.scenario.store["taps"] == 0 and g.scenario.measure["taps"] == 0 and g.scenario.store["ticks"] == 40
+    assert "fresh" not in g.scenario.store
+
+
+def test_pair_checks_are_listed_only_for_channels_that_are_on(conn, fconn, monkeypatch):
+    """Review (scenario lens): an item whose channel is off could never tick, so it is not listed."""
+    g = pair(conn, fconn, social=SocialConfig(seen=False, song=False, contact=False))
+    assert g.flies[0].pair_checks() == [] and g.flies[1].pair_checks() == []
+    assert not any(c["id"].startswith("pair:") for f in g.flies for c in json.loads(f._make_layout())["checks"])
+    g = pair(conn, fconn, social=SocialConfig(song=False))
+    f0, f1 = g.flies
+    assert [i for i, _ in f0.pair_checks()] == ["pair:seen", "pair:tapped"]
+    assert [i for i, _ in f1.pair_checks()] == ["pair:seen_him", "pair:touched"]
+    f0.autopilot = f1.autopilot = False
+    _force_decode(f0, monkeypatch, song=0.9, court=0.9)                        # he sings next to her: no song channel, no item
+    place(f0, 0.0, 0.0, 0.0)
+    place(f1, 8.0, 0.0, math.pi)
+    for _ in range(3):
+        g.tick()
+    assert "court" in f0.done and "pair:sang" not in f0.done and "pair:heard" not in f1.done
+    g = pair(conn, fconn)
+    assert [i for i, _ in g.flies[0].pair_checks()] == ["pair:seen", "pair:sang", "pair:tapped"]
+    assert [i for i, _ in g.flies[1].pair_checks()] == ["pair:heard", "pair:seen_him", "pair:touched"]

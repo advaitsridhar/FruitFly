@@ -99,8 +99,11 @@ def make_handler(game):
                     return self._stream()
                 # every endpoint that reads one fly takes ?fly=k (default 0, the protagonist; docs/TWO_FLIES_PLAN.md 5.7)
                 raw = get("fly", "0")
-                if not (isinstance(raw, str) and raw.isdigit() and int(raw) < len(game.flies)):
-                    return self._error(f"no fly {raw}", 404)
+                # a few ASCII digits only: str.isdigit also takes '\u00b2' and the like, which int() refuses, and a
+                # thousands-digit string trips int()'s conversion limit (both would answer 500 instead of 404)
+                if not (isinstance(raw, str) and raw.isascii() and raw.isdigit() and len(raw) <= 3
+                        and int(raw) < len(game.flies)):
+                    return self._error(f"no fly {raw[:20]}", 404)
                 fly = game.fly(int(raw))
                 conn = fly.conn                           # a grown fly swaps the wiring in
                 if path == "/api/layout":

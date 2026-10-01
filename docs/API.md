@@ -83,7 +83,7 @@ One JSON object per tick (40 per second at real time). Same schema on both endpo
 | `events[]` | the last 12 events `{id, t, kind, text}`; with two or more flies an event of one fly's also carries `fly` (its id); `event_seq` is the newest id |
 | `scenario` | `null` or `{id, name, step, steps, caption, left, measure{}}` |
 | `recording` | `null` or `{frames, spikes, active}` (after `record off` the frames are kept for download, `active` is false, until the next `record on`) |
-| `flies[]` | only with two or more flies (`--partner`): one entry per fly, `{id, sex, dataset, fly, mode, driver, senses, retina, hz, motor, spikes, sps, graded_eps, stims, calms, state, learning, silenced, baseline, modulated, custom, genome, done}`, each field as the top-level one of the same name (the top level keeps mirroring fly 0); `senses` may also hold `touches_fly` (the other fly's id), `hears_song` (Hz on its Johnston's organ), `smells_cva`, `virgin_drive`; every fly's `learning` comes with its tick |
+| `flies[]` | only with two or more flies (`--partner`): one entry per fly, `{id, sex, dataset, fly, mode, autopilot, driver, senses, retina, hz, motor, spikes, sps, graded_eps, stims, calms, state, learning, silenced, baseline, modulated, custom, genome, done}`, each field as the top-level one of the same name (the top level keeps mirroring fly 0; `autopilot` is that fly's walking urge, which the `autopilot` action sets per fly); `senses` may also hold `touches_fly` (the other fly's id), `hears_song` (Hz on its Johnston's organ), `smells_cva`, `virgin_drive`; every fly's `learning` comes with its tick |
 | `genome` | `{level, seed, growing: {level, seed, secs[, reason: "parts", parts]} or null, survival: {running, results: [{name, ok, fragile, seeds, readouts: [{label, hz, lo, hi, ok, per_seed[], seeds_out}], missing[]}], ok, tested, secs, where} or null, wiring: {edges_grown, synapses_grown, shared_connections_fraction} or null, rules: {level, groups, pairs, numbers, rank} or null, error, parts: {on, status}}`: the current fly's genome (see `grow` and `parts`). Each experiment runs on five seeds: `hz` is the mean, `ok` compares the mean with the range (allowing max(1 Hz, 15 %) above the top, SCIENCE.md section 2), `seeds_out` counts the seeds that miss on their own (by the same rule), and `fragile` marks an experiment that passes on the mean while some seed misses. `where` says how the re-test ran: `process` (a separate low-priority process, the default), `thread` (in the game's process: when no child process can be started or the child fails, when the game was made with `retest="thread"` or with its own brain factory and no `brain_kwargs`, or when the connectome has no file on disk) or `cache` (this fly was tested with the same settings before), and `secs` how long it took. `missing` (present only when non-empty) names the populations this fly does not have: their readouts are left out, and `ok` is `null` (n/a) when the experiment cannot be done without them. `parts.status` is `null` when the parts list is off, else `{tone: {dopamine: {mean, max, targets_on}, octopamine: {...}, serotonin: {...}}, graded_active, graded, modulatory, targets, local: [{spec, mode, release: {<compartment>: 0-1}}]}` (`mean` = the tone over that modulator's targets as a fraction of its full effect; `release` = how much of the whole cell's release a local neuron such as APL gives each compartment right now, weighted by its output synapses there, 1 when nothing is going on; `mode` is `regions` when the compartments are neuPrint's mushroom-body regions (calyx, pedunculus, each lobe; from `data/mb_roi_connectivity.json.gz`), `groups` when they are the Kenyon-cell lobe systems) |
 
 `world` fields: `food[] = {id, kind (sugar|bitter|water), x, y, r, amount}`; `obstacles[] = {id, x, y, r}`;
@@ -111,7 +111,8 @@ With `--partner`, the actions `zap`, `silence`, `unsilence`, `modulate`, `watch`
 `parts`, `state`, `place_fly`, `calm`, `autopilot`, `dust`, `shock` and `sound` take an optional `"fly": k` (default
 0): the spec of a `zap`, `silence`, `modulate` or `watch` is then checked against that fly's connectome (a `zap` of
 `pIP10` on the female answers `{"ok": false}`), the `n` it returns is that fly's count, and a `watch` may not take one
-of that fly's built-in readout keys (hers include the `Her decisions` group). World actions ignore `fly`.
+of that fly's built-in readout keys (hers include the `Her decisions` group). A `fly` on a world action is checked like
+any other (refused when it is not a whole number or not a fly in the dish) and otherwise ignored.
 
 | type | fields | effect |
 |---|---|---|
@@ -139,8 +140,8 @@ of that fly's built-in readout keys (hers include the `Her decisions` group). Wo
 | `wind` | `angle, speed` | rad (direction it blows toward), mm/s (0 = off) |
 | `female` | `on[, x, y]` | add / remove the scripted female (refused with `on: true` while a simulated partner is in the dish) |
 | `learning` | `on` and/or `forget: true` | toggle plasticity / reset learned weights |
-| `scenario` | `id` or none | start a scenario / stop the running one (a two-fly id such as `pair_courtship` is refused without a simulated partner) |
-| `record` | `on[, spikes]` | start/stop recording (frames; optionally every spike) |
+| `scenario` | `id` or none | start a scenario / stop the running one (a two-fly id such as `pair_courtship` is refused without a simulated partner, and `pair_courtship` also when the dish has no male and female pair: the layout lists only the scenarios this dish can run) |
+| `record` | `on[, spikes]` | start/stop recording (frames; optionally every spike, of every fly's brain when there are two) |
 | `state` | `hunger`, `thirst` | set internal state 0..1 |
 | `place_fly` | `x, y[, h]` | teleport the fly |
 
@@ -158,7 +159,7 @@ of that fly's built-in readout keys (hers include the `Her decisions` group). Wo
 | `GET /api/learning` | `{learning: {MBONtype: {strength, valence, nt, dopamine, kc_synapses}}, settings, depressed_fraction}` (`kc_synapses` and `settings.plastic_synapses` count KC→MBON connections, neuron pairs with one learned weight each, not synapses: 33,496 connections carrying 402,850 synapses in MaleCNS; `depressed_fraction` is a share of those connections) |
 | `GET /api/decoder` | the decoder's DN→motor-pool table |
 | `GET /api/recording` | JSON download of the recorded frames `{frames, settings}`; with two or more flies each frame also carries `flies: [{id, fly, mode, hz, senses, sps}]` and a small `world` snapshot (`food, obstacles, odours, wind, stripes, tool`) |
-| `GET /api/spikes` | npz download of recorded spikes (`time_ms`, `neuron`, `body_id`) |
+| `GET /api/spikes` | npz download of recorded spikes (`time_ms`, `neuron`, `body_id`); with two or more flies, `?fly=k` downloads fly k's (every fly's brain records while `record` is on with `spikes`; the state's `recording.active` is the game's one switch, the same for every fly) |
 
 ### `GET /api/genome`
 
