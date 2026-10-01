@@ -90,12 +90,7 @@ def step_tick(brain, dt: float, rates: dict, col_idx, col_hz):
         else:
             b.set_stimuli(rates)
         b.reset_counts()
-        chunks = []
-        for _ in range(int(round(TICK_MS / b.dt))):
-            s = b.step()
-            if s.size:
-                chunks.append(s)
-        spikes = np.concatenate(chunks) if chunks else np.zeros(0, dtype=np.int64)
+        spikes = b.advance(int(round(TICK_MS / b.dt)))   # every spike of the tick in order (the GPU runs whole chunks)
         counts = b.spike_count
         live = np.where(b.silenced_mask(), 0, counts) if b.silenced else counts   # what reaches the body
     return spikes, counts, live

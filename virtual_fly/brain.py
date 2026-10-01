@@ -123,17 +123,28 @@ class FlyBrain:
         say it is: slow modulators, graded cells, per-type thresholds (see :mod:`virtual_fly.parts`).
     """
 
+    def __new__(cls, *args, **kwargs):
+        """``backend="cupy"`` builds the GPU subclass (:class:`virtual_fly.gpubrain.GpuFlyBrain`), which refuses
+        with one line when CuPy or an NVIDIA GPU is missing; every other backend builds this class."""
+        backend = kwargs.get("backend", args[13] if len(args) > 13 else "auto")
+        if backend == "cupy" and cls is FlyBrain:
+            from .gpubrain import GpuFlyBrain
+            return object.__new__(GpuFlyBrain)
+        return object.__new__(cls)
+
     def __init__(self, conn: Connectome, dt: float = 0.5, gain: float | None = None, kenyon_gain: float = 0.25,
                  fatigue_mv: float = 0.0, fatigue_ms: float = 2000.0,
                  std_u: float = 0.0, std_tau_ms: float = 500.0,
                  noise_hz: float = 0.0, noise_mv: float = 1.0, noise_spec: str = "all",
                  threshold_jitter: float = 0.0, seed: int = 0, backend: str = "auto", parts=None):
         self.conn = conn
-        if backend not in ("auto", "numpy", "numba"):
-            raise ValueError("backend must be 'auto', 'numpy' or 'numba'")
+        if backend not in ("auto", "numpy", "numba", "cupy"):
+            raise ValueError("backend must be 'auto', 'numpy', 'numba' or 'cupy'")
         if backend == "numba" and not fastbrain.available():
             raise RuntimeError("the numba backend needs the numba package: pip install numba")
-        self.backend = "numba" if (backend == "numba" or (backend == "auto" and fastbrain.available())) else "numpy"
+        # "cupy" is the GPU subclass (virtual_fly.gpubrain.GpuFlyBrain, chosen in __new__); "auto" never picks it
+        self.backend = "cupy" if backend == "cupy" else \
+            "numba" if (backend == "numba" or (backend == "auto" and fastbrain.available())) else "numpy"
         self.dt = float(dt)
         if gain is None:
             gain = DEFAULT_GAIN.get(getattr(conn, "sex", "male"), DEFAULT_GAIN["male"])
@@ -415,6 +426,8 @@ class FlyBrain:
         self.quiet = False
         if self.backend == "numba":
             return self._step_numba(slot)
+        if self.backend == "cupy":
+            return self._step_gpu(slot)
         if self._pending[slot]:
             arriving = self.queue[slot]
             if self._mod_active:                         # neuromodulation: the tone scales what arrives
@@ -728,6 +741,17 @@ class FlyBrain:
         if self.std_x is not None:
             weights = weights * np.repeat(x, lengths).astype(np.float32)
         np.add.at(target, self.post_idx[edges], weights)
+
+    def advance(self, n_steps: int) -> np.ndarray:
+        """Advance ``n_steps`` steps and return every spike of those steps in order (each step's sorted indices,
+        step after step): what the game reads per 25 ms tick. On the CPU this is ``n_steps`` calls of :meth:`step`,
+        identical by construction; the GPU backend runs whole chunks of steps at once."""
+        chunks = []
+        for _ in range(int(n_steps)):
+            s = self.step()
+            if s.size:
+                chunks.append(s)
+        return np.concatenate(chunks) if chunks else self._empty
 
     def run(self, ms: float, record: bool = False):
         """Simulate ``ms`` milliseconds. With ``record=True`` returns a list of (time_ms, spike indices)."""

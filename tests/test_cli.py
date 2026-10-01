@@ -611,3 +611,13 @@ def test_backend_numba_without_numba_says_how_to_get_it(monkeypatch):
         main(["--backend", "numba", "--stim", "MN9:60"])
     assert str(e.value).startswith("--backend numba needs the numba package, which is not installed: pip install numba")
     assert "\n" not in str(e.value)
+
+
+def test_backend_cupy_without_cupy_says_what_is_missing(monkeypatch):
+    """``--backend cupy`` on a machine without CuPy or a GPU stops with one line before anything is loaded."""
+    from virtual_fly import gpubrain
+    monkeypatch.setattr(gpubrain, "unavailable_reason", lambda: "the cupy backend needs the cupy package (pip install cupy-cuda13x)")
+    with pytest.raises(SystemExit) as e:
+        main(["--backend", "cupy", "--stim", "MN9:60"])
+    assert str(e.value).startswith("--backend cupy: the cupy backend needs the cupy package (pip install cupy-cuda13x)")
+    assert "leave out --backend" in str(e.value)

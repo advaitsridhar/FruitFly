@@ -68,8 +68,8 @@ def _main(argv=None):
                     help="don't drive the connectome's T4/T5 motion-detector columns from the retina")
     ap.add_argument("--dt", type=float, default=0.5, help="brain time step in ms (0.5 default; 1.0 = twice as fast, slightly coarser)")
     ap.add_argument("--fast", action="store_true", help="same as --dt 1.0: for computers that run the brain below real time")
-    ap.add_argument("--backend", choices=("auto", "numpy", "numba"), default="auto",
-                    help="brain integrator: the compiled numba kernels when numba is installed (auto), or plain NumPy")
+    ap.add_argument("--backend", choices=("auto", "numpy", "numba", "cupy"), default="auto",
+                    help="brain integrator: the compiled numba kernels when numba is installed (auto), plain NumPy, or the GPU (cupy: needs the cupy package and an NVIDIA GPU); same spikes every way")
     ap.add_argument("--grow", metavar="LEVEL", default=None,
                     help="start with a fly grown from its wiring rules: type, class or bottleneck:K, K = 1 to 2048 (the Genome card does the same)")
     ap.add_argument("--grow-seed", type=int, default=1, help="which individual to grow (any whole number)")
@@ -131,6 +131,11 @@ def _main(argv=None):
         from .fastbrain import available as numba_available
         if not numba_available():
             ap.error("--backend numba needs the numba package: pip install numba (or leave out --backend to use NumPy)")
+    if args.backend == "cupy":                   # the same for the GPU: what is missing, in one line, before loading
+        from .gpubrain import unavailable_reason
+        reason = unavailable_reason()
+        if reason is not None:
+            ap.error(f"--backend cupy: {reason} (or leave out --backend to use the CPU)")
     overrides = {"seed": args.seed, "dt": 1.0 if args.fast else args.dt, "backend": args.backend}
     if args.fatigue is not None:
         overrides["fatigue_mv"] = args.fatigue
@@ -149,7 +154,9 @@ def _main(argv=None):
     print("Loading the fly's nervous system...", file=sys.stderr)
     conn = load_connectome(female=args.female)
     brain = build_brain(conn, profile, **overrides)
-    if brain.backend == "numba":
+    if brain.backend == "cupy":
+        print("Brain integrator: the GPU (CuPy), as asked with --backend cupy.", file=sys.stderr)
+    elif brain.backend == "numba":
         print("Brain integrator: compiled (numba).", file=sys.stderr)
     elif args.backend == "numpy":
         print("Brain integrator: NumPy (as asked with --backend numpy).", file=sys.stderr)
