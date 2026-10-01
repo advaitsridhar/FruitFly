@@ -269,6 +269,11 @@ entry. Build: numba 0.3-0.8 s, cupy 2.0-3.1 s (the first NVRTC compile is cached
 the ok and fragile flags, the after-stimulus activity); the closing lines name the integrator "the GPU (CuPy, --backend cupy)".
 About 15-20 s of wall time per run on the first engine.
 
+### Phase 2: the two-fly game on the GPU through the brain server (plan 6.5; 2026-10-01; `../runs/p2-ctrlc-gpu.log`)
+`fly_game.py --partner female --backend cupy` with the 1.7 `Ctrl+C` recipe: "Brain integrator: the GPU (CuPy) in the brain process";
+"Partner: flywire:v783 (female), its brain in the one brain process, as is the first fly's"; one brain child (plus multiprocessing's
+resource tracker) in the session, both flies in the state, he in court mode after 7 s; "Bye!", exit code 0, nothing left.
+
 ### Phase 2: where a GPU tick's time went before the speed work (2026-10-01; the profile script in the session scratchpad)
 The same input, 80 ticks, 40 monitors with 25 ms bins as the game has, plasticity on, parts off, ms per 25 ms tick: male 5.92 in all
 (4.2x real time), of which the device stream (the input upload, the ten-step graph, the two downloads) 4.26, `plasticity.step`
