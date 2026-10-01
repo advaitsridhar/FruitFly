@@ -2580,9 +2580,27 @@ section 9.6: an RTX 4070 Laptop GPU, compute capability 8.9, CuPy 14.2.0, CUDA 1
 
 MEASURED_SPEED_PLACEHOLDER
 
-### 11.4 Not modelled, tried and not adopted
+### 11.4 Tried, not adopted, and what is left
 
-MEASURED_NOTES_PLACEHOLDER
+**Tried, not adopted.** The first engine (2026-10-01, the same day) ran nine kernels per step, pulled each hit target with
+one thread (the female's largest in-degree, 10,356 edges, is 324 bitmap words walked one after another), downloaded the
+step boundaries and the spike log in two synchronising copies per chunk, and replayed the host's bookkeeping step by step:
+it gave the CPU's bits but at the CPU's pace (male 5.9 ms per tick, female 7.7). It also carried a race: its device arrays
+were made on CuPy's default stream and filled on the engine's own non-blocking stream, which CUDA does not order against each
+other, so beside another process's GPU load an initialising memset could land after an upload (2 of 50 runs next to a GPU hog
+gave different spikes). Every device operation now runs on one blocking stream (0 of 110 runs); the kernels are six per step;
+the pull is a warp per hit target; a chunk is one upload, one graph and one download; the host replays per chunk.
+
+**Not changed, on purpose.** No float atomics anywhere (their rounding and denormal handling are not guaranteed, and a float
+atomic push is not even run-to-run deterministic); no fast-math, no fused multiply-add, no flush-to-zero; no inexact
+fixed-point mode (plan 6.1's fallback was never needed: exactness held in every test and on the real data); the random
+numbers never move to the device; the chunk never crosses a block boundary that the host must serve.
+
+**What is left.** The device's share is now about 1.9 ms per brain per tick (about 38 µs per 0.5 ms step: the dense pass 12,
+the pull 10, the send 8, the hit list 3, the rest 5), the host's about 1.3-2.3 ms (its own plasticity block, the monitors, the
+draws, the replay loop). Two brains in one process run one after the other; launching both brains' chunks before waiting on
+either would hide one brain's device time behind the other's host replay (a generator-shaped `advance_steps` and a change in
+the brain server). The dense pass could lose a few microseconds with narrower per-neuron arrays. None of these changes a bit.
 
 ## 12. Honest limitations
 
