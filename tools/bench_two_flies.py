@@ -243,11 +243,12 @@ def pair_game_rtf(parts: bool, dt: float, ticks: int, backend: str = "auto") -> 
         wall = sum(per_tick)
         q = statistics.quantiles(per_tick, n=100)
         children, seen = {}, set()
-        for a in game.flies:
-            proc = getattr(a.io, "proc", None) or getattr(getattr(a.io, "server", None), "proc", None)
+        for a in game.flies:                      # a process per brain, or the one brain server for every brain (6.5)
+            server = getattr(a.io, "server", None)
+            proc = getattr(a.io, "proc", None)
             if proc is not None and proc.pid not in seen:
                 seen.add(proc.pid)
-                children[f"fly{a.id}_{a.sex}" if getattr(a.io, "proc", None) is not None else "brain_server"] = _vmhwm_mb(proc.pid)
+                children["brain_server" if server is not None else f"fly{a.id}_{a.sex}"] = _vmhwm_mb(proc.pid)
         return {"fly": "male+female", "body": "drawn", "parts": parts, "dt": dt, "ticks": ticks, "flies": len(game.flies),
                 "backend": game.flies[0].io.settings().get("backend"),
                 "channels": sorted(game.social.names()) if hasattr(game.social, "names") else None,

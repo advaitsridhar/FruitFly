@@ -299,3 +299,57 @@ def test_monitors_recording_and_callbacks_match_the_cpu_across_chunks(conn, bin_
     assert len(seen["a"]) == len(seen["b"]) > 0 and all(x == y and np.array_equal(sa, sb) for (x, sa), (y, sb) in zip(seen["a"], seen["b"]))
     assert np.array_equal(a.spike_count, b.spike_count) and a.total_spikes == b.total_spikes
     _assert_bits_equal(a, b)
+
+
+def test_two_gpu_brains_resumed_in_turn_equal_their_own_runs(conn):
+    """``advance_steps_lazy`` pauses after each chunk's launch; two brains resumed in turn, the brain server's
+    round-robin, give each the spikes and the state bytes it gives on its own, and the CPU's generator form gives
+    the same without ever pausing."""
+    def build(name, seed, backend="cupy"):
+        cfg = CONFIGS[name]
+        b = FlyBrain(conn, seed=seed, backend=backend, **cfg)
+        b.stimulate("LB3b,LB3c", 120)
+        b.stimulate("LC4/R,LPLC2/R", 150)
+        if cfg.get("parts"):
+            b.stimulate("Mi1/R,Mi9/R", 80)
+            b.stimulate("prefix:JO-B", 100)
+            if cfg.get("kenyon_gain"):
+                b.stimulate("ORN_DM4,ORN_VM7d,ORN_DP1m", 120)
+        return b
+    plan = [("everything", 3), ("parts_mb", 4)]
+    n = 230                                                     # chunks of 10 and 20, and blocks and a tick inside
+    alone = [build(name, seed) for name, seed in plan]
+    outs_alone = [b.advance_steps(n) for b in alone]
+    together = [build(name, seed) for name, seed in plan]
+    gens = [b.advance_steps_lazy(n) for b in together]
+    outs = {}
+    pending = list(enumerate(gens))
+    rounds = 0
+    while pending:
+        still = []
+        for i, gen in pending:
+            try:
+                next(gen)
+            except StopIteration as stop:
+                outs[i] = stop.value
+            else:
+                still.append((i, gen))
+        pending = still
+        rounds += 1
+    assert rounds > 5                                           # both really paused, chunk after chunk
+    for i, (a, b) in enumerate(zip(alone, together)):
+        assert _raster(outs_alone[i]) == _raster(outs[i])
+        _assert_bits_equal(a, b)
+        assert a.t == b.t == n and a.total_spikes == b.total_spikes
+        assert b._gpu._inflight is None
+    ref = build("everything", 3, backend="numpy")
+    gen = ref.advance_steps_lazy(n)
+    with pytest.raises(StopIteration) as stop:                  # the CPU form: everything at the first resumption
+        next(gen)
+    assert _raster(stop.value.value) == _raster(outs_alone[0])
+    _assert_bits_equal(ref, alone[0])
+    with pytest.raises(RuntimeError, match="in flight"):        # a chunk left in flight is an error, not a silent skip
+        gen = together[0].advance_steps_lazy(10)
+        next(gen)
+        together[0]._gpu.launch(together[0].t, 10, [None] * 10, [None] * 10)
+    together[0]._gpu.collect()

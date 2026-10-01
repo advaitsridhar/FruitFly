@@ -755,6 +755,14 @@ class FlyBrain:
                 out.append((t, s))
         return out
 
+    def advance_steps_lazy(self, n_steps: int):
+        """The generator form of :meth:`advance_steps`, for a driver that runs several brains at once (the brain
+        server of ``brainio.py``): a GPU brain pauses after each chunk's launch so another brain's work can overlap
+        it; on the CPU the whole run happens at the first resumption and nothing pauses. The generator's return value
+        (its ``StopIteration``'s) is the list :meth:`advance_steps` returns."""
+        return self.advance_steps(n_steps)
+        yield  # noqa: unreachable; it makes this a generator, as the GPU backend's override is one
+
     def advance(self, n_steps: int) -> np.ndarray:
         """Advance ``n_steps`` steps and return every spike of those steps in order (each step's sorted indices,
         step after step): what the game reads per 25 ms tick (:meth:`advance_steps` without the step numbers)."""

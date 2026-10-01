@@ -354,6 +354,7 @@ class GpuEngine:
         # kernel, and under a busy GPU that memset was seen to land late and wipe the uploaded thresholds. A blocking
         # stream (the default kind) also waits for anything CuPy itself puts on the legacy default stream.
         self.stream = cp.cuda.Stream()
+        self._inflight = None                               # a launched chunk not yet collected (launch / collect)
         with self.stream:
             self._build(brain)
         self.stream.synchronize()
@@ -717,7 +718,19 @@ class GpuEngine:
     def run(self, t0: int, count: int, noise, forced):
         """Launch ``count`` steps from step ``t0`` (a whole chunk, C or 2C steps, as a graph; fewer steps one by one)
         with the host's draws (``noise``: per step a (neurons, counts) pair or None; ``forced``: per step an index
-        array or None). Returns the per-step spike lists, each sorted, int64."""
+        array or None) and wait for them. Returns the per-step spike lists, each sorted, int64. The two halves,
+        :meth:`launch` and :meth:`collect`, can be called apart so that another brain's work overlaps this one's."""
+        self.launch(t0, count, noise, forced)
+        return self.collect()
+
+    def launch(self, t0: int, count: int, noise, forced):
+        """The first half of a chunk: the host's draws into the pinned input buffer, the upload, the graph (or the
+        steps one by one) and the download of the step boundaries and the log's first part, all queued on the
+        engine's stream; returns at once, without waiting for any of it. :meth:`collect` finishes the chunk. Between
+        the two the host is free, and the brain server uses that to launch the other brain's chunk and to replay the
+        other brain's finished one while this chunk runs on the device."""
+        if self._inflight is not None:
+            raise RuntimeError("a chunk of this brain is still in flight: collect it before launching another")
         C = count if count in (self.C, self.C2) else self.C
         n_off = [0]
         f_off = [0]
@@ -748,6 +761,7 @@ class GpuEngine:
             np.concatenate(f_parts, out=host[hdr + 2 * nn:used])
         stream = self.stream
         guess = min(self._out_guess, self.d_log.size)
+        e0 = e1 = None
         with stream:
             self.d_inbuf.data.copy_from_host_async(host.ctypes.data, used * 4, stream)
             if self.profile:
@@ -764,6 +778,17 @@ class GpuEngine:
             # the log sits after the C2 step boundaries in d_out, whatever this chunk's length
             L = self.C2
             self.d_out.data.copy_to_host_async(self.h_out.ctypes.data, (L + guess) * 4, stream)
+        self._inflight = (count, guess, e0, e1)
+
+    def collect(self):
+        """The second half of a chunk: wait for the stream, fetch the rest of the log when the first download was
+        short, and return the per-step spike lists, each sorted, int64."""
+        if self._inflight is None:
+            raise RuntimeError("no chunk of this brain is in flight: launch one first")
+        count, guess, e0, e1 = self._inflight
+        self._inflight = None
+        stream = self.stream
+        L = self.C2
         stream.synchronize()
         step_end = self.h_out[:count]
         total = int(step_end[count - 1])
@@ -789,6 +814,15 @@ class GpuEngine:
 
 
 # ---------------------------------------------------------------------------------------------------- the brain
+def _drive(gen):
+    """Run a generator (``advance_steps_lazy``, ``_run_steps_lazy``) to its end and return its value."""
+    try:
+        while True:
+            next(gen)
+    except StopIteration as stop:
+        return stop.value
+
+
 def _device_property(name: str):
     def get(self):
         if self._gpu is not None and name in self._stale:
@@ -876,6 +910,15 @@ class GpuFlyBrain(FlyBrain):
         return out[0][1] if out else self._empty
 
     def advance_steps(self, n_steps: int) -> list:
+        return _drive(self.advance_steps_lazy(n_steps))
+
+    def advance_steps_lazy(self, n_steps: int):
+        """The generator form of :meth:`advance_steps` (:meth:`FlyBrain.advance_steps_lazy`): it pauses once after
+        each chunk's launch, while the device works, and goes on with the chunk's collect and the host's work when
+        resumed; its return value is the list :meth:`advance_steps` returns. A driver that holds several brains (the
+        brain server) resumes them in turn, so one brain's device time hides behind another's host work and the two
+        graphs run at once on the device. A started generator must be run to its end: a chunk left in flight is an
+        error at the next launch. The single steps and the quiet steps inside the loop never pause."""
         out = []
         n = int(n_steps)
         C = self._gpu.C
@@ -901,7 +944,7 @@ class GpuFlyBrain(FlyBrain):
             # the long chunk when it starts at a block (so the blocks fall at its start and end) and ends within the
             # tick (so a 25 ms monitor bin closes at a chunk end, never inside one)
             count = C2 if (self.t % C2 == 0 and n >= C2 and (self.t % tick) + C2 <= tick) else C
-            out.extend(self._run_steps(count))
+            out.extend((yield from self._run_steps_lazy(count)))
             n -= count
         self._weights_fresh = False
         return out
@@ -934,12 +977,17 @@ class GpuFlyBrain(FlyBrain):
         return noise, forced
 
     def _run_steps(self, count: int) -> list:
-        """``count`` steps from the current step on the device, then the host's work for each in the CPU's order.
-        What must stay per step is (the recording, the callbacks); the rest is done once for the run where that is
-        exactly the CPU's result: the spike counts and the local tally are integer sums, the tone deposits keep the
-        spike order in one call, the refractory lists are the last steps' resets, the plasticity's tallies are
-        exact counts (``step_block``), and a monitor bin can only close at a step the run ends with (else the slow
-        exact path is taken)."""
+        """``count`` steps on the device and the host's work for them, all at once (:meth:`_run_steps_lazy`)."""
+        return _drive(self._run_steps_lazy(count))
+
+    def _run_steps_lazy(self, count: int):
+        """A generator: ``count`` steps from the current step on the device, then the host's work for each in the
+        CPU's order; it pauses once between the launch and the collect, where another brain can be served. What must
+        stay per step is (the recording, the callbacks); the rest is done once for the run where that is exactly the
+        CPU's result: the spike counts and the local tally are integer sums, the tone deposits keep the spike order in
+        one call, the refractory lists are the last steps' resets, the plasticity's tallies are exact counts
+        (``step_block``), and a monitor bin can only close at a step the run ends with (else the slow exact path is
+        taken). The return value is the run's [(t, spikes), ...]."""
         t0 = self.t
         gpu = self._gpu
         if t0 % self._fatigue_block == 0:
@@ -952,7 +1000,9 @@ class GpuFlyBrain(FlyBrain):
         if not getattr(self, "_weights_fresh", False):
             gpu.upload_weights(self)
         noise, forced = self._draw(count)
-        steps = gpu.run(t0, count, noise, forced)
+        gpu.launch(t0, count, noise, forced)
+        yield                                                # the device works; the driver may serve another brain
+        steps = gpu.collect()
         self._stale.update(("v", "g", "thr", "queue", "std_x", "std_t", "_rel"))
         dt, n_slots, delay = self.dt, self.n_slots, self.delay_steps
         out = []

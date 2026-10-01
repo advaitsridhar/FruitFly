@@ -100,6 +100,24 @@ def step_tick(brain, dt: float, rates: dict, col_idx, col_hz):
     return spikes, counts, live
 
 
+def _tick_lazy(brain, dt: float, rates: dict, col_idx, col_hz):
+    """The generator form of :func:`step_tick`, for the brain server's round-robin over its brains: it pauses where
+    the brain's ``advance_steps_lazy`` pauses (a GPU brain after each chunk's launch, a CPU brain never), so another
+    brain's tick can go on while this one's device works; its return value is step_tick's (spikes, counts, live)."""
+    b = brain
+    with b.lock:
+        if col_idx.size:
+            b.set_stimulus_arrays(col_idx, col_hz, extra=rates)
+        else:
+            b.set_stimuli(rates)
+        b.reset_counts()
+        steps = yield from b.advance_steps_lazy(int(round(TICK_MS / b.dt)))
+        spikes = np.concatenate([s for _, s in steps]) if steps else np.zeros(0, dtype=np.int64)
+        counts = b.spike_count
+        live = np.where(b.silenced_mask(), 0, counts) if b.silenced else counts   # what reaches the body
+    return spikes, counts, live
+
+
 def tick_fields(brain, has_soma, readouts: dict, spikes, counts, live, dt: float, seq: int,
                 want_learned: bool = False) -> BrainTick:
     """Everything the game reads from a brain after a tick, computed the way the single fly always computed it.
@@ -309,6 +327,12 @@ class _ChildBrain:
         p = self.brain.parts
         return {"fingerprint": retestlib.fingerprint(self.brain), "has_plasticity": self.brain.plasticity is not None,
                 "settings": self.brain.settings(), "parts_counts": None if p is None else p.counts}
+
+    def advance_lazy(self, dt, rates, col_idx, col_hz, seq, want_learned):
+        """The "advance" command as a generator (:func:`_tick_lazy`), for the round-robin of ``advance_all``."""
+        b = self.brain
+        spikes, counts, live = yield from _tick_lazy(b, dt, rates, col_idx, col_hz)
+        return tick_fields(b, self.has_soma, self.readouts, spikes, counts, live, dt, seq, want_learned)
 
     def handle(self, cmd: str, *args):
         b = self.brain
@@ -684,9 +708,31 @@ def _serve(brains: dict, msg):
             raise ValueError(f"fly {fly} already has a brain in this process")
         brains[fly] = _ChildBrain(spec)
         return brains[fly].info()
-    if cmd == "advance_all":                     # every brain's tick back to back (one process, one GPU context)
-        return [_brain_of(brains, item[0]).handle("advance", *item[1:]) for item in msg[1]]
+    if cmd == "advance_all":                     # every brain's tick, interleaved (one process, one GPU context)
+        return _advance_round_robin(brains, msg[1])
     return _brain_of(brains, msg[1]).handle(cmd, *msg[2:])
+
+
+def _advance_round_robin(brains: dict, items: list) -> list:
+    """Every brain's tick as a generator (``advance_lazy``), resumed in turn until all are done: a GPU brain pauses
+    after each chunk's launch, so brain A's chunk is launched, then brain B's, then A collects its chunk, replays it
+    and launches the next while B's runs on the device, and so on; one brain's device time hides behind the other's
+    host work, and the two graphs run at once on the device. A CPU brain does its whole tick at its first turn. The
+    ticks come back in the order of ``items``; a failure in any brain's tick is raised at once (the child reports it)."""
+    gens = [(item[0], _brain_of(brains, item[0]).advance_lazy(*item[1:])) for item in items]
+    done = {}
+    pending = gens
+    while pending:
+        still = []
+        for fly, gen in pending:
+            try:
+                next(gen)
+            except StopIteration as stop:
+                done[fly] = stop.value
+            else:
+                still.append((fly, gen))
+        pending = still
+    return [done[item[0]] for item in items]
 
 
 def _server_child(pipe, specs: list):

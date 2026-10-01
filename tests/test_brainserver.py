@@ -13,7 +13,7 @@ import numpy as np
 import pytest
 
 from synthetic_connectome import build_synthetic
-from virtual_fly import brainio, retest as RT
+from virtual_fly import brainio, gpubrain, retest as RT
 from virtual_fly.brainio import BrainTick, GpuBrainHandle, GpuBrainServer, LocalBrain, ProcessBrain, advance_all
 from virtual_fly.connectome import Connectome
 from virtual_fly.game import TICK_MS, Game
@@ -105,6 +105,38 @@ def test_two_flies_in_one_process_give_the_numbers_of_a_process_per_brain_and_of
         if procs == "server":
             assert not g.brain_server.proc.is_alive() and g.brain_server.proc.exitcode == 0
     assert seen["server"] == seen["on"] == seen["off"]
+
+
+@pytest.mark.skipif(not gpubrain.available(), reason="CuPy or a GPU is missing")
+def test_two_gpu_brains_in_one_process_give_the_numbers_of_this_process(conn, fconn):
+    """Two GPU brains through the server, their chunks launched in turn (the round-robin of advance_all), give the
+    ticks of the same game with its brains in this process and with CPU brains through the server."""
+    seen = {}
+    for label, kw in (("gpu", dict(procs="auto", brain_kwargs={"backend": "cupy"})), ("cpu-server", dict(procs="server")),
+                      ("off", dict(procs="off"))):
+        g = _pair(conn, fconn, **kw)
+        try:
+            if label == "gpu":
+                assert g.brain_mode == "server" and all(isinstance(f.io, GpuBrainHandle) for f in g.flies)
+                assert all(f.io.settings()["backend"] == "cupy" for f in g.flies)
+            assert g.action({"type": "zap", "spec": "GNG232", "hz": 150, "secs": 1.0})["ok"]
+            rows = []
+            for _ in range(20):
+                g.tick()
+                rows.append([(f.bt.hz, f.bt.spikes_shown, f.bt.n_spikes, f.bt.gf) for f in g.flies])
+            seen[label] = rows
+            assert any(r[0][2] > 0 for r in rows) and any(r[1][2] > 0 for r in rows)
+        finally:
+            g.close()
+    assert seen["gpu"] == seen["cpu-server"] == seen["off"]
+
+
+@pytest.mark.skipif(not gpubrain.available(), reason="CuPy or a GPU is missing")
+@pytest.mark.parametrize("name", ["autopilot", "zap_mdn"])
+def test_a_gpu_brain_in_the_shared_process_gives_the_golden_hash(conn, name):
+    """The whole game's state, tick after tick, with the GPU brain in the brain server: the CPU's golden hash."""
+    from tools.golden_hashes import run_hash
+    assert run_hash(conn, name, game_kwargs={"brain_procs": "server", "brain_kwargs": {"backend": "cupy"}}) == GOLDEN[name]
 
 
 def test_the_lockstep_is_one_message_for_every_fly(conn, fconn):
