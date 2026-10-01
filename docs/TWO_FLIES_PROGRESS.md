@@ -307,6 +307,29 @@ female parts on 0.149 against 0.260. Both brains back to back in one process: ab
 waiting on either (the device time would hide behind the other brain's host replay; it needs a generator-shaped
 `advance_steps` and a change in the brain server); narrower per-neuron arrays in the dense pass.
 
+### Phase 2: the final measurements on the committed engine (plan 6.6, 6.7; 2026-10-01; `../runs/p2-final-measure.sh`, 1-minute load 1.1-1.3)
+- Equality on the real data, rerun (`../runs/p2-eq-*.json`): **identical** in all four runs again (the same spike counts: 358,953 /
+  440,318 / 242,340 / 431,990); per step, the GPU against numba, no monitors: male 0.083 against 0.144 ms (6.0x against 3.5x real
+  time), male parts on 0.119 against 0.252 (4.2x against 2.0x), female 0.089 against 0.125 (5.6x against 4.0x), female parts on
+  0.148 against 0.265 (3.4x against 1.9x).
+- The 16 experiments with `--backend cupy`, rerun: **identical** to the Phase 0 baseline in all four runs; about 10 s per run now.
+- `tools/bench_gpu.py` (`../runs/p2-bench-gpu.json`): the environment row (an RTX 4070 Laptop GPU, 36 multiprocessors, 8,188 MB,
+  a 128-bit bus at 8.0 GHz effective, a measured 225 GB/s device-to-device copy; CuPy 14.2.0, CUDA runtime 13.2 / driver 13.4);
+  the steps rows (game profile, the busy input, 2 s after 300 ms of warm-up, stepped a tick at a time, microseconds per step,
+  median / 99th percentile): male numba 131 / 238 against cupy **61 / 78** (3.8x against 8.2x real time); male parts on 229 / 269
+  against 90 / 105 (2.2x against 5.6x); female 108 / 127 against 69 / 81 (4.7x against 7.3x); female parts on 248 / 296 against
+  137 / 280 (2.0x against 3.7x). One `step()` at a time on the GPU (its own launch, no graph) costs 500-630 µs: the API's single
+  step is for tests, the chunks are the way to run.
+- The two-fly game through the brain server (`tools/bench_two_flies.py --only pair-game --backend cupy`, 400 ticks after 20, in
+  `../runs/p2-bench-gpu.json`; the CPU's rows rerun the same minute into `../runs/p2-bench-pair-game-cpu.json`): parts off dt 0.5:
+  GPU RTF 2.03, tick 11.5 / 20.6 ms (median / 99th) against the CPU's two processes 2.78, 8.9 / 11.2; dt 1.0: 2.09, 11.3 / 19.6
+  against 4.03, 6.1 / 9.0; parts on dt 0.5: 1.46, 16.2 / 22.8 against 1.80, 14.0 / 16.5; parts on dt 1.0: 1.37, 18.1 / 22.8
+  against 2.63, 9.5 / 11.1. The GPU's game process used 11-15 % of a core, the GPU 38-40 % (nvidia-smi sampled), 1,650-1,670 MB
+  of device memory for both brains. **So the first server runs the two brains one after the other and loses to the CPU's two
+  parallel processes** although each brain alone is faster on the GPU: the 6.9 target of 8 ms of brain time per tick for both is
+  missed by a little (about 8.7 ms sequential) and the 99th-percentile tick stays under 25 ms. The fix is to launch both brains'
+  chunks before waiting on either (one brain's device time behind the other's host work, the two graphs on two streams): the next step.
+
 ### Golden hashes (plan 4.9)
 - Synthetic (`tests/golden_single_fly.json`): nine configurations, made with Python 3.12.3, NumPy 2.5.3, numba 0.67.0; a second
   run reproduces every hash (the test passes in normal mode; a determinism test runs one configuration twice).
