@@ -286,7 +286,17 @@ both brains, the re-test child on the CPU), 6.7 (`tools/bench_gpu.py`), 6.8 (doc
 - Decisions 16-17 recorded with their defaults (put to the owner with the defaults; the owner's answer: "continue").
 - CuPy installed and checked (Measurements); pytest and the real golden compare rerun after the install; a read-only map of the brain
   code (the NumPy and numba steps, the host-side blocks, construction, the tests, BrainIO and the CLI) written for the kernels (scratch,
-  not committed).
+  not committed), then a design document for the engine (scratch) from it and from the code itself.
+- Step one (`8c5ec16`, `dd9fad3`): `FlyBrain(conn, backend="cupy")` builds `gpubrain.GpuFlyBrain` (chosen in `__new__`; "auto" never
+  picks the GPU; "cuda" still refused); `advance_steps(n)` is the one stepping loop, `advance(n)` and `run(ms)` build on it and the
+  seam's tick calls `advance(50)` (the 18 real golden hashes unchanged); `--backend cupy` in both programs with the one-line refusal
+  before loading. Version 2.10.0 (`4cc1509`); SCIENCE.md section 11 placed (the arithmetic table; measurements to come), Honest
+  limitations and References renumbered to 12 and 13; README's install text by driver generation; ARCHITECTURE.md (`5368adf`).
+- The brain server of 6.5 (`f71842c`, one child process for every brain, `brain_procs="server"`, chosen by `auto` for a GPU brain;
+  the re-test and rebuilds on the CPU) built and tested with CPU brains on the synthetic connectome (17 tests) while the engine was
+  being built. `tools/bench_two_flies.py --backend` and `tools/bench_gpu.py` (`4c297ee`, `0420d3c`): the GPU's environment row
+  measured a 225 GB/s device-to-device copy (36 multiprocessors, a 128-bit bus).
+- The engine (`virtual_fly/gpubrain.py`, `tests/test_gpubrain.py`, the shared `tests/brain_backends.py`): in progress.
 
 ### 2026-10-01 (Phase 1, the end)
 - The previous session ended on its usage limit with the third review launched but not run (its five agents failed at once) and the
