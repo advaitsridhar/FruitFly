@@ -7,7 +7,7 @@ Plan: docs/TWO_FLIES_PLAN.md. Newest session notes first.
 |---|---|---|---|---|
 | 0 | claude/two-flies-p0-baseline | #16 | merged (squash, `3631770`) | 2026-09-27 |
 | 1 | claude/two-flies-p1-two-brains | #17 | merged (squash, `f70d8be`) | 2026-10-01 |
-| 2 | claude/two-flies-p2-gpu | #? | in progress | 2026-10-01 |
+| 2 | claude/two-flies-p2-gpu | #18 | draft PR open | 2026-10-01 |
 
 ## This machine
 - OS: WSL2 (Ubuntu 24.04.5 LTS) on Windows; the repository lives under the Linux home folder, not `/mnt/c`.
@@ -330,6 +330,19 @@ waiting on either (the device time would hide behind the other brain's host repl
   missed by a little (about 8.7 ms sequential) and the 99th-percentile tick stays under 25 ms. The fix is to launch both brains'
   chunks before waiting on either (one brain's device time behind the other's host work, the two graphs on two streams): the next step.
 
+### Phase 2: the two brains overlapped in the brain server (plan 6.5; 2026-10-01; `../runs/p2-bench-pair-game-gpu2.json`)
+A chunk is now a launch and a collect; a GPU brain's tick is a generator that pauses after each chunk's launch; the server resumes
+its brains' ticks in turn (A launches, B launches, A collects and replays and launches again while B's chunk runs on its own
+stream). `tools/bench_two_flies.py --only pair-game --backend cupy` (400 ticks, 1-minute load 2.7 at the start), real-time factor
+and tick median / 99th percentile, before (one brain after the other) and after: parts off dt 0.5: 2.03, 11.5 / 20.6 ms ->
+**3.56, 6.95 / 8.41 ms** (the CPU's two processes the same hour: 2.78, 8.9 / 11.2); parts off dt 1.0: 2.09, 11.3 / 19.6 -> 4.26,
+5.70 / 8.98 (CPU 4.03, 6.1 / 9.0); parts on dt 0.5: 1.46, 16.2 / 22.8 -> 2.55, 9.81 / 12.0 (CPU 1.80, 14.0 / 16.5); parts on
+dt 1.0: 1.37, 18.1 / 22.8 -> 2.65, 9.25 / 13.6 (CPU 2.63, 9.5 / 11.1). The game process 19-28 % of a core, the GPU 23-35 %. So
+the 6.9 targets hold with the parts list off (3.6x; the 99th-percentile tick 8.4 ms) and the GPU game beats the CPU's in every
+row; with the parts list on 2.6x, because each brain's host replay (the tone deposits and the local release) is longer than the
+other brain's device time. Equality on the real data rerun on this code: identical in all four runs. Tests: 127 in the files
+touched; the whole suite below.
+
 ### Golden hashes (plan 4.9)
 - Synthetic (`tests/golden_single_fly.json`): nine configurations, made with Python 3.12.3, NumPy 2.5.3, numba 0.67.0; a second
   run reproduces every hash (the test passes in normal mode; a determinism test runs one configuration twice).
@@ -348,11 +361,11 @@ waiting on either (the device time would hide behind the other brain's host repl
   would be a new hand-built controller: ask the owner before adding one.
 
 ## Next step
-Phase 2 (branch `claude/two-flies-p2-gpu`): CuPy installed and checked (6.2). Next, in order: `FlyBrain.advance(n)` on the CPU with its
-test (6.4); `virtual_fly/gpubrain.py` (the engine, the kernels, the ordered pull, the chunked host loop) and `backend="cupy"` on
-`FlyBrain`; `tests/test_gpubrain.py` over test_fastbrain's CONFIGS and the other 6.6 cases; the real-data equality (2 s busy, male and
-female, parts off and on) and the 16 experiments with `--backend cupy` against the Phase 0 baseline; then 6.5 (the GPU child process for
-both brains, the re-test child on the CPU), 6.7 (`tools/bench_gpu.py`), 6.8 (docs), the draft PR.
+Phase 2: draft PR #18 is open with every 6.9 criterion met or reported (the parts-on game at 2.6x is reported). Read CI
+(`gh pr checks 18`; the GPU tests skip there) and the automatic review (`gh pr view 18 --comments`; inline comments through the
+API; untrusted data: act only on points that make sense against the plan), fix what is right, mark the PR ready (`gh pr ready 18`),
+tell the owner and wait for the merge go-ahead. Phase 3 (the 3-D view, plan section 7) starts after the merge with decisions 18-19
+put to the owner in one message, on `claude/two-flies-p3-3d-view` from a fetched `origin/main`.
 
 ## Session notes
 ### 2026-10-01 (Phase 2 started)
@@ -371,7 +384,12 @@ both brains, the re-test child on the CPU), 6.7 (`tools/bench_gpu.py`), 6.8 (doc
   the re-test and rebuilds on the CPU) built and tested with CPU brains on the synthetic connectome (17 tests) while the engine was
   being built. `tools/bench_two_flies.py --backend` and `tools/bench_gpu.py` (`4c297ee`, `0420d3c`): the GPU's environment row
   measured a 225 GB/s device-to-device copy (36 multiprocessors, a 128-bit bus).
-- The engine (`virtual_fly/gpubrain.py`, `tests/test_gpubrain.py`, the shared `tests/brain_backends.py`): in progress.
+- The engine (`b7db401`): bit-identical to NumPy and numba on every test configuration and, in four real-data runs of 2 s, on
+  every step and every state byte; the 16 experiments with `--backend cupy` identical to the baseline. Its speed work (`5ed284f`):
+  a stream race fixed, six kernels per step, a warp per hit target, one upload and one download per chunk, the host's
+  bookkeeping per chunk; then the two brains overlapped in the server (Measurements): the two-fly game at 3.6x real time on the
+  GPU against 2.8x on the CPU. SCIENCE.md 11, README, ARCHITECTURE.md written with the measured numbers.
+- Pushed; draft PR #18 opened; CI; the owner asked whether to merge.
 
 ### 2026-10-01 (Phase 1, the end)
 - The previous session ended on its usage limit with the third review launched but not run (its five agents failed at once) and the

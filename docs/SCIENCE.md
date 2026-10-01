@@ -2600,7 +2600,29 @@ other input, give the same picture: male 0.083 against 0.144 ms per step, female
 as the game has): about 1.9 ms per tick on the device (per step: the dense pass 12 µs, the pull 10, the send 8, the hit list
 3, the rest 5) and 1.3-2.3 ms on the host (its own plasticity block, the monitors, the random draws, the replay loop).
 
-GAME_SPEED_PLACEHOLDER
+The two-fly game (`fly_game.py --partner female --backend cupy`: the male and the FlyWire female, both brains in the one
+brain server process, the four social channels on, `tools/bench_two_flies.py --only pair-game`, 400 ticks after 20 of
+warm-up, 1-minute load average 1.3 for the CPU rows and 2.7 for the GPU rows), real-time factor and the tick's median /
+99th percentile, against the CPU's two brain processes run the same hour:
+
+| two-fly game | the CPU (numba, a process per brain) | the GPU (both brains in the brain server) |
+|---|---|---|
+| parts list off, `dt` 0.5 | 2.8x, 8.9 / 11.2 ms | **3.6x, 7.0 / 8.4 ms** |
+| parts list off, `dt` 1.0 (`--fast`) | 4.0x, 6.1 / 9.0 ms | 4.3x, 5.7 / 9.0 ms |
+| parts list on, `dt` 0.5 | 1.8x, 14.0 / 16.5 ms | 2.6x, 9.8 / 12.0 ms |
+| parts list on, `dt` 1.0 | 2.6x, 9.5 / 11.1 ms | 2.7x, 9.3 / 13.6 ms |
+
+The game process used 19-28 % of one core with the GPU and the GPU itself 23-35 % (nvidia-smi sampled every half second);
+about 1.7 GB of device memory for both brains. The server resumes the two brains' ticks in turn, chunk by chunk (one brain's
+device time behind the other's host work, the two graphs on two streams): run one after the other instead, the same game made
+2.0x (11.5 / 20.6 ms), slower than the CPU's two parallel processes although each brain alone is faster on the GPU.
+
+**What this shows.** The plan's targets (6.9) were 3x real time for both brains under the busy input and a 99th-percentile
+tick under 25 ms: the game holds 3.6x with the parts list off (its slowest tick in a hundred 8.4 ms) and 2.6x with it on,
+where each brain's host replay (the tone deposits and the local release are the CPU's work every tick) is longer than the
+other brain's device time, so the overlap cannot hide all of it. Every number above is a measurement of this laptop's GPU
+under a Windows driver through WSL2; a desktop card with more bandwidth will do better, a smaller one worse, and both will
+give the same spikes.
 
 ### 11.4 Tried, not adopted, and what is left
 
