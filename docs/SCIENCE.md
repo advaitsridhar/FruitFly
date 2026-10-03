@@ -2671,7 +2671,9 @@ in "What's real here?":
   points chosen by hand (the 1.2.1 model has no joints for them); grooming is a simple foreleg pose or nothing; a jump
   lifts the body by a hand-built height.
 
-Not modelled: anything the 2-D dish does not model either. Cost: THREE_D_COST_PLACEHOLDER
+Not modelled: anything the 2-D dish does not model either. Cost: the model files 1.6 MB on disk (the glTF 1.4 MB, 58,293
+triangles for one fly, decimated from 502,781; the atlas 126 kB), three.js 2.3 MB vendored, none of it fetched until the view
+is switched on; the frame rate: FPS_PLACEHOLDER
 
 ## 13. Honest limitations
 

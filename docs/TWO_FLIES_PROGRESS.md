@@ -365,6 +365,18 @@ touched; the whole suite below.
   Python package only; the Chromium download is on the plan's ask-first list and waits for the owner's word). setuptools in the
   venv is 84.0.0 (`bdist_wheel` built in since 70.1): no upgrade needed for the wheel check.
 
+### Phase 3: the fly model files (plan 7.2, 7.3; 2026-10-03; `tools/build_fly_model.py`, 1.0 s)
+The compiled NeuroMechFly model is in millimetres already (the MJCF scales the metre STLs by 1,000; the thorax stands 1.497 mm
+above the floor), so nothing was rescaled. Triangles 502,781 -> **58,293** per fly (the head 8,000, each eye 2,500, the thorax
+4,000, abdomen segments 1,500, wings 1,499, leg segments 300-900; nothing refused decimation; no winding flipped).
+`nmf_fly.glb` 1,467,684 bytes; `nmf_gait.bin` 125,580 bytes, shape (65, 69, 7); `nmf_gait.json` 5,545 bytes; the licence and the
+notice. The stride is 83.33 ms (the CPG's 12 Hz); frame f sets the 42 leg joints to the Walker's `neutral + step(2 pi f / 64 +
+the leg's tripod bias)`, the bias convention checked against the kit's CPG run at full drive (settled phases equal the bias row to
+3e-12 rad), then `mj_kinematics`; frame 64 is the Walker's neutral stance (a hand-built choice, labelled). Hinge points in the
+thorax frame (mm): wings (-0.544, +-0.370, 0.181), the abdomen (-0.862, 0, 0), the proboscis (0.459, 0, -0.274). Tests: the files'
+consistency (3), the packaging (9: every web folder listed; a wheel from a copy carries the 8 vendored and 5 model files with no
+warning; setuptools 84 builds it).
+
 ### Golden hashes (plan 4.9)
 - Synthetic (`tests/golden_single_fly.json`): nine configurations, made with Python 3.12.3, NumPy 2.5.3, numba 0.67.0; a second
   run reproduces every hash (the test passes in normal mode; a determinism test runs one configuration twice).
