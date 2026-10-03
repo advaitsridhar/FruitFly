@@ -62,6 +62,9 @@ tools/
                        bodies per contact set (hand-run; docs/TWO_FLIES_PLAN.md 4.8, 8.2)
   physics_table.py     docs/SCIENCE.md 6.7's physics table measured again on the kit as it is: the gate every speed
                        lever of the two-flies work is checked against (hand-run; docs/TWO_FLIES_PLAN.md 8.2)
+  render_replay.py     a saved physics recording (recordings/<id>, recording.py) rendered to an MP4 at real speed by
+                       MuJoCo's renderer: overhead, follow or side camera, the joints interpolated between ticks
+                       (hand-run; docs/TWO_FLIES_PLAN.md 8.9)
   golden_hashes.py     what one fly does on the real data, byte for byte: --save before a change, --compare after
                        (tests/test_golden_single_fly.py is the same check on the synthetic connectome, in CI)
   compare_experiments.py  every difference between two `fly_brain.py --json` files (a later run against the baselines)

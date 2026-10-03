@@ -292,7 +292,9 @@ the page stays in 2-D and says so.
 **Two physics flies.** `py fly_game.py --partner female --body physics` puts both flies into one MuJoCo world as NeuroMechFly
 bodies, each driven by its own brain, able to touch each other: the tap is a physical contact with its force, both flies are
 drawn at real size, and the pair runs at about a tenth of real time (that is the bodies' pace, the page says so). The single
-physics fly is unchanged (`docs/SCIENCE.md` section 13).
+physics fly is unchanged (`docs/SCIENCE.md` section 13). The page's "Save replay" switch writes the run to `recordings/`, and
+`py tools/render_replay.py recordings/<id>` turns a physics replay into a 1080p MP4 at real speed with MuJoCo's own renderer
+(`--camera overhead`, `follow` or `side`; section 13.4).
 
 **In code**, start with `my_first_fly.py`: poke, wait, listen, in three lines. Then:
 
@@ -310,6 +312,7 @@ physics fly is unchanged (`docs/SCIENCE.md` section 13).
 | `py fly_brain.py --stim "prefix:JO-B:100" --record spikes.npz` | Every spike, with neuPrint IDs |
 | `py fly_game.py --partner female` | Two simulated brains in one dish (the male and FlyWire's female) |
 | `py fly_game.py --partner female --body physics` | The same pair as two NeuroMechFly bodies in one MuJoCo world, able to touch (about 0.1x real time) |
+| `py tools/render_replay.py recordings/<id> --camera follow` | A saved physics replay as a 1080p MP4 at real speed, rendered by MuJoCo (overhead, follow or side camera) |
 | `py fly_brain.py --female --pair-experiments` | Her song, pC1, pC2l, cVA and SAG routes, measured (provisional ranges) |
 | `py fly_game.py --pure` | The paper's model, seizures and all |
 | `py fly_game.py --noise 5:15` | Spontaneous activity (parts list off; docs/SCIENCE.md 3.4) |

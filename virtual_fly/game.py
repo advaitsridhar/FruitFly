@@ -866,7 +866,9 @@ class Game:
             "genome": a.genome_status(bt.parts_status, known=True),
             "recording": None if self.recording is None else {"frames": len(self.recording), "spikes": self.record_spikes,
                                                               "active": self.record_active},
-            "capture": None if self.capture is None else self.capture.status(),
+            # "capture" only while a replay is being saved: the single fly's frames stay byte for byte what they were (the
+            # golden hashes cover every state frame), and the page reads a missing key as "not saving"
+            **({"capture": self.capture.status()} if self.capture is not None else {}),
         }
         if len(self.flies) > 1 and bts is not None:
             state["flies"] = [f.state_entry(b) for f, b in zip(self.flies, bts)]

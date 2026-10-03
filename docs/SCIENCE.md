@@ -2758,6 +2758,45 @@ collisions do not apply (the contact is physical).
   contacts change too; a lever to measure against section 6.7's table (8.6), not a default.
 - MuJoCo's native convex collider instead of libccd's: the same gait (14.20 against 14.17 mm/s), the same contacts; off.
 
+### 13.4 Record and replay, and a video (plan 8.7-8.9)
+
+A physics pair runs at about a tenth of real time, so the way to see it move naturally is to record it and play
+it back at real speed. The `capture` action (the page's "Save replay" switch; `docs/API.md`) writes a folder
+`recordings/<YYYYmmdd-HHMMSS>/` in a checkout (ignored by git) or under the data folder in an installed copy, never
+into site-packages: `header.json` (the kit's version and commit, the tick, every fly's sex, dataset, body and brain
+settings, the social channels, the physics settings and the model's name), `frames.jsonl.gz` (one line per tick:
+every fly's body, mode, rates, senses and events-per-second, and the dish), and, with physics bodies, `qpos.npy`
+and `t.npy` (MuJoCo's whole state after every tick), the model as compiled with its assets (`model/`, dm_control's
+export, about 16 MB for the pair) and, when the recording stops, `poses.f32`: every geom of every fly, per tick, in
+its fly's thorax frame, computed by replaying `qpos` through MuJoCo's kinematics on the exported model. The browser
+plays the legs from that file with no kinematics of its own; a drawn-body recording has none of the MuJoCo files and
+the page animates the legs as it does live. The recordings folder has a size cap of 2 GB: at the cap a recording
+refuses to start, one in progress stops, and nothing is deleted for you. The existing Record button (frames kept in
+memory, `GET /api/recording`) is as it was.
+
+Checked (`tests/test_recording.py`): reloading the exported model, setting a recorded `qpos` and calling
+`mj_kinematics` gives every geom's position **exactly** (the largest difference 0.0 mm against the live world, once the
+live world's own kinematics are refreshed: after a step MuJoCo's positions are one step stale); the replay poses use
+the gait atlas's convention (the standing thorax entry agrees to 1e-3 mm), so the page feeds a replay frame to the
+same nodes; every `.npy` is loaded with `allow_pickle=False`; a recording id must be a plain folder name.
+
+The replay endpoints (`GET /api/replays`, `/api/replay/<id>/header`, `/frames`, `/poses`) send no wildcard CORS
+header, and the `capture` action, the one API call that writes to disk, is taken only from the server's own page: a
+request with another `Origin` header, or a `Host` that is not `localhost` or `127.0.0.1` with the server's port,
+gets 403 (tested), so another web page open in the owner's browser can neither fill the disk nor read replays.
+
+**A video.** `python tools/render_replay.py recordings/<id>` renders a physics recording to an MP4 with MuJoCo's own
+renderer: the exported model and `qpos` replayed through MuJoCo's kinematics at the video's frame rate (the joints
+interpolated between ticks, the root quaternions normalised), an `overhead` camera framing the flies, a `follow` camera
+behind and above one fly turning with its heading, or a low `side` view, each aim smoothed over a quarter of a second so
+that a stride's wobble does not shake the picture; the second fly's body is tinted lighter so the two can be told apart,
+and a label gives the recording, the time and the speed (all hand-built choices). Measured on this laptop under WSL2 on
+an 8 s recording of the pair: a 1080p MP4 at 30 fps, 241 frames, in 40 s (overhead, 3.1 MB) and 36 s (follow, 3.6 MB),
+about 6-7 frames rendered per second; the whole model's 1,005,562 mesh triangles are what each frame costs (about 130 ms
+at any size from 640 x 480 up, and the same with `MUJOCO_GL=egl`, `osmesa` or `glfw`, all of which render here;
+`egl` is the tool's default and needs no display). The MP4 is written by OpenCV (`mp4v`), which the physics extra
+brings; `tests/test_render_replay.py` renders a six-tick recording and reads the file back.
+
 ## 14. Honest limitations
 
 The starter kit's list, extended. These are the things a neuroscientist would point at first.

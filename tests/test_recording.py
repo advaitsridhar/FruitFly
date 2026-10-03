@@ -52,7 +52,7 @@ def test_a_drawn_run_is_saved_and_listed(conn, rec_dir):
         assert g.action({"type": "capture", "on": True}) == {"ok": False, "error": "a replay is being saved already; stop it first"}
         assert g.action({"type": "capture", "on": False})["ok"]
         g.tick()
-        assert g.state_dict["capture"] is None and g.capture is None
+        assert "capture" not in g.state_dict and g.capture is None      # the key only while saving: the golden frames unchanged
     finally:
         g.close()
     folder = recording.folder_of(rid)

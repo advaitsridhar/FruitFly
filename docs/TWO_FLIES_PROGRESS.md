@@ -495,6 +495,33 @@ size and whether the brain map was open were not recorded): the 7.7 target of 50
   cylinder 1.1 mm tall (`vision.SEEN_FLY`), both flies drawn at real size in 2-D and 3-D (`fly.scale`), the page's pace line says
   so, `whats_real` carries the pair lines (one world, the physical tap, real size, the male in the female body model).
 
+### Phase 4: record-and-replay on disk (plan 8.7-8.8; 2026-10-03; **new** `virtual_fly/recording.py`, `tests/test_recording.py`; SCIENCE.md 13.4)
+- The format as the plan says it (`recordings/<stamp>/`: header.json, frames.jsonl.gz, qpos.npy, t.npy, model/ with the exported
+  MuJoCo model and its assets, poses.f32 at the stop); the `capture` action (refused with the reason: one at a time, an unwritable
+  folder, the 2 GB cap; a recording in progress stops at the cap or when a single fly's world is rebuilt); `state.capture`; the
+  replay endpoints (`/api/replays`, `/api/replay/<id>/header|frames|poses`) without the wildcard CORS header, the id a plain
+  folder name; the capture action taken only from the server's own page (foreign Origin or Host: 403); `allow_pickle=False`.
+- Checked (six tests): a drawn run saved and listed; the cap and an unwritable folder refuse with the folder named; no CORS header
+  on the replay endpoints while the live ones keep theirs; foreign Origin and Host refused, the own page's three spellings
+  accepted, a non-writing action not origin-checked; a physics-pair recording reloads its exported model and reproduces every
+  geom's position **exactly** (0.0 mm; the live world's kinematics refreshed first, since after a step MuJoCo's positions are one
+  step stale), and its poses agree with the 3-D view's gait atlas convention (the standing thorax entry within 1e-3 mm).
+- Rendering under WSL2 (plan 8.9's **verify first**): `MUJOCO_GL=egl`, `osmesa` and `glfw` all render here (a 640 x 480 frame in
+  6 ms each; libEGL, libOSMesa and WSLg's display are present); `egl` is the choice for the video tool.
+- Gotcha: a script that builds a game with brain processes must guard its entry point (`if __name__ == "__main__"`): the spawned
+  children import the script, and an unguarded one builds a game inside each child (the first sample run died that way).
+
+### Phase 4: the speed levers as switches (plan 8.6; 2026-10-03; code only, the measurements come last by the owner's order)
+- `physics.LEVERS`: dedupe (flygym's duplicated self pairs: 1,086 of 2,172 dropped per fly, exactly), solver100 (iterations 1,000 →
+  100, tolerance 1e-12 → 1e-8), noslip5, noslip0, noself, simple (seqik_simple with tarsi-only floor contacts), dt2 (0.2 ms). Each is
+  off unless asked for: `fly_game.py --physics-levers LIST`, `Game(physics_levers=...)`, `PairWorld(levers=...)`, `make_body(levers=)`,
+  `tools/physics_table.py --levers LIST --baseline ../runs/p4-table.json` (the comparison against the tool's own run, decision 25's
+  verdicts relative to it) and `tools/bench_two_flies.py --levers LIST`. With no lever nothing changes (the 18 real golden hashes
+  checked again with the code in place: `../runs/p4-golden2.log`).
+- First numbers, one body alone at full drive for 3 s (not the table yet): `simple` walks 15.4 mm/s (14.2 without) at rtf 0.32
+  (0.22); `simple,dedupe,solver100,noslip0` 15.3 mm/s at rtf 0.55. The script for the whole measurement is
+  `../runs/p4-levers.sh` (ten lever sets through the table against the baseline, then the pair bench per set; about 45 min idle).
+
 ### Golden hashes (plan 4.9)
 - Synthetic (`tests/golden_single_fly.json`): nine configurations, made with Python 3.12.3, NumPy 2.5.3, numba 0.67.0; a second
   run reproduces every hash (the test passes in normal mode; a determinism test runs one configuration twice).
@@ -536,6 +563,8 @@ first**), then 8.6 (the levers, each measured with `tools/physics_table.py` and 
   other, which cost an hour of probes before the static overlap test showed the collider sound; the game integration, the
   senses at real size, the page scale and pace line, the CLI, seven tests, the pair-physics bench kind, SCIENCE.md 13, README,
   ARCHITECTURE, API; version 2.12.0; the Ctrl+C check (exit 0).
+- Pushed; draft PR #20 opened. 8.7-8.8: `recording.py`, the capture action, the replay endpoints, six tests (`002aea3`);
+  SCIENCE.md 13.4. The page's player and the video tool (8.9) as two forks on a sample recording.
 
 ### 2026-10-03 (Phase 3 started)
 - PR #18 squash-merged as `63681db` on the owner's word ("merge and go with defaults"); branch `claude/two-flies-p3-3d-view` from the
