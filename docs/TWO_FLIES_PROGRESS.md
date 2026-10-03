@@ -9,7 +9,7 @@ Plan: docs/TWO_FLIES_PLAN.md. Newest session notes first.
 | 1 | claude/two-flies-p1-two-brains | #17 | merged (squash, `f70d8be`) | 2026-10-01 |
 | 2 | claude/two-flies-p2-gpu | #18 | merged (squash, `63681db`) | 2026-10-03 |
 | 3 | claude/two-flies-p3-3d-view | #19 | merged (squash, `157ffa9`) | 2026-10-03 |
-| 4 | claude/two-flies-p4-physics-pair | – | opened; decisions 20-26 put to the owner, no answer yet | 2026-10-03 |
+| 4 | claude/two-flies-p4-physics-pair | – | in progress: decisions 20-26 at their defaults; 8.2 (the reproduction gate) started | 2026-10-03 |
 
 ## This machine
 - OS: WSL2 (Ubuntu 24.04.5 LTS) on Windows; the repository lives under the Linux home folder, not `/mnt/c`.
@@ -69,13 +69,15 @@ Plan: docs/TWO_FLIES_PLAN.md. Newest session notes first.
 | 17 | where the GPU brains live | one GPU child process holding both brains; the game process stays on the CPU; the re-test child always uses the CPU | default, the same | 2026-10-01 |
 | 18 | the fly meshes | ship a decimated GLB (about 3 MB or less) with its Apache-2.0 licence and a notice of changes; otherwise build on first use from the installed flygym | default; the owner: "merge and go with defaults" | 2026-10-03 |
 | 19 | the 3-D scale in live mode | the drawn scale (about 3x real), labelled; real size in physics and replay modes | default, the same | 2026-10-03 |
-| 20 | flygym version | proposed: stay on 1.2.1; a flygym 2.x spike (a Python 3.12 venv outside the repository) only on request or if 1.2.1 cannot reach 0.1x real time with two flies | put to the owner, awaiting the answer | 2026-10-03 |
-| 21 | topology | proposed: both flies in one MuJoCo world; "ghost" partners in separate worlds only as a labelled fallback | the same | 2026-10-03 |
-| 22 | contact pairs between the flies | proposed: each fly's forelegs (Tibia, Tarsus1-4) and head against the partner's body, plus body to body; never `Tarsus5` | the same | 2026-10-03 |
-| 23 | social geometry with physics bodies | proposed: real size (the physical tap replaces the 3.4 mm rule; the partner seen at real size), labelled; the single-fly physics body keeps today's drawn-scale senses | the same | 2026-10-03 |
-| 24 | the male's body model | proposed: the same NeuroMechFly body (built from a female fly), labelled, in physics and in the 3-D view | the same | 2026-10-03 |
-| 25 | accepting a speed lever | proposed: only if the 6.7 table stays within ±10 % for speeds and turn rates and the lure count within 1, over seeds 0-4; always switchable | the same | 2026-10-03 |
-| 26 | MuJoCo Warp batches | proposed: no, unless the owner wants offline batch runs | the same | 2026-10-03 |
+| 20 | flygym version | stay on 1.2.1; a flygym 2.x spike (a Python 3.12 venv outside the repository) only on request or if 1.2.1 cannot reach 0.1x real time with two flies | default; the owner: "Defaults" | 2026-10-03 |
+| 21 | topology | both flies in one MuJoCo world; "ghost" partners in separate worlds only as a labelled fallback | default, the same | 2026-10-03 |
+| 22 | contact pairs between the flies | each fly's forelegs (Tibia, Tarsus1-4) and head against the partner's body, plus body to body; never `Tarsus5` | default, the same | 2026-10-03 |
+| 23 | social geometry with physics bodies | real size (the physical tap replaces the 3.4 mm rule; the partner seen at real size), labelled; the single-fly physics body keeps today's drawn-scale senses | default, the same | 2026-10-03 |
+| 24 | the male's body model | the same NeuroMechFly body (built from a female fly), labelled, in physics and in the 3-D view | default, the same | 2026-10-03 |
+| 25 | accepting a speed lever | only if the 6.7 table stays within ±10 % for speeds and turn rates and the lure count within 1, over seeds 0-4; always switchable | default, the same | 2026-10-03 |
+| 26 | MuJoCo Warp batches | no, unless the owner wants offline batch runs | default, the same | 2026-10-03 |
+| – (Phase 4 order) | which of Phase 4's parts first | the reproduction gate (8.2), the pair world (8.3-8.5), record-and-replay and the video (8.7-8.9), the speed levers (8.6) last, so that the owner sees the pair played back at 1x and a video before the slow lever validations | Claude's proposal; the owner: "Defaults" | 2026-10-03 |
+| – (Phase 4 jump) | a hand-built jump for the physics body | none: a giant-fibre burst stays an "escape command" with the legs standing, as v2.8.1 | Claude's proposal; the owner: "Defaults" | 2026-10-03 |
 
 ## Measurements
 All on 2026-09-27, this machine, `nice -n 10`, one job at a time, machine otherwise idle (load average under 1.5).
@@ -418,6 +420,53 @@ frame-rate readout the dish updates once a second (`#fps3d`; `window.__vf3d.fps`
 it: **"the fps is at 80 or so"** (2026-10-03, the two-fly game in their own browser on this laptop; the GPU the browser used, the window
 size and whether the brain map was open were not recorded): the 7.7 target of 50 met.
 
+### Phase 4: the reproduction gate (plan 8.2; 2026-10-03; **new** `tools/physics_table.py`; `../runs/p4-table.json` and `.log`; the first run with a still lure in `../runs/p4-table-still-lure.*`)
+- The protocol, reconstructed: PR #11's text and the v2.8.0 docs commit (`6a8603a`) hold no script, only the table's own row
+  labels, so the tool's docstring states what it does: the body alone for the speed and turn rows (the net thorax displacement
+  and the heading change over 3 s); the lure placed before the first tick at 20 mm and 70 deg (15 mm with the urge off); MDN zapped
+  at 60 Hz for the full 3 s; 10 s quiet; every run a fresh game in its own process (brain seed = game seed, parts on, dt 0.5).
+  **The lure wiggles** 1.5 mm across its bearing at 3 Hz: with a still lure the drawn fly with the walking urge off did not turn
+  at all (0.0 deg on every seed; published 62-73), because a standing fly sees a still lure stand still (LC10a answers motion on
+  the retina) and the page's own check says "wiggle the decoy"; 1.5 mm at 3 Hz gives 60-81 deg in place, facing at 0.60-0.75 s
+  (published 62-73 deg, 0.48-0.8 s) and, with the urge on, facing times of 0.93-1.25 s (published 0.95-1.33); 3 mm at 3 Hz faces too
+  early (0.70-0.85 s) though it reproduces seed 2's jump-and-circle (255 vs 253 deg); 1.5 mm at 6 Hz sets off escapes on three seeds.
+- The run: 85 fresh games, 6 at a time, 6.7 min (1-minute load 1-12; each physics run 1.57 GB). Against the published table:
+  - **drawn**: speed 4.1 / 8.1 / 13.6 mm/s (chosen 4.2 / 8.4 / 13.9: the net displacement carries the velocity ramp); turn 259 / 224 /
+    177 deg/s (264 / 228 / 180); lure left 103, 105, 79, 90, -60 deg (97, 79, 253, 94, 257: seeds 2 and 4 circled after a jump under
+    the v2.8.0 rule; under the burst rule seed 4 still escapes on both sides, 1 event of 7 ticks, and circles the other way; seed 2
+    does not); right -95, -101, -118, -104, +68 (-94, -102, -89, -100, +82); faces the lure 10 of 10 at 0.93-1.25 s (10 of 10,
+    0.95-1.33); urge off: 60-81 deg in place (62-73), facing at 0.60-0.75 s; MDN 17.5-18.9 mm (17.9-19.7), HS 0.1 Hz and 25-28k
+    events/s while backing (0-0.6 Hz, 26-30k); quiet arena HS 5.5, 10.1, 7.9, 76.5, 108.9 Hz (5.5, 10.1, 7.9, 72.6, 108.2: seeds 0-2
+    **to the decimal**, 3-4 apart by the jump rule), brain 26.0, 30.6, 25.0, 94.9, 111.1k (25.9, 30.4, 24.9, 78.0, 72.3k), high
+    states on seeds 3 and 4 from 3.8 and 5.15 s with no escape (3.9 and 6.2 s with 7 and 21 escape ticks); 868-874 MB (876). Its
+    real-time factor 1.3-1.9 is the raw tick speed (the tool does not sleep to real time; the published 0.90-1.23 is the live loop's).
+  - **physics (raw pose)**: speed 4.0 / 8.7 / 14.3 (4.1 / 8.9 / 14.9); turn 32 / 85 / 165 (28 / 86 / 174: +14 % at drive 0.3, within
+    5 % above it); lure left 83, 103, 95, 101, 121 (102, 103, 105, 94, 94), right -101, -93, -97, -99, -120 (-87, -106, -100, -90,
+    -125); faces 10 of 10 at 1.23-1.98 s (8 of 10 at 1.65-2.55); urge off: 0.2 deg, the lure still 70-71 deg off (0.4 deg, 69-71);
+    MDN 19.0-21.4 mm, mean 20.0 (19.5-21.6, 20.4), heading drift 0-10 deg (3-10), HS 47-83 Hz and 98-123k events/s while backing
+    (57-84 Hz, 68-103k); quiet HS 24.8, 17.7, 14.4, 18.4, 19.0 (24.8, 13.7, 14.4, 18.5, 19.0: four of five seeds), brain 73.4, 59.2,
+    51.4, 48.2, 74.5k (56.2, 46.7, 43.1, 40.5, 58.8k), high states on seeds 0, 1, 2, 4 from 4.05, 7.9, 8.9, 7.35 s (seeds 0 and 2
+    from 8.9 s); contacts per step 10-19; 1,570 MB (1.32-1.35 GB); real-time factor 0.137-0.187 under load 7-10 (MuJoCo alone
+    0.149-0.212), 0.22 solo (Phase 0's bench: 0.216; published 0.086-0.113 on the machine the table was measured on).
+  - **stride average**: lure left 100-103 (99, 90, 113, 101, 126), right -73 to -100 (-62 to -118); faces 9 of 10 at 1.68-2.10 s
+    (6 of 10 at 1.83-2.83); urge off 0.4 deg (0.3); MDN 19.8-21.2 (19.2-21.4), HS while backing 0.0-24 Hz and 30-91k (0-0.4 Hz,
+    27-31k); quiet HS 60.6, 9.7, 8.6, 6.8, 11.0 (57.7, 11.6, 8.8, 6.9, 9.0); high states on seeds 0, 1, 3, 4 (0 and 3).
+- Decision 25's verdicts against the published numbers: drawn all within tolerance; physics speed within, turn outside at drive 0.3
+  (+14 %), faces 10 against 8 (outside by 2); stride average faces 9 against 6. What the differences say: where nothing moves in the
+  dish the runs **are** the published runs (the quiet arena to the decimal on 3 of 5 drawn seeds and 4 of 5 physics seeds); with a
+  lure the exact protocol is lost (the wiggle is a reconstruction) and a spiking brain amplifies small differences, so the per-seed
+  numbers scatter around the published ones with the same picture; the physics columns' events/s run a quarter higher than
+  published at the same HS rates (the tool now records the spikes/graded split, so the next run can say whether the published
+  number counted spikes alone); the stride-average column no longer removes HS while backing (0-24 Hz against 0-0.4). No code in
+  `physics.py` or `vision.py` changed around the stride average since v2.8.0 (git diff), so the published stride-average runs
+  differed in protocol too. **The gate for the levers is therefore this run** (same machine, same code), with decision 25's
+  tolerances applied to it: put to the owner (Next step).
+- Where a physics tick's time goes (`../runs/p4_profile_physics.py`, `../runs/p4-profile.log`; one fly, seed 0, parts on, 3 s after
+  20 ticks, solo): real-time factor **0.220**; MuJoCo (Walker.advance: the CPG, the control writes and mj_step) 12.7 of 13.6 s =
+  **93 %** of the wall time; **0.359 ms per mj_step** (89.8 ms per 250-step tick), the Python around it 0.027 ms per step (3.1 ms per
+  tick of CPG and writes: 7 % of the step); the brain 11.6 ms per tick; senses 0.6 ms; contacts per step 10-20 while walking. So
+  the levers must act on mj_step (the solver, the contacts, flygym's duplicated self pairs); vectorising the Python buys at most 7 %.
+
 ### Golden hashes (plan 4.9)
 - Synthetic (`tests/golden_single_fly.json`): nine configurations, made with Python 3.12.3, NumPy 2.5.3, numba 0.67.0; a second
   run reproduces every hash (the test passes in normal mode; a determinism test runs one configuration twice).
@@ -436,14 +485,13 @@ size and whether the brain map was open were not recorded): the 7.7 target of 50
   would be a new hand-built controller: ask the owner before adding one.
 
 ## Next step
-Phase 4 (physics for both flies, plan section 8) is open on `claude/two-flies-p4-physics-pair`, branched from `origin/main` at `157ffa9`
-(the Phase 3 squash); no code yet. Decisions 20-26 were put to the owner on 2026-10-03 with the plan's defaults, together with the
-Open issue on the physics body and one ordering question: the plan's order is the reproduction gate (8.2), the pair world (8.3-8.6),
-then record-and-replay (8.7-8.8) and the video (8.9); the owner's wish for a natural-looking physics fly argues for the replay and
-the video early. Wait for the answers (plan 1.8 item 1). Then start with 8.2 whatever the order: **new** `tools/physics_table.py`
-reproducing the SCIENCE.md 6.7 table on the unchanged body (the protocol from `git log -p -S 'faces the lure' -- docs/SCIENCE.md`
-and PR #11, read as data), run in the background (1.7), checked against the published numbers before it serves as the gate; then
-the one-fly and two-fly profiles.
+Phase 4 on `claude/two-flies-p4-physics-pair`, decisions 20-26 at their defaults, the order gate → pair world → replay and video →
+levers last, no hand-built jump. 8.2 done: `tools/physics_table.py` reproduces the published 6.7 picture (Measurements) but not
+every number, and **the owner is asked** whether its own run on the unchanged body (`../runs/p4-table.json`, this machine, v2.11.0
+code) may serve as the levers' gate with decision 25's tolerances; the levers come last, so the answer is needed only then. In hand:
+8.3-8.5, the pair world (`virtual_fly/physics_pair.py`, built and checked by hand: placement exact, 233 pairs, contact within
+0.4 s head-on, a tap force, no sticking, re-placing without a rebuild, deterministic), then its game integration, tests and docs;
+then 8.7-8.9 (record-and-replay, the video), then 8.6.
 
 ## Session notes
 ### 2026-10-03 (Phase 4 opened)
@@ -451,7 +499,8 @@ the one-fly and two-fly profiles.
   Measurements, the PR body; `ca8723b`); PR #19 squash-merged as `157ffa9` on that word (v2.11.0 on `main`); the demo game on port 8765
   stopped with the 1.7 stop block (nothing left in its session).
 - Branch `claude/two-flies-p4-physics-pair` from the fetched `origin/main`; decisions 20-26 put to the owner with the defaults, the
-  physics-body issue and the ordering question (Next step). Nothing built yet.
+  physics-body issue and the ordering question. The owner: "Defaults" (all seven at the plan's defaults, the levers last, no
+  hand-built jump); recorded in Decisions. 8.2 started.
 
 ### 2026-10-03 (Phase 3 started)
 - PR #18 squash-merged as `63681db` on the owner's word ("merge and go with defaults"); branch `claude/two-flies-p3-3d-view` from the
