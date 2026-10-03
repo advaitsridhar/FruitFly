@@ -348,6 +348,23 @@ row; with the parts list on 2.6x, because each brain's host replay (the tone dep
 other brain's device time. Equality on the real data rerun on this code: identical in all four runs. Tests: 127 in the files
 touched; the whole suite below.
 
+### Phase 3: three.js vendored, the meshes' licence, the installs (plan 7.1, 7.2, 7.6; 2026-10-03)
+- three.js: the registry's latest is still 0.186.1 (r186, MIT). The tarball (4,648,523 bytes) was checked before anything was
+  copied: its SHA-512 equalled the registry's `dist.integrity` (`sha512-blFeqb49...`) and its SHA-1 the `dist.shasum`
+  (`6d50f70c...`); SHA-256 `8cd068708ea44f2c73c944b1cead2ba2f0d5c15c8fc194e5700f4e4f4a033fe7`. Copied unchanged into
+  `virtual_fly/web/vendor/three/`: `three.module.js` (662,772 bytes), `three.core.js` (1,458,113), `addons/loaders/GLTFLoader.js`
+  (117,570), `addons/controls/OrbitControls.js` (40,755), `addons/utils/BufferGeometryUtils.js` and `SkeletonUtils.js`, `LICENSE`
+  (the sizes the plan gave); every file's SHA-256 is in `virtual_fly/web/vendor/three/VERSION.txt`. The import map is in
+  `index.html`; nothing loads it until the 3-D view is switched on.
+- The meshes' licence (7.2, verify first): the installed flygym 1.2.1 wheel's `LICENSE` is the Apache-2.0 text (the unfilled
+  template), its METADATA says `License: Apache-2.0`, and the repository's `LICENSE` on GitHub (NeLy-EPFL/flygym, main) is the same
+  Apache-2.0 text; the repository root has no NOTICE and no separate data licence. So the meshes may be converted and shipped
+  with the licence text, a notice of the changes and the attribution (decision 18).
+- Installs (PyPI, with `../runs/constraints.txt` pinning numpy 2.5.3, numba 0.67.0, llvmlite 0.49.0, all unchanged after): trimesh
+  5.1.0 (the plan's tested version; 5.1.1 is the newest) and fast-simplification 0.2.0 for the decimation; playwright 1.63.0 (the
+  Python package only; the Chromium download is on the plan's ask-first list and waits for the owner's word). setuptools in the
+  venv is 84.0.0 (`bdist_wheel` built in since 70.1): no upgrade needed for the wheel check.
+
 ### Golden hashes (plan 4.9)
 - Synthetic (`tests/golden_single_fly.json`): nine configurations, made with Python 3.12.3, NumPy 2.5.3, numba 0.67.0; a second
   run reproduces every hash (the test passes in normal mode; a determinism test runs one configuration twice).

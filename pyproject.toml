@@ -34,7 +34,10 @@ fly-game = "virtual_fly.play:main"
 [tool.setuptools]
 # an installed copy (pip install . or from git) has no data/ folder, so the four small data files that come with
 # the code travel inside the package as virtual_fly/data (connectome.py finds them there)
-packages = ["virtual_fly", "virtual_fly.senses", "virtual_fly.web", "virtual_fly.data"]
+packages = ["virtual_fly", "virtual_fly.senses", "virtual_fly.web", "virtual_fly.data",
+            "virtual_fly.web.vendor", "virtual_fly.web.vendor.three", "virtual_fly.web.vendor.three.addons",
+            "virtual_fly.web.vendor.three.addons.loaders", "virtual_fly.web.vendor.three.addons.controls",
+            "virtual_fly.web.vendor.three.addons.utils", "virtual_fly.web.models"]   # every web folder that holds files (plan 7.1)
 package-dir = {"virtual_fly.data" = "data"}
 
 [tool.setuptools.package-data]

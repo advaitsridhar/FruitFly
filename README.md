@@ -495,4 +495,11 @@ These are the things the critics point at, so it's worth knowing them:
   Atlas, Li H et al., Science 2022; Davie K et al., Cell 2018; and the other data sets named in
   `data/vfb_receptors.json.gz`, all CC BY 4.0) were read once through the VFB connector and shipped
   as the files in `data/`.
+- **The 3-D view:** [three.js](https://threejs.org) 0.186.1 (MIT, copyright 2010-2026 three.js authors), vendored under
+  `virtual_fly/web/vendor/three/` with its licence and the hashes of every file (`VERSION.txt`), loaded only when the 3-D view
+  is switched on. The fly meshes are NeuroMechFly v2's (Wang-Chen S, Stimpfling VA, Lam TKC, Özdil PG, Genoud L, Hurtak F,
+  Ramdya P. *NeuroMechFly v2: simulating embodied sensorimotor control in adult Drosophila.* Nature Methods 21:2353-2362 (2024),
+  [doi:10.1038/s41592-024-02497-y](https://doi.org/10.1038/s41592-024-02497-y); [NeLy-EPFL/flygym](https://github.com/NeLy-EPFL/flygym),
+  Apache-2.0), converted to glTF and decimated for the browser by `tools/build_fly_model.py`, shipped under
+  `virtual_fly/web/models/` with the licence text (`LICENSE-NeuroMechFly.txt`) and a notice of the changes (`NOTICE-NeuroMechFly.txt`).
 - **This kit's code** is yours to use and change however you like.
