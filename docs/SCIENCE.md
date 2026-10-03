@@ -2666,7 +2666,9 @@ in "What's real here?":
   tool, never at run time. The page picks the frame from the drawn body's gait phase and interpolates. No force, no
   contact, no physics: a leg can slide where the drawn body's speed and the stride do not agree.
 * **Both flies use the same body model, built from a female fly** (NeuroMechFly's micro-CT model): the male is drawn
-  with it too, tinted by sex.
+  with it too. Its colours are chosen by hand after a look at the animal (red compound eyes, a tan head and thorax, an
+  abdomen banded tan and dark with a dark tip on the male, clear wings, darker legs and tarsi; the female a shade lighter
+  and greyer): nothing in the data says what colour a part is.
 * **Hand-built, still:** the wing extension, the abdomen bend and the proboscis are rotations of those parts about
   points chosen by hand (the 1.2.1 model has no joints for them); grooming is a simple foreleg pose or nothing; a jump
   lifts the body by a hand-built height.

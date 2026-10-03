@@ -18,7 +18,31 @@ const TAU = 2 * Math.PI;
 // that the standing fly is that long; the 2-D dish draws her a little larger than him (arena.js: 1.32 against 1.25)
 const DRAWN_FLY_LENGTH_MM = 7.2;
 const SEX_SIZE = { male: 1.0, female: 1.32 / 1.25 };
-const SEX_TINT = { male: 0x8a6a45, female: 0xa88a63 };
+// colours by part, chosen by hand after a look at the real animal (nothing in the data says what colour a mesh is): red
+// compound eyes, a tan head and thorax, an abdomen banded tan and dark with a dark tip on the male, clear wings, darker legs
+// and tarsi, dark aristae; the female a shade lighter and greyer overall, as the 2-D dish tells the sexes apart by tint
+const PALETTE = {
+  male:   { head: 0xc4a06a, eye: 0xb8261b, thorax: 0xa98052, haltere: 0xd9cba3, band_light: 0xc9a266, band_dark: 0x6f5134,
+            tip: 0x3b2a1f, wing: 0xdfe8f0, leg: 0x9a7a4f, tarsus: 0x5a4330, antenna: 0xb08b5e, arista: 0x3a2d22, proboscis: 0xb5905f },
+  female: { head: 0xd2b283, eye: 0xc0352a, thorax: 0xbb976c, haltere: 0xe3d7b5, band_light: 0xd8b67d, band_dark: 0x8a6a48,
+            tip: 0x7a5e42, wing: 0xe6edf3, leg: 0xad8f63, tarsus: 0x6e5640, antenna: 0xc19d72, arista: 0x4a3b2e, proboscis: 0xc6a373 },
+};
+/** Which palette entry a mesh takes, by its MuJoCo name (the atlas's part groups give the same answer; the names are quicker). */
+function partColour(name) {
+  if (/Eye$/.test(name)) return "eye";
+  if (name === "Head") return "head";
+  if (/Haltere$/.test(name)) return "haltere";
+  if (name === "Thorax") return "thorax";
+  if (/Wing$/.test(name)) return "wing";
+  if (name === "A6") return "tip";
+  if (/^A[1-5]/.test(name)) return (name === "A3" || name === "A5") ? "band_dark" : "band_light";   // A1A2, A4 light; A3, A5 dark
+  if (/Arista$/.test(name)) return "arista";
+  if (/Pedicel$|Funiculus$/.test(name)) return "antenna";
+  if (/Rostrum$|Haustellum$/.test(name)) return "proboscis";
+  if (/Tarsus[2-5]$/.test(name)) return "tarsus";
+  if (/Coxa$|Femur$|Tibia$|Tarsus1$/.test(name)) return "leg";
+  return "thorax";
+}
 const WING_OPEN_RAD = 75 * Math.PI / 180;        // a fully extended wing swings this far out (hand-built)
 const WING_SING_RAD = 0.12;                       // a singing wing vibrates this much at 60 Hz, as the 2-D dish shows it
 const ABDOMEN_BEND_RAD = 50 * Math.PI / 180;      // a courtship bend curls the abdomen down by this much (hand-built)
@@ -231,14 +255,18 @@ export class Arena3D {
   _makeFly(key, sex) {
     const THREE = this.THREE, group = new THREE.Group();
     const body = this.template.clone(true);
-    const mat = new THREE.MeshStandardMaterial({ color: SEX_TINT[sex] || SEX_TINT.male, roughness: 0.62, metalness: 0.05 });
-    body.traverse((o) => { if (o.isMesh) { o.material = mat; o.frustumCulled = false; } });
+    const pal = PALETTE[sex] || PALETTE.male, mats = {};
+    const material = (kind) => mats[kind] || (mats[kind] = kind === "wing"
+      ? new THREE.MeshStandardMaterial({ color: pal.wing, roughness: 0.35, metalness: 0.1, transparent: true, opacity: 0.38, side: THREE.DoubleSide, depthWrite: false })
+      : kind === "eye" ? new THREE.MeshStandardMaterial({ color: pal.eye, roughness: 0.4, metalness: 0.0 })
+      : new THREE.MeshStandardMaterial({ color: pal[kind], roughness: 0.62, metalness: 0.05 }));
+    body.traverse((o) => { if (o.isMesh) { o.material = material(partColour(o.name)); o.frustumCulled = false; } });
     body.scale.setScalar(this.unitScale);
     group.add(body);
     const nodes = this.atlas.geoms.map((name) => { const n = body.getObjectByName(name); if (!n && !this.missing.has(name)) { this.missing.add(name); console.warn(`3-D dish: the model has no node named ${name}`); } return n || null; });
     group.scale.setScalar(this.modelScale * (SEX_SIZE[sex] || 1));
     this.scene.add(group);
-    const fly = { key, sex, group, body, nodes, mat };
+    const fly = { key, sex, group, body, nodes, mats };
     this.flies.set(key, fly);
     return fly;
   }

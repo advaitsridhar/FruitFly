@@ -8,7 +8,7 @@ Plan: docs/TWO_FLIES_PLAN.md. Newest session notes first.
 | 0 | claude/two-flies-p0-baseline | #16 | merged (squash, `3631770`) | 2026-09-27 |
 | 1 | claude/two-flies-p1-two-brains | #17 | merged (squash, `f70d8be`) | 2026-10-01 |
 | 2 | claude/two-flies-p2-gpu | #18 | merged (squash, `63681db`) | 2026-10-03 |
-| 3 | claude/two-flies-p3-3d-view | #19 | draft PR open, CI green | 2026-10-03 |
+| 3 | claude/two-flies-p3-3d-view | #19 | PR open, CI green | 2026-10-03 |
 
 ## This machine
 - OS: WSL2 (Ubuntu 24.04.5 LTS) on Windows; the repository lives under the Linux home folder, not `/mnt/c`.
@@ -389,6 +389,24 @@ rejects use optional chaining it predates and were not touched); its brace balan
 1080p with two flies) is a number from a headed browser on the owner's screen. So 7.7's first, third, sixth and seventh criteria wait
 for them; the others hold.
 
+### Phase 3: the page in a real browser (plan 7.5-7.7; 2026-10-03)
+On the owner's word the Chromium of Playwright 1.63.0 was downloaded (`python -m playwright install chromium`: Chrome Headless Shell
+153.0.8010.12 plus the full Chromium and ffmpeg, 658 MB under `~/.cache/ms-playwright`). Its binary wanted three system libraries this
+WSL2 Ubuntu lacks (`libnspr4.so`, `libnss3.so`, `libnssutil3.so`; `playwright install-deps` would install 32 packages with sudo): the
+two Debian packages were fetched with `apt-get download` (no root) and unpacked into the session's scratch folder, and the tests run with
+`LD_LIBRARY_PATH` pointing at them; nothing on the system was changed. The owner can make Chromium usable without that path with
+`sudo .venv/bin/python -m playwright install-deps chromium`.
+`VF_BROWSER_TESTS=1 pytest tests/test_browser.py`: **5 passed** in 17 s, the page's first run in any browser: the default page fetches
+nothing under `vendor/three/` or `models/`; the 3-D button gives a WebGL2 context, the canvas, the badge and the fly with no console
+error; with WebGL2 blocked the page stays in 2-D with the message; a two-fly game shows both flies (125,270 triangles, 151 draw calls);
+the frame-rate probe reports 12 fps for one fly and 9-10 for two in headless Chromium on SwiftShader (a software renderer: not the
+plan's number). Screenshots from the same headless browser (the top and the follow camera) checked by eye: both flies on the dish, the
+badge and the camera menu in place. The model is 3.72 mm long at real size and is scaled by 1.93 to the drawn 7.2 mm.
+The owner looked at the 3-D view in their browser on 2026-10-03 ("looks decent") and asked for colour ("it is all brown"): the flies
+are now coloured by part (`PALETTE` in arena3d.js: red compound eyes, a tan head and thorax, an abdomen banded tan and dark with a dark
+tip on the male, clear wings at 38 % opacity, darker legs and tarsi, dark aristae; the female a shade lighter and greyer), said to be
+hand-chosen in "What's real here?" and SCIENCE.md 12. The frame rate in the owner's own browser was not reported.
+
 ### Golden hashes (plan 4.9)
 - Synthetic (`tests/golden_single_fly.json`): nine configurations, made with Python 3.12.3, NumPy 2.5.3, numba 0.67.0; a second
   run reproduces every hash (the test passes in normal mode; a determinism test runs one configuration twice).
@@ -407,12 +425,10 @@ for them; the others hold.
   would be a new hand-built controller: ask the owner before adding one.
 
 ## Next step
-Phase 3: draft PR #19 is open; CI (the GPU, physics and browser tests skip there). Waiting on the owner for: the Chromium download
-(`.venv/bin/python -m playwright install chromium`, then `.venv/bin/python -m playwright install-deps` in a terminal with sudo), after
-which `VF_BROWSER_TESTS=1 .venv/bin/python -m pytest -q tests/test_browser.py` runs the five browser checks and its frame-rate probe;
-the frame rate in the owner's own browser at 1080p with `fly_game.py --partner female` and the 3-D button (the plan's target is 50 fps);
-then the PR body's checks, `gh pr ready 19`, the merge word. Phase 4 (physics for both flies, plan section 8) starts after the merge
-with decisions 20-26 and the owner's view of the physics body (Open issues), on `claude/two-flies-p4-physics-pair`.
+Phase 3: PR #19 is ready for review, every 7.7 criterion met except the frame-rate number from a headed browser on this GPU (the owner
+looked and said the view "looks decent" but gave no number; headless SwiftShader gives 9-12 fps, which is not that number). Wait for
+the owner's merge word (or their frame rate). Phase 4 (physics for both flies, plan section 8) starts after the merge with decisions
+20-26 put to the owner in one message and the Open issue on the physics body, on `claude/two-flies-p4-physics-pair`.
 
 ## Session notes
 ### 2026-10-03 (Phase 3 started)
@@ -421,8 +437,9 @@ with decisions 20-26 and the owner's view of the physics body (Open issues), on 
 - three.js vendored with its hashes (`119556a`), the licence verified, the installs, the packaging and the server's content types;
   version 2.11.0, the `browser` extra, SCIENCE.md section 12 and the architecture lines (`79f022c`); two forks built the model
   files with `tools/build_fly_model.py` (`6c079a9`: 58,293 triangles, 1.4 MB, the gait atlas) and the 3-D dish in the page; the
-  full suite and the golden hashes checked on the whole tree; pushed; draft PR #19 opened. The browser tests and the frame rate
-  wait for the owner (Next step).
+  full suite and the golden hashes checked on the whole tree; pushed; draft PR #19 opened.
+- The owner: "go ahead and run chromium, and 3d view looks decent, would be good to add some coloring it is all brown": Chromium
+  downloaded, the five browser tests passed (Measurements), the flies coloured by part; PR #19 marked ready.
 
 ### 2026-10-01 (Phase 2 started)
 - PR #17 marked ready on the owner's word ("you merge, not me, and continue"); the automatic review posted nothing on the ready PR

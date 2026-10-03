@@ -1326,7 +1326,8 @@ class FlyAgent:
                 "a pose out of a gait atlas (NeuroMechFly's recorded stride through the kit's own leg controller); the wings, the "
                 "abdomen and the proboscis are hand-built rotations of the meshes about hinges; a jump lifts the body by a hand-built amount.",
                 "When the 3-D view is on, both flies, the male included, wear NeuroMechFly's body, a model built from a female fly "
-                "(micro-CT), decimated for the browser; a tint tells the sexes apart.",
+                "(micro-CT), decimated for the browser; its colours are chosen by hand (red eyes, a tan body with a banded abdomen, "
+                "clear wings, darker legs; the female a shade lighter): nothing in the data says what colour a part is.",
                 "When the 3-D view is on, the legs replay NeuroMechFly's recorded stride (flygym 1.2.1), never this fly's own leg "
                 "commands: the brain's descending neurons move the drawn body, and the meshes follow it.",
                 "When the 3-D view is on, the flies are drawn at the drawn scale, about three times real size (as the 2-D dish and "
