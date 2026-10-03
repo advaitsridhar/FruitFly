@@ -407,7 +407,8 @@ are now coloured by part (`PALETTE` in arena3d.js: red compound eyes, a tan head
 tip on the male, clear wings at 38 % opacity, darker legs and tarsi, dark aristae; the female a shade lighter and greyer), said to be
 hand-chosen in "What's real here?" and SCIENCE.md 12. The owner then said "color looks good and it is smooth" and asked how to see the frame rate: the badge now carries a
 frame-rate readout the dish updates once a second (`#fps3d`; `window.__vf3d.fps` holds the same number for the console). The owner read
-it: **"the fps is at 80 or so"** (2026-10-03, their browser on this laptop's GPU, two flies, the brain map open): the 7.7 target of 50 met.
+it: **"the fps is at 80 or so"** (2026-10-03, the two-fly game in their own browser on this laptop; the GPU the browser used, the window
+size and whether the brain map was open were not recorded): the 7.7 target of 50 met.
 
 ### Golden hashes (plan 4.9)
 - Synthetic (`tests/golden_single_fly.json`): nine configurations, made with Python 3.12.3, NumPy 2.5.3, numba 0.67.0; a second
