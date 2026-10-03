@@ -8,7 +8,7 @@ Plan: docs/TWO_FLIES_PLAN.md. Newest session notes first.
 | 0 | claude/two-flies-p0-baseline | #16 | merged (squash, `3631770`) | 2026-09-27 |
 | 1 | claude/two-flies-p1-two-brains | #17 | merged (squash, `f70d8be`) | 2026-10-01 |
 | 2 | claude/two-flies-p2-gpu | #18 | merged (squash, `63681db`) | 2026-10-03 |
-| 3 | claude/two-flies-p3-3d-view | #19 | PR open, CI green | 2026-10-03 |
+| 3 | claude/two-flies-p3-3d-view | #19 | PR ready, CI green, the owner's merge word given | 2026-10-03 |
 
 ## This machine
 - OS: WSL2 (Ubuntu 24.04.5 LTS) on Windows; the repository lives under the Linux home folder, not `/mnt/c`.
@@ -406,7 +406,8 @@ The owner looked at the 3-D view in their browser on 2026-10-03 ("looks decent")
 are now coloured by part (`PALETTE` in arena3d.js: red compound eyes, a tan head and thorax, an abdomen banded tan and dark with a dark
 tip on the male, clear wings at 38 % opacity, darker legs and tarsi, dark aristae; the female a shade lighter and greyer), said to be
 hand-chosen in "What's real here?" and SCIENCE.md 12. The owner then said "color looks good and it is smooth" and asked how to see the frame rate: the badge now carries a
-frame-rate readout the dish updates once a second (`#fps3d`; `window.__vf3d.fps` holds the same number for the console).
+frame-rate readout the dish updates once a second (`#fps3d`; `window.__vf3d.fps` holds the same number for the console). The owner read
+it: **"the fps is at 80 or so"** (2026-10-03, their browser on this laptop's GPU, two flies, the brain map open): the 7.7 target of 50 met.
 
 ### Golden hashes (plan 4.9)
 - Synthetic (`tests/golden_single_fly.json`): nine configurations, made with Python 3.12.3, NumPy 2.5.3, numba 0.67.0; a second
