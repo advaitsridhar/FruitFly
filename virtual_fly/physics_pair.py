@@ -145,7 +145,7 @@ class PairWorld:
 
     def __init__(self, poses, seed: int = 0, world=None, rngs=None, timestep: float = TIMESTEP,
                  contact_set: str = "forelegs", wall: bool = True, pair_solref=None, pair_solimp=None, hulls: bool = False,
-                 native_ccd: bool = False):
+                 native_ccd: bool = False, levers=()):
         if not physics.available():
             raise RuntimeError(unavailable_reason()) from physics._IMPORT_ERROR
         if contact_set not in CONTACT_SETS:
@@ -157,6 +157,8 @@ class PairWorld:
         poses = [tuple(float(v) for v in p) for p in poses]
         if len(poses) < 1:
             raise ValueError("a pair world needs at least one fly")
+        self.levers = physics.parse_levers(levers)             # speed levers (physics.LEVERS): none unless asked for
+        timestep = physics.lever_timestep(self.levers, timestep)
         self.timestep, self.seed, self.contact_set, self.wall = timestep, seed, contact_set, wall
         self.pair_solref, self.pair_solimp, self.hulls, self.native_ccd = pair_solref, pair_solimp, hulls, native_ccd
         names = [f"fly{k}" for k in range(len(poses))]
@@ -166,7 +168,9 @@ class PairWorld:
         self.flies = []
         for k, (x, y, h) in enumerate(poses):
             fly = _PairFly(name=names[k], enable_adhesion=True, draw_adhesion=False, spawn_pos=(x, y, 0.2),
-                           spawn_orientation=(0.0, 0.0, h))
+                           spawn_orientation=(0.0, 0.0, h), **physics.lever_fly_kwargs(self.levers))
+            if "dedupe" in self.levers:
+                physics.dedupe_self_pairs(fly)
             fly.hulls = hulls
             if k == 0 and len(poses) > 1:
                 fly.pairs, fly.other = self.pairs, names[1]
@@ -179,6 +183,7 @@ class PairWorld:
         m, d = self._m, self._d
         if native_ccd:                                # MuJoCo's own convex collider instead of libccd's (a measured option)
             m.opt.enableflags |= mujoco.mjtEnableBit.mjENBL_NATIVECCD
+        physics.apply_levers(m, self.levers)
         steps = PreprogrammedSteps()                  # the recorded step, tabulated over its phase (as physics.Walker)
         self._n = 2048
         grid = np.linspace(0, 2 * np.pi, self._n + 1)

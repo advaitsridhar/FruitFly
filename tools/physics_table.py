@@ -129,17 +129,17 @@ def variant_of(row: dict) -> str:
 
 
 # ---------------------------------------------------------------------------------------------- the jobs (child processes)
-def body_job(kind: str, seed: int, seconds: float) -> dict:
+def body_job(kind: str, seed: int, seconds: float, levers: tuple = ()) -> dict:
     """The body alone, no brain: the speed at the three forward drives and the turn rate at full steering."""
     import random
     from virtual_fly.physics import make_body
     from virtual_fly.world import World, wrap
-    out = {"job": "body", "body": kind, "stride_average": False, "seed": seed, "seconds": seconds,
+    out = {"job": "body", "body": kind, "stride_average": False, "seed": seed, "seconds": seconds, "levers": list(levers),
            "speed": {}, "path_speed": {}, "turn": {}, "turn_net_mm": {}, "rtf": {}}
     n = int(round(seconds / TICK_S))
     for f in DRIVES:
         for steer in (0.0, 1.0):
-            body = make_body(kind, World(seed=seed), random.Random(seed), seed=seed)
+            body = make_body(kind, World(seed=seed), random.Random(seed), seed=seed, levers=levers)
             body.reset()
             x0, y0, prev = body.pose.x, body.pose.y, body.pose.h
             h_acc = 0.0
@@ -166,7 +166,7 @@ def body_job(kind: str, seed: int, seconds: float) -> dict:
 
 
 def game_job(kind: str, stride_average: bool, seed: int, scenario: str, seconds: float,
-             wiggle: tuple = (WIGGLE_MM, WIGGLE_HZ)) -> dict:
+             wiggle: tuple = (WIGGLE_MM, WIGGLE_HZ), levers: tuple = ()) -> dict:
     """One scenario on a fresh game: the fly and its brain from the seed, the parts list on, the dish empty."""
     from virtual_fly import load_connectome
     from virtual_fly.game import GF_BURST, Game
@@ -179,7 +179,7 @@ def game_job(kind: str, stride_average: bool, seed: int, scenario: str, seconds:
     kw = {"seed": seed, "dt": 0.5}
     brain = build_brain(conn, "game", **kw, parts=parts_list)
     game = Game(brain, seed=seed, body=kind, stride_average=stride_average, brain_kwargs=dict(kw), parts_list=parts_list,
-                brain_procs="auto", autopilot=scenario != "lure_still")
+                brain_procs="auto", autopilot=scenario != "lure_still", physics_levers=levers)
     del brain
     build_s = time.perf_counter() - t_build
     try:
@@ -261,7 +261,7 @@ def game_job(kind: str, stride_average: bool, seed: int, scenario: str, seconds:
         p = f.body.pose
         dx, dy = p.x - x0, p.y - y0
         row = {"job": "game", "body": kind, "stride_average": stride_average, "seed": seed, "scenario": scenario,
-               "seconds": seconds, "autopilot": scenario != "lure_still",
+               "seconds": seconds, "autopilot": scenario != "lure_still", "levers": list(levers),
                "heading_change_deg": round(math.degrees(h_acc), 1), "net_mm": round(math.hypot(dx, dy), 2),
                "backward_mm": round(-(dx * math.cos(h0) + dy * math.sin(h0)), 2),
                "faced_at_s": faced_at,
@@ -364,7 +364,56 @@ def within(measured, published, tol) -> str:
     return "yes" if abs(measured - published) <= tol * abs(published) else f"NO ({(measured - published) / published:+.0%})"
 
 
-def report(rows: list[dict]) -> list[str]:
+def summarise(rows: list[dict]) -> dict:
+    """A saved run's rows in PUBLISHED's shape, so that a lever run can be read against the tool's own baseline run on the
+    unchanged body (the gate the levers are judged by, decision 25)."""
+    by: dict = {}
+    for r in rows:
+        if "error" not in r:
+            by.setdefault(variant_of(r), {}).setdefault(r.get("scenario", "body"), []).append(r)
+    out = {}
+    for variant, groups in by.items():
+        t: dict = {"speed": None, "turn": None, "speed_note": "baseline"}
+        body = sorted(groups.get("body", []), key=lambda r: r["seed"])
+        if body:
+            t["speed"] = {d: round(statistics.fmean(r["speed"][d] for r in body), 2) for d in ("0.3", "0.6", "1")}
+            t["turn"] = {d: round(statistics.fmean(r["turn"][d] for r in body), 1) for d in ("0.3", "0.6", "1")}
+        faces_n = faces_total = 0
+        faces_t = []
+        for scen in ("lure_left", "lure_right"):
+            g = sorted(groups.get(scen, []), key=lambda r: r["seed"])
+            t[scen] = [round(r["heading_change_deg"]) for r in g]
+            t[scen + "_note"] = f"escapes {fmt_list([r['escape_events'] for r in g])}" if g else ""
+            faces_n += sum(1 for r in g if r["faced_at_s"] is not None)
+            faces_total += len(g)
+            faces_t += [r["faced_at_s"] for r in g if r["faced_at_s"] is not None]
+        t["faces"] = (faces_n * 10 // max(faces_total, 1) if faces_total else 0, f"{rng_str(faces_t)} s")
+        g = sorted(groups.get("lure_still", []), key=lambda r: r["seed"])
+        t["lure_still"] = (f"turns {rng_str([r['heading_change_deg'] for r in g], 1)} deg; faces at {fmt_list([r['faced_at_s'] for r in g], 2)} s; "
+                           f"lure at the end {fmt_list([r['lure_bearing_end_deg'] for r in g], 0)} deg") if g else "–"
+        g = sorted(groups.get("mdn", []), key=lambda r: r["seed"])
+        t["mdn"] = [r["net_mm"] for r in g]
+        t["mdn_note"] = f"heading drift {rng_str([abs(r['heading_change_deg']) for r in g], 0)} deg" if g else ""
+        t["mdn_hs"] = (f"{rng_str([r['hs_hz_backing'] for r in g], 1)} Hz / "
+                       f"{rng_str([r['events_per_s_backing'] / 1000 for r in g if r['events_per_s_backing'] is not None], 0)}k events/s") if g else "–"
+        g = sorted(groups.get("quiet", []), key=lambda r: r["seed"])
+        t["quiet_hs"] = [r["hs_hz"] for r in g]
+        t["quiet_eps"] = [r["events_per_s"] for r in g]
+        high = [f"seed {r['seed']} from {r['high_state_from_s']} s" for r in g if r["high_state_from_s"] is not None]
+        t["quiet_high"] = ", ".join(high) if high else ("none" if g else "–")
+        back = [f"seed {r['seed']}: {r['back_ticks_no_touch']} ticks" for r in g if r["back_ticks_no_touch"]]
+        t["quiet_back"] = ", ".join(back) if back else ("none" if g else "–")
+        game_rows = [r for s_, rs in groups.items() if s_ != "body" for r in rs]
+        t["rtf"] = (rng_str([r["rtf"] for r in game_rows], 3) + (f" (MuJoCo alone {rng_str([r['mujoco_rtf'] for r in game_rows if r.get('mujoco_rtf')], 3)})"
+                                                                 if any(r.get("mujoco_rtf") for r in game_rows) else "")) if game_rows else "–"
+        t["memory"] = f"{rng_str([r['peak_mb'] for r in game_rows], 0)} MB" if game_rows else "–"
+        out[variant] = t
+    return out
+
+
+def report(rows: list[dict], target: dict | None = None, label: str = "published") -> list[str]:
+    """The measured numbers beside the target's: the published table (the default) or a baseline run's summary."""
+    target = PUBLISHED if target is None else target
     out, verdicts = [], []
     by: dict = {}
     for r in rows:
@@ -373,22 +422,26 @@ def report(rows: list[dict]) -> list[str]:
             continue
         by.setdefault(variant_of(r), {}).setdefault(r.get("scenario", "body"), []).append(r)
     for variant, groups in by.items():
-        pub = PUBLISHED[variant]
+        pub = target.get(variant)
+        levers = next((r.get("levers") for rs in groups.values() for r in rs if r.get("levers")), None)
         out.append("")
-        out.append(f"== {variant} ==")
+        out.append(f"== {variant}{' with levers ' + ', '.join(levers) if levers else ''} (against the {label} numbers) ==")
+        if pub is None:
+            out.append(f"    (the {label} numbers have no {variant} column)")
+            continue
         body = sorted(groups.get("body", []), key=lambda r: r["seed"])
         if body:
-            for key, label in (("speed", "speed at forward drive 0.3 / 0.6 / 1.0 (mm/s, net displacement over 3 s)"),
+            for key, title in (("speed", "speed at forward drive 0.3 / 0.6 / 1.0 (mm/s, net displacement over 3 s)"),
                                ("turn", "turn rate at full steering, same drives (deg/s)")):
                 means = {d: mean([r[key][d] for r in body], 2) for d in ("0.3", "0.6", "1")}
-                out.append(f"{label}:")
+                out.append(f"{title}:")
                 out.append("    measured (mean of seeds " + ", ".join(str(r["seed"]) for r in body) + "): "
                            + " / ".join(f"{means[d]:.1f}" for d in means) + "   per seed: "
                            + "; ".join(f"{d}: {fmt_list([r[key][d] for r in body])}" for d in means))
                 if pub.get(key):
                     ver = [within(means[d], pub[key][d], TOL_SPEED) for d in means]
-                    out.append(f"    published: " + " / ".join(str(pub[key][d]) for d in means)
-                               + (f" ({pub['speed_note']})" if key == "speed" else "") + f"   within {TOL_SPEED:.0%}: " + ", ".join(ver))
+                    out.append(f"    {label}: " + " / ".join(str(pub[key][d]) for d in means)
+                               + (f" ({pub.get('speed_note', '')})" if key == "speed" else "") + f"   within {TOL_SPEED:.0%}: " + ", ".join(ver))
                     verdicts.append((f"{variant} {key}", all(v == "yes" for v in ver)))
             if any(r["path_speed"].get("1") for r in body):
                 out.append("    (path length over 3 s, for the eye: " + " / ".join(
@@ -405,7 +458,7 @@ def report(rows: list[dict]) -> list[str]:
             out.append(f"    measured:  {fmt_list([r['heading_change_deg'] for r in g], 0)}   (mean {mean([r['heading_change_deg'] for r in g], 0)}); "
                        f"escapes {fmt_list([r['escape_events'] for r in g])} (ticks {fmt_list([r['escape_ticks'] for r in g])}); "
                        f"faces at {fmt_list([r['faced_at_s'] for r in g], 2)} s")
-            out.append(f"    published: {fmt_list(pub[scen], 0)}   ({pub[scen + '_note']})")
+            out.append(f"    {label}: {fmt_list(pub.get(scen) or [], 0)}   ({pub.get(scen + '_note', '')})")
             faces_n += sum(1 for r in g if r["faced_at_s"] is not None)
             faces_t += [r["faced_at_s"] for r in g if r["faced_at_s"] is not None]
             faces_total += len(g)
@@ -414,8 +467,8 @@ def report(rows: list[dict]) -> list[str]:
             scaled = pn * faces_total / 10.0
             ok = abs(faces_n - scaled) <= TOL_FACES
             out.append(f"faces the lure (within 15 deg): measured {faces_n} of {faces_total} runs, at {rng_str(faces_t)} s; "
-                       f"published {pn} of 10, at {pt}; within {TOL_FACES}: {'yes' if ok else 'NO'}"
-                       + ("" if faces_total == 10 else f" (published scaled to {scaled:.1f} of {faces_total})"))
+                       f"{label} {pn} of 10, at {pt}; within {TOL_FACES}: {'yes' if ok else 'NO'}"
+                       + ("" if faces_total == 10 else f" ({label} scaled to {scaled:.1f} of {faces_total})"))
             verdicts.append((f"{variant} faces the lure", ok))
         g = sorted(groups.get("lure_still", []), key=lambda r: r["seed"])
         if g:
@@ -423,42 +476,42 @@ def report(rows: list[dict]) -> list[str]:
             out.append(f"    measured:  turns {fmt_list([r['heading_change_deg'] for r in g], 1)} deg (mean {mean([r['heading_change_deg'] for r in g], 1)}), "
                        f"net {fmt_list([r['net_mm'] for r in g], 1)} mm; faces at {fmt_list([r['faced_at_s'] for r in g], 2)} s; "
                        f"lure at the end {fmt_list([r['lure_bearing_end_deg'] for r in g], 0)} deg; escapes {fmt_list([r['escape_events'] for r in g])}")
-            out.append(f"    published: {pub['lure_still']}")
+            out.append(f"    {label}: {pub.get('lure_still', '–')}")
         g = sorted(groups.get("mdn", []), key=lambda r: r["seed"])
         if g:
             out.append("MDN at 60 Hz for 3 s:")
             out.append(f"    measured:  net {fmt_list([r['net_mm'] for r in g], 1)} mm (mean {mean([r['net_mm'] for r in g], 1)}); "
                        f"backward part {fmt_list([r['backward_mm'] for r in g], 1)} mm; heading drift {fmt_list([abs(r['heading_change_deg']) for r in g], 0)} deg; "
                        f"ticks backing {fmt_list([r['back_ticks'] for r in g])}; escapes {fmt_list([r['escape_events'] for r in g])}")
-            out.append(f"    published: {fmt_list(pub['mdn'], 1)} mm ({pub['mdn_note']})")
+            out.append(f"    {label}: {fmt_list(pub.get('mdn') or [], 1)} mm ({pub.get('mdn_note', '')})")
             out.append(f"    HS / brain while backing: measured {rng_str([r['hs_hz_backing'] for r in g], 1)} Hz / "
                        f"{rng_str([r['events_per_s_backing'] / 1000 for r in g if r['events_per_s_backing'] is not None], 0)}k events/s; "
-                       f"published {pub['mdn_hs']}")
+                       f"{label} {pub.get('mdn_hs', '–')}")
         g = sorted(groups.get("quiet", []), key=lambda r: r["seed"])
         if g:
             out.append(f"{g[0]['seconds']:g} s in a quiet arena, walking urge on:")
-            out.append(f"    HS (Hz):       measured {fmt_list([r['hs_hz'] for r in g], 1)};  published {fmt_list(pub['quiet_hs'], 1)}")
+            out.append(f"    HS (Hz):       measured {fmt_list([r['hs_hz'] for r in g], 1)};  {label} {fmt_list(pub.get('quiet_hs') or [], 1)}")
             out.append(f"    brain (ev/s):  measured {fmt_list([round(r['events_per_s'] / 1000, 1) for r in g], 1)}k;  "
-                       f"published {fmt_list([x / 1000 for x in pub['quiet_eps']], 1)}k")
+                       f"{label} {fmt_list([x / 1000 for x in (pub.get('quiet_eps') or [])], 1)}k")
             if all(r.get("spikes_per_s") is not None for r in g):
                 out.append(f"      (of which spikes {fmt_list([round(r['spikes_per_s'] / 1000, 1) for r in g], 1)}k, "
                            f"graded quanta {fmt_list([round(r['graded_per_s'] / 1000, 1) for r in g], 1)}k)")
             high = [f"seed {r['seed']} from {r['high_state_from_s']} s" for r in g if r["high_state_from_s"] is not None]
             out.append(f"    high state (>60k events/s held >= 1 s): measured {', '.join(high) if high else 'none'}; "
                        f"escapes {fmt_list([r['escape_events'] for r in g])} (ticks {fmt_list([r['escape_ticks'] for r in g])}); "
-                       f"published {pub['quiet_high']}")
+                       f"{label} {pub.get('quiet_high', '–')}")
             back = [f"seed {r['seed']}: {r['back_ticks_no_touch']} ticks from {r['back_no_touch_from_s']} s" for r in g if r["back_ticks_no_touch"]]
-            out.append(f"    backing with no wall touch in the last 1.5 s: measured {', '.join(back) if back else 'none'}; published {pub['quiet_back']}")
+            out.append(f"    backing with no wall touch in the last 1.5 s: measured {', '.join(back) if back else 'none'}; {label} {pub.get('quiet_back', '–')}")
         game_rows = [r for s, rs in groups.items() if s != "body" for r in rs]
         if game_rows:
             rt = f"real-time factor: measured {rng_str([r['rtf'] for r in game_rows], 3)}"
             if any(r.get("mujoco_rtf") for r in game_rows):
                 rt += f" (MuJoCo alone {rng_str([r['mujoco_rtf'] for r in game_rows if r.get('mujoco_rtf')], 3)}; "
                 rt += f"contacts per step {rng_str([r['ncon_mean'] for r in game_rows if r.get('ncon_mean') is not None], 1)})"
-            rt += f"; published {pub['rtf']}   [1-minute load while running: {rng_str([r['load1'] for r in game_rows], 1)}]"
+            rt += f"; {label} {pub.get('rtf', '–')}   [1-minute load while running: {rng_str([r['load1'] for r in game_rows], 1)}]"
             out.append(rt)
             out.append(f"peak memory: measured {rng_str([r['peak_mb'] for r in game_rows], 0)} MB (brain build "
-                       f"{rng_str([r['build_s'] for r in game_rows], 0)} s); published {pub['memory']}")
+                       f"{rng_str([r['build_s'] for r in game_rows], 0)} s); {label} {pub.get('memory', '–')}")
     if verdicts:
         out.append("")
         out.append("decision 25 verdicts: " + "; ".join(f"{k}: {'within tolerance' if ok else 'OUTSIDE'}" for k, ok in verdicts))
@@ -480,32 +533,45 @@ def main(argv=None) -> int:
     ap.add_argument("--wiggle-hz", type=float, default=WIGGLE_HZ, help="the swing's rate")
     ap.add_argument("--json", type=Path, help="write every run's row and the report here")
     ap.add_argument("--compare", type=Path, help="print the report from a saved --json file and exit")
+    ap.add_argument("--baseline", type=Path, help="read the numbers against this saved run (the tool's own run on the unchanged "
+                                                  "body: the levers' gate) instead of the published table")
+    ap.add_argument("--levers", default="", help="physics speed levers to switch on, a comma list of " + ", ".join(
+        __import__("virtual_fly.physics", fromlist=["LEVERS"]).LEVERS))
     args = ap.parse_args(argv)
+    from virtual_fly.physics import parse_levers
+    try:
+        levers = parse_levers(args.levers)
+    except ValueError as e:
+        ap.error(str(e))
+    target, label = None, "published"
+    if args.baseline:
+        target, label = summarise(json.loads(args.baseline.read_text())["rows"]), f"baseline ({args.baseline.name})"
     if args.compare:
         saved = json.loads(args.compare.read_text())
-        print("\n".join(report(saved["rows"])))
+        print("\n".join(report(saved["rows"], target, label)))
         return 0
     jobs: list[tuple] = []
     for variant in args.bodies:
         kind, sa = VARIANTS[variant]
         for seed in args.seeds:
             if "body" in args.only and not sa:
-                jobs.append((body_job, {"kind": kind, "seed": seed, "seconds": args.seconds}))
+                jobs.append((body_job, {"kind": kind, "seed": seed, "seconds": args.seconds, "levers": levers}))
             for scen in SCENARIOS:
                 if scen in args.only:
                     secs = args.quiet_seconds if scen == "quiet" else args.seconds
                     jobs.append((game_job, {"kind": kind, "stride_average": sa, "seed": seed, "scenario": scen, "seconds": secs,
-                                            "wiggle": (args.wiggle, args.wiggle_hz)}))
+                                            "wiggle": (args.wiggle, args.wiggle_hz), "levers": levers}))
 
     def describe(job):
         fn, kw = job
         v = kw["kind"] + ("_sa" if kw.get("stride_average") else "")
         return f"{v} seed {kw['seed']} {kw.get('scenario', 'body')}"
 
-    print(f"{len(jobs)} runs, {args.jobs} at a time; load now {os.getloadavg()[0]:.1f}", flush=True)
+    print(f"{len(jobs)} runs, {args.jobs} at a time; load now {os.getloadavg()[0]:.1f}"
+          + (f"; levers {', '.join(levers)}" if levers else ""), flush=True)
     t0 = time.monotonic()
     rows = run_jobs(jobs, max(1, args.jobs), describe)
-    lines = report(rows)
+    lines = report(rows, target, label)
     print("\n".join(lines))
     print(f"\n{len(jobs)} runs in {(time.monotonic() - t0) / 60:.1f} min")
     if args.json:

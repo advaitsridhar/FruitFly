@@ -85,7 +85,7 @@ class FlyAgent:
     def __init__(self, game, id: int, brain=None, *, conn=None, sex: str, rng, seed: int, autopilot: bool = True,
                  columnar: bool = True, body: str = "drawn", stride_average: bool = False, parts_list=None,
                  brain_factory=None, brain_kwargs: dict | None = None, retest: str = "auto", brain_procs: bool = False,
-                 parts=False, pair: bool = False, home: tuple | None = None, io_factory=None):
+                 parts=False, pair: bool = False, home: tuple | None = None, io_factory=None, physics_levers=()):
         """``brain``: a built FlyBrain (the protagonist's, as play.py builds it); or ``brain=None`` with ``conn``: a fly
         whose brain is built from ``brain_kwargs`` and ``parts`` (False, True or a PartsList), in its own process when
         ``brain_procs`` is set, else here (a partner, docs/TWO_FLIES_PLAN.md 5.4). ``pair``: this fly shares the dish
@@ -153,7 +153,8 @@ class FlyAgent:
         if isinstance(body, str):
             if body == "physics":                      # optional: NeuroMechFly v2 in MuJoCo (virtual_fly/physics.py)
                 from .physics import make_body
-                self.body = make_body("physics", self.world, self.rng, seed=seed, stride_average=stride_average)
+                self.body = make_body("physics", self.world, self.rng, seed=seed, stride_average=stride_average,
+                                      levers=physics_levers)
             else:
                 self.body = FlyBody(self.world, self.rng)
             self.body_kind = body

@@ -100,6 +100,10 @@ def _main(argv=None):
     ap.add_argument("--social", metavar="LIST", default=None,
                     help=f"with --partner: the channels between the flies that are on, a comma list (default {DEFAULT_CHANNELS}; "
                          f"the channels are {', '.join(CHANNELS)}, mating as mating:virgin or mating:mated)")
+    ap.add_argument("--physics-levers", metavar="LIST", default=None,
+                    help="physics body: speed levers to switch on, a comma list of " + ", ".join(
+                        f"{k} ({v})" for k, v in __import__("virtual_fly.physics", fromlist=["LEVERS"]).LEVERS.items())
+                    + "; each changes the physics and is measured before it is adopted (docs/SCIENCE.md 13.5)")
     ap.add_argument("--partner-body", choices=("drawn", "physics"), default=None,
                     help="with --partner: the partner's body; it is the protagonist's (--body): physics puts both flies in one "
                          "MuJoCo world, so --partner-body physics needs --body physics, and --partner-body drawn the drawn body")
@@ -123,6 +127,15 @@ def _main(argv=None):
             ap.error(str(e))
     else:
         social = SocialConfig.from_list(None)
+    if args.physics_levers is not None and args.body != "physics":
+        ap.error("--physics-levers only applies to the physics body: add --body physics")
+    levers = ()
+    if args.physics_levers is not None:
+        from .physics import parse_levers
+        try:
+            levers = parse_levers(args.physics_levers)
+        except ValueError as e:
+            ap.error(str(e))
     if args.body == "physics":
         from .physics import available, unavailable_reason
         if not available():
@@ -178,6 +191,8 @@ def _main(argv=None):
         c = brain.parts.counts
         print(f"Parts list: on ({c['modulatory_neurons']:,} modulatory neurons, {c['co_release_neurons']:,} of them also keeping "
               f"their fast synapses; {c['graded_neurons']:,} graded cells).", file=sys.stderr)
+    if args.body == "physics" and levers:
+        print("Physics levers on (each changes the physics; docs/SCIENCE.md 13.5): " + ", ".join(levers) + ".", file=sys.stderr)
     if args.body == "physics" and partner is not None:
         print("Body: physics for both flies (NeuroMechFly v2 in one MuJoCo world, each with its own brain, able to touch; "
               "slower than real time, about a tenth with two flies; both drawn at real size).", file=sys.stderr)
@@ -193,7 +208,8 @@ def _main(argv=None):
     game = Game(brain, autopilot=not args.no_autopilot, seed=args.seed, columnar=not args.no_columnar,
                 profile_name=profile, brain_factory=lambda c, **kw: build_brain(c, profile, **{**overrides, **kw}),
                 parts_list=parts_list, brain_kwargs={k: v for k, v in overrides.items() if k != "parts"}, body=args.body,
-                stride_average=args.stride_average, brain_procs=args.brain_procs, partner=partner_spec, social=social)
+                stride_average=args.stride_average, brain_procs=args.brain_procs, partner=partner_spec, social=social,
+                physics_levers=levers)
     del brain                                    # the game owns it now (or, in its own process, has let it go)
     if args.backend == "cupy":
         backend = game.flies[0].io.settings().get("backend")

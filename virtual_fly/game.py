@@ -301,7 +301,7 @@ class Game:
     def __init__(self, brain: FlyBrain, autopilot: bool = True, seed: int = 0, columnar: bool = True,
                  profile_name: str = "game", brain_factory=None, parts_list=None, brain_kwargs: dict | None = None,
                  retest: str = "auto", body: str = "drawn", stride_average: bool = False, brain_procs: str = "auto",
-                 partner: dict | None = None, social=None):
+                 partner: dict | None = None, social=None, physics_levers=()):
         """``partner``: a second simulated fly in the dish (docs/TWO_FLIES_PLAN.md 5.4): a dict with its ``conn``
         (loaded here, for the API and the layout; its brain is built from the file in a process of its own, or here
         with brain_procs="off"), and optionally ``brain_kwargs`` (default: the protagonist's overrides), ``parts``
@@ -323,6 +323,8 @@ class Game:
         self.world = World(seed)
         self.events = EventLog()
         self.scenario = ScenarioRunner(self)
+        from .physics import parse_levers
+        self.physics_levers = parse_levers(physics_levers)   # speed levers of the physics body (physics.LEVERS): none by default
         self.pair_world = None                           # a partner with the physics body: one MuJoCo world for both flies
         if partner is not None and body == "physics":    # (physics_pair.py; docs/TWO_FLIES_PLAN.md 8.3-8.5)
             from .physics_pair import PairWorld, available, unavailable_reason
@@ -330,7 +332,7 @@ class Game:
                 raise RuntimeError(unavailable_reason())
             if stride_average:
                 raise ValueError("--stride-average is the single physics fly's: in a pair each fly's senses see its body as it is")
-            self.pair_world = PairWorld([HOME, PARTNER_HOME], seed=seed, world=self.world)
+            self.pair_world = PairWorld([HOME, PARTNER_HOME], seed=seed, world=self.world, levers=self.physics_levers)
         # where the brains run: "local" (this process), "procs" (a process per brain), "server" (one process for every
         # brain: the GPU's way, docs/TWO_FLIES_PLAN.md 6.5, chosen by auto when a fly's brain_kwargs say backend cupy)
         self.brain_mode = self._brain_mode(brain_procs, brain_kwargs, partner)
@@ -346,6 +348,7 @@ class Game:
         self.flies = [FlyAgent(self, 0, brain, sex=getattr(brain.conn, "sex", "male"), rng=self.rng, seed=seed,
                                autopilot=autopilot, columnar=columnar, stride_average=stride_average,
                                body=self.pair_world.bodies[0] if self.pair_world is not None else body,
+                               physics_levers=self.physics_levers,
                                parts_list=parts_list, brain_factory=brain_factory, brain_kwargs=brain_kwargs, retest=retest,
                                brain_procs=procs, pair=partner is not None, io_factory=io_factory)]
         del brain                                        # a process brain has been built from it: let it go

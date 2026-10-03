@@ -167,3 +167,23 @@ def test_a_game_runs_two_physics_flies_in_one_world(conn):
     finally:
         g.close()
     assert g.pair_world.sim is None                                   # closed with the game
+
+
+@needs_flygym
+def test_the_pair_world_takes_the_levers_too():
+    plain = _world()
+    try:
+        npair0 = plain._m.npair
+        assert plain.levers == () and plain._m.opt.iterations == 1000
+    finally:
+        plain.close()
+    w = pp.PairWorld([(-3.0, 0.0, 0.0), (3.0, 0.0, math.pi)], seed=0, levers="dedupe,solver100,noslip5")
+    try:
+        assert w.levers == ("dedupe", "solver100", "noslip5")
+        assert w._m.npair == npair0 - 2 * 1086 and w._m.opt.iterations == 100 and w._m.opt.noslip_iterations == 5
+        assert len(w.pairs) == 233                                     # the fly-to-fly pairs are not what dedupe drops
+        _stand(w)
+        assert 0.8 < w.thorax(0)[0][2] < 1.4                           # it still stands
+    finally:
+        w.close()
+
