@@ -294,7 +294,8 @@ bodies, each driven by its own brain, able to touch each other: the tap is a phy
 drawn at real size, and the pair runs at about a tenth of real time (that is the bodies' pace, the page says so). The single
 physics fly is unchanged (`docs/SCIENCE.md` section 13). The page's "Save replay" switch writes the run to `recordings/`, and
 `py tools/render_replay.py recordings/<id>` turns a physics replay into a 1080p MP4 at real speed with MuJoCo's own renderer
-(`--camera overhead`, `follow` or `side`; section 13.4).
+(`--camera overhead`, `follow` or `side`; section 13.4). `--physics-levers LIST` switches on measured speed levers (section 13.5;
+the pair's default, `dedupe`, changes nothing and runs faster).
 
 **In code**, start with `my_first_fly.py`: poke, wait, listen, in three lines. Then:
 

@@ -123,11 +123,17 @@ LEVERS = {
 }
 
 
+PAIR_DEFAULT_LEVERS = ("dedupe",)   # adopted for the physics pair (docs/SCIENCE.md 13.5): every measured number identical, 1.3x faster
+
+
 def parse_levers(levers) -> tuple[str, ...]:
-    """A comma list (or any sequence) of lever names -> a tuple in LEVERS order, each name checked; nothing -> ()."""
+    """A comma list (or any sequence) of lever names -> a tuple in LEVERS order, each name checked; nothing, or the word
+    "none", -> ()."""
     if not levers:
         return ()
     names = [s.strip() for s in (levers.split(",") if isinstance(levers, str) else levers) if s and str(s).strip()]
+    if names == ["none"]:
+        return ()
     bad = [n for n in names if n not in LEVERS]
     if bad:
         raise ValueError(f"unknown physics lever{'s' if len(bad) > 1 else ''} {', '.join(bad)}: choose from {', '.join(LEVERS)}")

@@ -83,7 +83,8 @@ def test_game_ticks_with_physics_body(conn):
 def test_levers_are_named_checked_and_off_by_default():
     assert physics.parse_levers(None) == () and physics.parse_levers("") == () and physics.parse_levers(()) == ()
     assert physics.parse_levers("solver100, dedupe") == ("dedupe", "solver100")     # LEVERS order, whatever the input's
-    assert physics.parse_levers(["dt2"]) == ("dt2",)
+    assert physics.parse_levers(["dt2"]) == ("dt2",) and physics.parse_levers("none") == ()
+    assert physics.PAIR_DEFAULT_LEVERS == ("dedupe",)
     with pytest.raises(ValueError, match="unknown physics lever nope"):
         physics.parse_levers("dedupe,nope")
     with pytest.raises(ValueError, match="exclude each other"):

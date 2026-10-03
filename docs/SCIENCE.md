@@ -2797,6 +2797,69 @@ at any size from 640 x 480 up, and the same with `MUJOCO_GL=egl`, `osmesa` or `g
 `egl` is the tool's default and needs no display). The MP4 is written by OpenCV (`mp4v`), which the physics extra
 brings; `tests/test_render_replay.py` renders a six-tick recording and reads the file back.
 
+### 13.5 The speed levers (plan 8.6)
+
+Each lever changes the physics, so each is a switch, off unless asked for: `fly_game.py --physics-levers LIST` (`Game(physics_levers=)`,
+`PairWorld(levers=)`, `make_body(levers=)`), measured before adoption with `tools/physics_table.py --levers LIST --baseline
+../runs/p4-table.json` (section 6.7's table again, against the tool's own run on the unchanged body on this machine, since the
+published numbers came from another machine and a lost lure protocol: docs/TWO_FLIES_PROGRESS.md) and with
+`tools/bench_two_flies.py --only pair-physics --levers LIST`. Decision 25's rule: adopted for the pair only if the speeds and turn
+rates stay within 10 % and the "faces the lure" count within 1 of the baseline, and always switchable. The levers:
+
+| lever | what it changes |
+|---|---|
+| `dedupe` | flygym 1.2.1 adds every self-collision pair twice, as (a, b) and (b, a); this keeps one of each (1,086 of 2,172 per fly dropped) |
+| `solver100` | the Newton solver's iterations 1,000 → 100 and its tolerance 1e-12 → 1e-8 |
+| `noslip5`, `noslip0` | noslip iterations 100 → 5 or 0 (adhesion and leg slip depend on them) |
+| `noself` | no self-collision pairs at all (legs may pass through each other) |
+| `simple` | flygym's `seqik_simple` model (capsule tarsi) with floor contacts on the tarsi only |
+| `dt2` | a 0.2 ms time step instead of 0.1 ms |
+
+Measured 2026-10-03 on this laptop (one physics fly, parts on, seeds 0-4, four runs at a time; `../runs/p4-table-<set>.json`):
+
+| lever set | speed at 0.3 / 0.6 / 1.0 mm/s (vs baseline) | turn deg/s (vs baseline) | faces the lure | lure left / right mean deg | MDN mm | quiet HS Hz mean | brain k ev/s mean | real-time factor (x baseline mean) | within decision 25 |
+|---|---|---|---|---|---|---|---|---|---|
+| none (the baseline) | 4.0 (+0 %) / 8.7 (+0 %) / 14.3 (+0 %) | 32 (+0 %) / 85 (+0 %) / 165 (+0 %) | 10 of 10 at 1.23-1.98 s | 101.0 / -102.0 | 20.0 | 18.9 | 61.3 | 0.137-0.187 (1.00x) | – |
+| dedupe, solver100, noslip5 | 3.9 (-3 %) / 8.7 (-0 %) / 14.3 (+0 %) | 33 (+4 %) / 89 (+5 %) / 168 (+2 %) | 9 of 10 at 1.30-1.98 s | 97.0 / -97.0 | 20.1 | 27.1 | 62.5 | 0.273-0.331 (1.86x) | yes |
+| dedupe, solver100 | 4.0 (+0 %) / 8.7 (-0 %) / 14.3 (+0 %) | 32 (+1 %) / 86 (+1 %) / 165 (+0 %) | 10 of 10 at 1.23-1.95 s | 97.0 / -100.0 | 20.5 | 16.1 | 65.4 | 0.178-0.264 (1.36x) | yes |
+| dedupe | 4.0 (+0 %) / 8.7 (+0 %) / 14.3 (+0 %) | 32 (+0 %) / 85 (+0 %) / 164 (-0 %) | 10 of 10 at 1.23-1.98 s | 101.0 / -102.0 | 20.0 | 18.9 | 61.3 | 0.155-0.257 (1.27x) | yes |
+| dt2 | 4.6 (+17 %) / 8.9 (+3 %) / 15.3 (+7 %) | 40 (+25 %) / 81 (-4 %) / 152 (-8 %) | 9 of 10 at 1.62-2.10 s | 102.0 / -98.0 | 18.2 | 56.8 | 87.8 | 0.246-0.323 (1.76x) | no: physics speed; physics turn |
+| noself | 4.0 (+0 %) / 8.7 (+0 %) / 14.3 (+0 %) | 32 (+0 %) / 85 (+0 %) / 168 (+2 %) | 10 of 10 at 1.23-1.98 s | 101.0 / -102.0 | 20.0 | 18.9 | 61.3 | 0.212-0.358 (1.76x) | yes |
+| noslip0 | 3.9 (-3 %) / 8.7 (-0 %) / 14.3 (+0 %) | 33 (+2 %) / 89 (+5 %) / 167 (+1 %) | 10 of 10 at 1.32-1.90 s | 100.0 / -96.0 | 20.6 | 37.4 | 76.7 | 0.241-0.272 (1.58x) | yes |
+| noslip5 | 3.9 (-3 %) / 8.7 (+0 %) / 14.1 (-1 %) | 33 (+2 %) / 89 (+5 %) / 165 (+0 %) | 9 of 10 at 1.23-1.90 s | 95.0 / -86.0 | 20.2 | 33.7 | 68.0 | 0.206-0.249 (1.40x) | yes |
+| simple, dedupe, solver100, noslip0 | 4.0 (+2 %) / 9.1 (+5 %) / 15.5 (+9 %) | 30 (-6 %) / 80 (-6 %) / 134 (-19 %) | 9 of 10 at 1.12-2.12 s | 94.0 / -90.0 | 23.3 | 48.5 | 96.0 | 0.375-0.430 (2.48x) | no: physics turn |
+| simple | 4.1 (+3 %) / 9.1 (+5 %) / 15.5 (+9 %) | 30 (-6 %) / 80 (-6 %) / 134 (-18 %) | 9 of 10 at 1.25-2.62 s | 97.0 / -95.0 | 23.7 | 52.4 | 105.0 | 0.171-0.278 (1.39x) | no: physics turn |
+| solver100 | 4.0 (+0 %) / 8.7 (-0 %) / 14.3 (+0 %) | 32 (+1 %) / 86 (+1 %) / 164 (-0 %) | 10 of 10 at 1.23-1.95 s | 97.0 / -100.0 | 20.5 | 16.1 | 65.4 | 0.151-0.201 (1.09x) | yes |
+
+The two-fly physics game with the same sets (parts on, the brains in their own processes, 80 ticks after 20; the baseline row is
+"none"):
+
+| lever set | two-fly physics game: real-time factor | tick p50 / p99 ms | ms per 0.1 ms step (both flies) | contacts per step |
+|---|---|---|---|---|
+| dedupe, solver100, noslip5 | 0.112 | 143 / 979 | 0.84 | 24.7 |
+| dedupe, solver100 | 0.097 | 189 / 1041 | 0.97 | 23.9 |
+| dedupe | 0.1 | 189 / 1087 | 0.94 | 24.3 |
+| dt2 | 0.146 | 152 / 542 | 1.24 | 30.5 |
+| none | 0.087 | 230 / 1078 | 1.09 | 24.3 |
+| noself | 0.126 | 143 / 1028 | 0.73 | 24.3 |
+| noslip0 | 0.116 | 172 / 708 | 0.80 | 24.4 |
+| noslip5 | 0.114 | 187 / 869 | 0.81 | 24.4 |
+| simple, dedupe, solver100, noslip0 | 0.155 | 144 / 338 | 0.58 | 11.9 |
+| simple | 0.141 | 161 / 347 | 0.65 | 10.6 |
+| solver100 | 0.084 | 233 / 1062 | 1.14 | 23.9 |
+
+What the table says. **`dedupe` changes nothing at all**: every measured number is the baseline's, and the single fly's golden
+frames are bit for bit the same with it on (the physics configuration's hash in `tools/golden_hashes.py` is unchanged), while the
+single fly runs 1.3x faster and the pair 1.15x; it is the pair's default (`physics.PAIR_DEFAULT_LEVERS`; `--physics-levers none`
+switches it off) and stays off for the single fly until the owner approves a new default. `solver100` is within 1 % on everything
+measured but buys the pair nothing (its cost is the contacts between the flies). `noslip5`, `noslip0` and `noself` stay within the
+tolerance on speeds, turn rates and the lure, but they change what the retina sees of the body's wobble: HS in the quiet arena
+rises from 18.9 Hz to 34-37 Hz with the noslip levers (and the brain's events/s with it), so they are not adopted without the
+owner's word; `dedupe, solver100, noslip5` would make the pair 1.3x faster than with `dedupe` alone (0.112 against 0.100) and the
+single fly 1.9x. `simple` and `dt2` fall outside the tolerance (turn rates off by 18-25 %) and are not adopted; `simple` is the
+fastest world by far (the pair at 0.141-0.155, the contacts halved), which is where a flygym 2.x spike would start if the owner
+ever wanted one (decision 20). The research's "2 flies, defaults 0.037" on a loaded 4-core machine is this laptop's 0.087.
+
 ## 14. Honest limitations
 
 The starter kit's list, extended. These are the things a neuroscientist would point at first.

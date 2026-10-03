@@ -301,7 +301,7 @@ class Game:
     def __init__(self, brain: FlyBrain, autopilot: bool = True, seed: int = 0, columnar: bool = True,
                  profile_name: str = "game", brain_factory=None, parts_list=None, brain_kwargs: dict | None = None,
                  retest: str = "auto", body: str = "drawn", stride_average: bool = False, brain_procs: str = "auto",
-                 partner: dict | None = None, social=None, physics_levers=()):
+                 partner: dict | None = None, social=None, physics_levers=None):
         """``partner``: a second simulated fly in the dish (docs/TWO_FLIES_PLAN.md 5.4): a dict with its ``conn``
         (loaded here, for the API and the layout; its brain is built from the file in a process of its own, or here
         with brain_procs="off"), and optionally ``brain_kwargs`` (default: the protagonist's overrides), ``parts``
@@ -323,8 +323,12 @@ class Game:
         self.world = World(seed)
         self.events = EventLog()
         self.scenario = ScenarioRunner(self)
-        from .physics import parse_levers
-        self.physics_levers = parse_levers(physics_levers)   # speed levers of the physics body (physics.LEVERS): none by default
+        from .physics import PAIR_DEFAULT_LEVERS, parse_levers
+        # speed levers of the physics body (physics.LEVERS): none for a single fly; the pair's adopted default when none are
+        # named (docs/SCIENCE.md 13.5); "none" switches the pair's off
+        if physics_levers is None:
+            physics_levers = PAIR_DEFAULT_LEVERS if (partner is not None and body == "physics") else ()
+        self.physics_levers = parse_levers(physics_levers)
         self.pair_world = None                           # a partner with the physics body: one MuJoCo world for both flies
         if partner is not None and body == "physics":    # (physics_pair.py; docs/TWO_FLIES_PLAN.md 8.3-8.5)
             from .physics_pair import PairWorld, available, unavailable_reason

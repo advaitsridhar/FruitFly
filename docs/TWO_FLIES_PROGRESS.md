@@ -78,6 +78,7 @@ Plan: docs/TWO_FLIES_PLAN.md. Newest session notes first.
 | 26 | MuJoCo Warp batches | no, unless the owner wants offline batch runs | default, the same | 2026-10-03 |
 | – (Phase 4 order) | which of Phase 4's parts first | the reproduction gate (8.2), the pair world (8.3-8.5), record-and-replay and the video (8.7-8.9), the speed levers (8.6) last, so that the owner sees the pair played back at 1x and a video before the slow lever validations | Claude's proposal; the owner: "Defaults" | 2026-10-03 |
 | – (Phase 4 jump) | a hand-built jump for the physics body | none: a giant-fibre burst stays an "escape command" with the legs standing, as v2.8.1 | Claude's proposal; the owner: "Defaults" | 2026-10-03 |
+| 25 (applied) | which levers the pair adopts | `dedupe` as the pair's default: every measured number identical, the single fly's golden frames bit-identical, 1.15-1.27x faster; the rest put to the owner (SCIENCE.md 13.5) | Claude, within decision 25's rule | 2026-10-03 |
 
 ## Measurements
 All on 2026-09-27, this machine, `nice -n 10`, one job at a time, machine otherwise idle (load average under 1.5).
@@ -522,6 +523,41 @@ size and whether the brain map was open were not recorded): the 7.7 target of 50
   (0.22); `simple,dedupe,solver100,noslip0` 15.3 mm/s at rtf 0.55. The script for the whole measurement is
   `../runs/p4-levers.sh` (ten lever sets through the table against the baseline, then the pair bench per set; about 45 min idle).
 
+### Phase 4: the replay player and the video (plan 8.8, 8.9; 2026-10-03; two forks on the sample recording `recordings/20261003-210246`)
+- The page (`index.html`, `style.css`, `app.js`, `panels.js`, `arena3d.js`): a "Save replay" switch and the saved-replays list in the
+  Recording card; a player bar in the stage (play/pause, 0.1-4x, scrub, the time, Leave) fed from the page's own animation loop at
+  the recording's tick times the speed (smooth at 1x whatever the run's own pace); the live ticks kept behind the replay and shown
+  again on Leave (the reload guard untouched); `?replay=<id>`; the badge "replay of a recorded run" over both views; the 3-D view
+  moves every leg joint from the recorded poses (fly index = fly id) with the hand-built wing, abdomen and proboscis rotations on
+  top, and says so on its badge. Limits accepted: a frame has no internal state, learning, lab lists, events or retina images (those
+  panels show neutral values); frames are held whole in memory (an hour is about 150k lines); the pointer still acts on the live
+  game. Tests: `test_web.py` 17, `test_browser.py` 7 (a drawn replay played, scrubbed and left; a physics-pair replay driving the
+  legs from the recording) = 24 passed in 27 s locally (the LD_LIBRARY_PATH workaround for Chromium).
+- The video (`tools/render_replay.py`, `tests/test_render_replay.py`): the recording's model and qpos replayed through MuJoCo's
+  kinematics at the video's frame rate (joints interpolated, root quaternions normalised), cameras overhead / follow / side with
+  the aim smoothed over 0.25 s, the second fly tinted lighter, a label; MP4 by OpenCV (mp4v). **Measured**: the 8 s sample at
+  1920 x 1080, 30 fps: 241 frames in 40 s overhead (3.1 MB) and 36 s follow (3.6 MB), 6-7 frames rendered per second, about 130 ms
+  per frame at any size (the exported model's 1,005,562 mesh triangles, not the pixels); `MUJOCO_GL=egl` is the default and works
+  under WSL2 (osmesa and glfw too). 8.11's criterion met. The render test needs `MUJOCO_GL=egl` exported before pytest (physics.py
+  alone sets disable): `../runs/p1-verify.sh` exports it now.
+- A look at both: the headless screenshots in the session scratchpad (`shot-replay-2d.png`, `shot-replay-3d.png`) and the check
+  frames (`p4-check*/check-middle.png`): the 3-D replay and the video show both flies with NeuroMechFly's meshes at real size, the
+  female lighter, the legs as MuJoCo moved them.
+- Found on the way: the new `capture` state key changed every golden frame's bytes (the hashes cover the whole state), so the key
+  is sent only while a replay is being saved; the 18 real hashes are unchanged again (`../runs/p4-golden3.log`).
+
+### Phase 4: the speed levers measured (plan 8.6; 2026-10-03; `../runs/p4-levers.sh`, `../runs/p4-table-<set>.json`, `../runs/p4-bench-pair-<set>.json`; SCIENCE.md 13.5 holds the two tables)
+- Ten lever sets through `tools/physics_table.py --bodies physics --levers SET --baseline ../runs/p4-table.json` (30 runs each, four
+  at a time, 3-5 min each, load 3-6) and the pair bench per set. Within decision 25's tolerance: dedupe, solver100, noslip5,
+  noslip0, noself, dedupe+solver100, dedupe+solver100+noslip5; outside: dt2 (speed +17 %, turn +25 % at drive 0.3), simple and
+  simple+dedupe+solver100+noslip0 (turn -18 to -19 % at full drive).
+- **dedupe is free**: every number the baseline's, the single physics fly's golden hash bit-identical with it on (checked directly:
+  `b48a56e59f1b` both ways), the single fly 1.27x faster, the pair 0.087 → 0.100. Adopted as the pair's default
+  (`physics.PAIR_DEFAULT_LEVERS`, `--physics-levers none` to switch it off); off for the single fly until the owner says otherwise.
+- The noslip levers keep the speeds and turns but raise HS in the quiet arena from 18.9 to 34-37 Hz (the body's wobble as the
+  retina sees it); solver100 buys the pair nothing (0.084); noself 1.76x single, pair 0.126; the fastest in-tolerance set,
+  dedupe+solver100+noslip5: single 1.86x, pair 0.112. Put to the owner with the table.
+
 ### Golden hashes (plan 4.9)
 - Synthetic (`tests/golden_single_fly.json`): nine configurations, made with Python 3.12.3, NumPy 2.5.3, numba 0.67.0; a second
   run reproduces every hash (the test passes in normal mode; a determinism test runs one configuration twice).
@@ -540,14 +576,14 @@ size and whether the brain map was open were not recorded): the 7.7 target of 50
   would be a new hand-built controller: ask the owner before adding one.
 
 ## Next step
-Phase 4 on `claude/two-flies-p4-physics-pair` (v2.12.0 in both files), decisions 20-26 at their defaults, the order gate → pair
-world → replay and video → levers last, no hand-built jump. Done: 8.2 (the gate, with the owner asked whether its own run on the
-unchanged body may serve as the levers' gate; the answer is needed only for 8.6, which comes last) and 8.3-8.5 (the pair world,
-its game, tests, docs; Measurements). Next: the full verification (`../runs/p4-verify1.log`: every test and the 18 real golden
-hashes), then push and the draft PR; then 8.7-8.8 (record-and-replay: `recordings/<stamp>/` with header, frames, qpos, the exported
-model and `poses.f32`; the replay endpoints without the wildcard CORS header, refusing foreign Origin/Host for the recording
-action; the page's player at 1x), 8.9 (`tools/render_replay.py`, MP4 at 1080p; which MUJOCO_GL works under WSL2 is **verify
-first**), then 8.6 (the levers, each measured with `tools/physics_table.py` and the pair-physics bench).
+Phase 4 on `claude/two-flies-p4-physics-pair` (v2.12.0), draft PR #20: 8.2-8.9 built, measured and documented (SCIENCE.md 13);
+the full verification with the levers' code (`../runs/p4-verify2.log`) and the single physics game's Ctrl+C check
+(`../runs/p4-ctrlc-single.log`) are the last entries of this session. Open with the owner: (1) the gate (may the tool's own run be
+the levers' baseline: SCIENCE.md 13.5 already reads the levers against it); (2) `dedupe` for the single fly too (bit-identical
+frames, 1.27x); (3) the faster in-tolerance preset for the pair (`dedupe,solver100,noslip5`: 0.112 against 0.100, HS in the quiet
+arena up from 19 to 27 Hz); (4) two flies walking head-on slide past each other (SCIENCE.md 13.2): acceptable, or try a wider
+contact set; (5) a look at the replay in the page and the video, then the word to mark PR #20 ready and merge. Phase 5 (BANC,
+decision 27) is asked about after Phase 4.
 
 ## Session notes
 ### 2026-10-03 (Phase 4 opened)
@@ -565,6 +601,9 @@ first**), then 8.6 (the levers, each measured with `tools/physics_table.py` and 
   ARCHITECTURE, API; version 2.12.0; the Ctrl+C check (exit 0).
 - Pushed; draft PR #20 opened. 8.7-8.8: `recording.py`, the capture action, the replay endpoints, six tests (`002aea3`);
   SCIENCE.md 13.4. The page's player and the video tool (8.9) as two forks on a sample recording.
+- The forks' work in (`1948c77` the video, `c52bac0` the player); the `capture` state key made conditional after it changed every
+  golden frame; the lever switches (`34be6d2`) and their measurement (ten sets, 50 min); dedupe adopted for the pair; SCIENCE.md
+  13.5; the full verification and the single physics game's Ctrl+C check; PR #20's body refreshed.
 
 ### 2026-10-03 (Phase 3 started)
 - PR #18 squash-merged as `63681db` on the owner's word ("merge and go with defaults"); branch `claude/two-flies-p3-3d-view` from the
