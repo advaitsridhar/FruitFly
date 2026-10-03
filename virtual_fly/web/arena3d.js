@@ -307,6 +307,8 @@ export class Arena3D {
       node.position.copy(p0); node.quaternion.copy(q0);
     }
     const jump = f.jump == null ? 0 : Math.sin(Math.PI * f.jump);
+    const gs = this.modelScale * (SEX_SIZE[fly.sex] || 1) * (f.scale || 1);   // f.scale: a physics fly in a shared world is real size
+    if (fly.group.scale.x !== gs) fly.group.scale.setScalar(gs);
     fly.group.position.set(f.x, f.y, this.floorLift * fly.group.scale.x + JUMP_LIFT_MM * jump);
     fly.group.rotation.set(0, 0, f.h || 0);
     fly.group.visible = true;

@@ -45,7 +45,7 @@ Returned once at start-up (gzip-compressed if the client accepts it; ~2.4 MB raw
 | `vfb` | `{available, source, overlay_source, types_mapped, types_total, neurons_mapped, neurons_typed, classes, curated: {agree, differ, unclear_with_curated, differ_rows: [{type, n, predicted, curated[], evidence, fbbt, label, source?}]}}` (or `{available: false}` without the data files): the anatomy-ontology join (`vfb.py`); the counts cover only this fly's types, and for the female fly they include FlyWire's own literature column (known_nt): those rows carry `source`, and one whose type has no FBbt class has an empty `fbbt` and the type name as `label` |
 | `decoder` | per decoder DN spec: motor synapses it reaches (`direct_motor_synapses`, `two_hop_motor_synapses_by_neuromere`) |
 | `columnar_vision` | bool: T4/T5 columns driven from the retina |
-| `body`, `stride_average` | which body walks: `drawn` (default) or `physics` (`--body physics`), and whether the senses see its stride-averaged pose (`--stride-average`) |
+| `body`, `stride_average` | which body walks: `drawn` (default) or `physics` (`--body physics`), and whether the senses see its stride-averaged pose (`--stride-average`); with a partner and `--body physics` both flies are physics bodies in one MuJoCo world (`docs/SCIENCE.md` section 13) |
 | `whats_real` | `{wiring[], hand_built[], not_modelled[]}` text for the "What's real here?" dialog |
 
 ## Live state
@@ -62,7 +62,7 @@ One JSON object per tick (40 per second at real time). Same schema on both endpo
 | `speed` | requested time scale |
 | `paused`, `autopilot` | bools |
 | `mode` | `idle` (resting: no command moves the legs), `walk`, `feed`, `groom`, `escape`, `backward`, `court` |
-| `fly` | `{x, y, h, v, w, mode, prob, legs, groom, wingL, wingR, abdomen, jump, hx, hy, dist}`: position mm, heading rad (0 = +x, CCW), forward speed mm/s, yaw rate rad/s, proboscis 0..1, gait phase, groom phase, wing extensions 0..1, abdomen bend 0..1, jump progress 0..1 or null, head position, distance walked; with `--body physics` also `physics: {left, right, z, tarsi[6][x, y]}` (the stepping drive per side, thorax height, tarsus positions) |
+| `fly` | `{x, y, h, v, w, mode, prob, legs, groom, wingL, wingR, abdomen, jump, hx, hy, dist}`: position mm, heading rad (0 = +x, CCW), forward speed mm/s, yaw rate rad/s, proboscis 0..1, gait phase, groom phase, wing extensions 0..1, abdomen bend 0..1, jump progress 0..1 or null, head position, distance walked; with `--body physics` also `physics: {left, right, z, tarsi[6][x, y]}` (the stepping drive per side, thorax height, tarsus positions); for two physics flies in one world also `physics.pair` (true) and `physics.tap` (`[other fly's id, force]` while this fly's head or a foreleg touches the other, else null; the force in MuJoCo's units, the fly weighing about 9,800), and `scale` (0.389: the fly is drawn at real size) |
 | `world` | `{food[], obstacles[], odours[], puffs[], wind, female, hand, tool}`: see below |
 | `senses` | which senses are active now: keys `taste_sugar`, `taste_bitter`, `taste_water`, `small` (`"L"`,`"R"`,`"LR"`), `loom`, `flow`, `smell` (odour id), `pheromone`, `courting`, `sound`, `wind` (bearing in degrees the wind comes from, + = left; `0` means straight ahead, so test for the key, not the value), `dust`, `touch`, `reward`, `shock`, `zap` (text) |
 | `retina` | `{L: base64, R: base64}`: one byte per facet (0 dark .. 255 bright), facet order matches `layout.retina` |

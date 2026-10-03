@@ -174,8 +174,14 @@ def test_pose_view_is_the_start_of_tick_snapshot(conn, fconn):
 
 
 def test_the_options_are_checked(conn, fconn):
-    with pytest.raises(ValueError, match="Phase 4"):
-        Game(build_brain(conn, "game", seed=0), body="physics", partner={"conn": fconn})
+    from virtual_fly import physics
+    if physics.available():                      # a partner with the physics body: one MuJoCo world (tests/test_physics_pair.py)
+        with pytest.raises(ValueError, match="stride-average"):
+            Game(build_brain(conn, "game", seed=0), body="physics", stride_average=True, brain_procs="off",
+                 partner={"conn": fconn, "brain_kwargs": {"seed": 1000}, "parts": False})
+    else:                                        # without flygym: the install hint, before any brain process starts
+        with pytest.raises(RuntimeError, match="flygym"):
+            Game(build_brain(conn, "game", seed=0), body="physics", partner={"conn": fconn})
     with pytest.raises(ValueError, match="social channel"):
         Game(build_brain(conn, "game", seed=0), partner={"conn": fconn}, social="seen,sogn")
     assert TICK_MS == 25.0

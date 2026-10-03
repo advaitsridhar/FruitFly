@@ -9,7 +9,7 @@ Plan: docs/TWO_FLIES_PLAN.md. Newest session notes first.
 | 1 | claude/two-flies-p1-two-brains | #17 | merged (squash, `f70d8be`) | 2026-10-01 |
 | 2 | claude/two-flies-p2-gpu | #18 | merged (squash, `63681db`) | 2026-10-03 |
 | 3 | claude/two-flies-p3-3d-view | #19 | merged (squash, `157ffa9`) | 2026-10-03 |
-| 4 | claude/two-flies-p4-physics-pair | – | in progress: decisions 20-26 at their defaults; 8.2 (the reproduction gate) started | 2026-10-03 |
+| 4 | claude/two-flies-p4-physics-pair | – | in progress: 8.2 done (the gate's reproduction put to the owner), 8.3-8.5 built (the pair world, v2.12.0) | 2026-10-03 |
 
 ## This machine
 - OS: WSL2 (Ubuntu 24.04.5 LTS) on Windows; the repository lives under the Linux home folder, not `/mnt/c`.
@@ -467,6 +467,34 @@ size and whether the brain map was open were not recorded): the 7.7 target of 50
   tick of CPG and writes: 7 % of the step); the brain 11.6 ms per tick; senses 0.6 ms; contacts per step 10-20 while walking. So
   the levers must act on mj_step (the solver, the contacts, flygym's duplicated self pairs); vectorising the Python buys at most 7 %.
 
+### Phase 4: the pair world (plan 8.3-8.5; 2026-10-03; **new** `virtual_fly/physics_pair.py`, `tests/test_physics_pair.py`; SCIENCE.md 13)
+- Built as the design in the session scratchpad says (`p4-design.md`): flygym's multi-fly `Simulation` on the kit's walled floor
+  centred at the origin; each fly spawned at its kit pose and then moved by its root free joint so that the thorax lands on the pose
+  exactly (the 0.496 mm thorax offset measured on the built model); `place()` moves a fly without a rebuild; one CPG per fly
+  (seed + 1000 k); one `mj_step` per 0.1 ms for both; the game sets both drives, the world steps once per tick, each body reads its
+  thorax, its own wall contact and its tap. Decision 22's contact set: 233 distinct pairs, never Tarsus5. `physics.py` untouched.
+- Checked by hand and by the seven tests: placement to 1e-6 mm; contact within 0.25 s from 3 mm (0.4 s from 6 mm) head-on; the tap
+  with a force (2-18 units); backing away separates at once; each fly feels only its own wall; deterministic bit for bit; a two-fly
+  physics game ticks, reports `physics.pair`, `physics.tap` and `scale` 0.389, and closes; the install hint without flygym.
+- **Flies walking head-on slide past each other**, deflected by their rounded heads (the first contact's normal points mostly sideways;
+  fly 0 veers 0.9 mm and 9 deg and passes along the other's flank). Found while chasing what looked like pass-through: a static probe
+  with the thoraxes overlapping finds the thorax-thorax contact (penetration 0.49-0.94 mm), so the collider is sound; the dynamic
+  configuration was simply beside, not inside. Tried against it, not adopted: stiffer pair `solref` (no change), convex hulls (a
+  contype bit: +8 % walking speed, 1.3x faster: a lever for 8.6), MuJoCo's native CCD (no change). Options kept on `PairWorld` for 8.6.
+- Speed (`tools/bench_two_flies.py --only pair-physics --contact-sets forelegs,full,none`, parts on, brains in processes, 80 ticks;
+  `../runs/p4-bench-pair-physics.json`, load 0.8): forelegs **rtf 0.085** (tick p50 234 ms, p99 1,113 ms: the ticks in contact, where
+  flygym's Newton solver at 1,000 iterations and 1e-12 converges slowly), MuJoCo 95 %, 1.11 ms per step for both flies, 24 contacts per
+  step; full (1,521 pairs) 0.055, p99 1,792 ms, 1.74 ms per step; none 0.110, p99 292 ms, 0.85 ms per step. One fly alone: 0.22
+  (0.359 ms per step). The game process 2.6 GB, the brain children 0.5 and 0.7 GB. The research's two-fly default was 0.037 on a
+  loaded 4-core machine.
+- `Ctrl+C` on `fly_game.py --partner female --body physics` (the 1.7 recipe, `../runs/p4-ctrlc-pair.log`): both flies in the state
+  (0.7 s simulated in 6 s wall: 0.12x with the brains in their own processes), "Bye!", **exit code 0**, nothing left (8.11).
+- The game: `Game(partner=..., body="physics")` builds the shared world and hands each fly its body; `--stride-average` with a
+  partner is refused (the pair's senses see each body as it is); `--partner-body` must agree with `--body` (mixed bodies are not
+  this phase's). The senses: the tap from MuJoCo replaces the drawn 3.4 mm rule (channel 3), a physics other is seen as a 0.7 mm
+  cylinder 1.1 mm tall (`vision.SEEN_FLY`), both flies drawn at real size in 2-D and 3-D (`fly.scale`), the page's pace line says
+  so, `whats_real` carries the pair lines (one world, the physical tap, real size, the male in the female body model).
+
 ### Golden hashes (plan 4.9)
 - Synthetic (`tests/golden_single_fly.json`): nine configurations, made with Python 3.12.3, NumPy 2.5.3, numba 0.67.0; a second
   run reproduces every hash (the test passes in normal mode; a determinism test runs one configuration twice).
@@ -485,13 +513,14 @@ size and whether the brain map was open were not recorded): the 7.7 target of 50
   would be a new hand-built controller: ask the owner before adding one.
 
 ## Next step
-Phase 4 on `claude/two-flies-p4-physics-pair`, decisions 20-26 at their defaults, the order gate → pair world → replay and video →
-levers last, no hand-built jump. 8.2 done: `tools/physics_table.py` reproduces the published 6.7 picture (Measurements) but not
-every number, and **the owner is asked** whether its own run on the unchanged body (`../runs/p4-table.json`, this machine, v2.11.0
-code) may serve as the levers' gate with decision 25's tolerances; the levers come last, so the answer is needed only then. In hand:
-8.3-8.5, the pair world (`virtual_fly/physics_pair.py`, built and checked by hand: placement exact, 233 pairs, contact within
-0.4 s head-on, a tap force, no sticking, re-placing without a rebuild, deterministic), then its game integration, tests and docs;
-then 8.7-8.9 (record-and-replay, the video), then 8.6.
+Phase 4 on `claude/two-flies-p4-physics-pair` (v2.12.0 in both files), decisions 20-26 at their defaults, the order gate → pair
+world → replay and video → levers last, no hand-built jump. Done: 8.2 (the gate, with the owner asked whether its own run on the
+unchanged body may serve as the levers' gate; the answer is needed only for 8.6, which comes last) and 8.3-8.5 (the pair world,
+its game, tests, docs; Measurements). Next: the full verification (`../runs/p4-verify1.log`: every test and the 18 real golden
+hashes), then push and the draft PR; then 8.7-8.8 (record-and-replay: `recordings/<stamp>/` with header, frames, qpos, the exported
+model and `poses.f32`; the replay endpoints without the wildcard CORS header, refusing foreign Origin/Host for the recording
+action; the page's player at 1x), 8.9 (`tools/render_replay.py`, MP4 at 1080p; which MUJOCO_GL works under WSL2 is **verify
+first**), then 8.6 (the levers, each measured with `tools/physics_table.py` and the pair-physics bench).
 
 ## Session notes
 ### 2026-10-03 (Phase 4 opened)
@@ -501,6 +530,12 @@ then 8.7-8.9 (record-and-replay, the video), then 8.6.
 - Branch `claude/two-flies-p4-physics-pair` from the fetched `origin/main`; decisions 20-26 put to the owner with the defaults, the
   physics-body issue and the ordering question. The owner: "Defaults" (all seven at the plan's defaults, the levers last, no
   hand-built jump); recorded in Decisions. 8.2 started.
+- 8.2: `tools/physics_table.py` written, smoke-tested, run twice (a still lure, then the wiggling lure that recovers the
+  published turn-in-place); the profile; the results and the gate question recorded (Measurements; `84b1f05`).
+- 8.3-8.5: `physics_pair.py` designed (`p4-design.md` in the session scratchpad) and built; flies walking head-on slide past each
+  other, which cost an hour of probes before the static overlap test showed the collider sound; the game integration, the
+  senses at real size, the page scale and pace line, the CLI, seven tests, the pair-physics bench kind, SCIENCE.md 13, README,
+  ARCHITECTURE, API; version 2.12.0; the Ctrl+C check (exit 0).
 
 ### 2026-10-03 (Phase 3 started)
 - PR #18 squash-merged as `63681db` on the owner's word ("merge and go with defaults"); branch `claude/two-flies-p3-3d-view` from the

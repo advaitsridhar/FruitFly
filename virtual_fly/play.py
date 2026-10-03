@@ -100,8 +100,9 @@ def _main(argv=None):
     ap.add_argument("--social", metavar="LIST", default=None,
                     help=f"with --partner: the channels between the flies that are on, a comma list (default {DEFAULT_CHANNELS}; "
                          f"the channels are {', '.join(CHANNELS)}, mating as mating:virgin or mating:mated)")
-    ap.add_argument("--partner-body", choices=("drawn",), default=None,
-                    help="with --partner: the partner's body (only drawn until the physics pair of Phase 4)")
+    ap.add_argument("--partner-body", choices=("drawn", "physics"), default=None,
+                    help="with --partner: the partner's body; it is the protagonist's (--body): physics puts both flies in one "
+                         "MuJoCo world, so --partner-body physics needs --body physics, and --partner-body drawn the drawn body")
     args = ap.parse_args(argv)
     # the partner's flags are checked before anything is loaded (and before the physics body's own check, which
     # stops with an install hint wherever flygym is missing)
@@ -110,9 +111,11 @@ def _main(argv=None):
         ap.error("--social only applies with --partner female or male; add it, or leave out --social")
     if args.partner_body is not None and partner is None:
         ap.error("--partner-body only applies with --partner female or male; add it, or leave out --partner-body")
-    if partner is not None and args.body == "physics":
-        ap.error("--body physics with a partner is Phase 4's (one MuJoCo world for two flies); until then run the same "
-                 "command without --body physics")
+    if partner is not None and args.partner_body is not None and args.partner_body != args.body:
+        ap.error(f"--partner-body {args.partner_body} with --body {args.body}: both flies have the same kind of body (with "
+                 "--body physics both are NeuroMechFly bodies in one MuJoCo world); leave out --partner-body, or make them agree")
+    if partner is not None and args.stride_average:
+        ap.error("--stride-average is the single physics fly's: in a pair each fly's senses see its body as it is")
     if args.social is not None:
         try:
             social = SocialConfig.from_list(args.social)
@@ -175,7 +178,10 @@ def _main(argv=None):
         c = brain.parts.counts
         print(f"Parts list: on ({c['modulatory_neurons']:,} modulatory neurons, {c['co_release_neurons']:,} of them also keeping "
               f"their fast synapses; {c['graded_neurons']:,} graded cells).", file=sys.stderr)
-    if args.body == "physics":
+    if args.body == "physics" and partner is not None:
+        print("Body: physics for both flies (NeuroMechFly v2 in one MuJoCo world, each with its own brain, able to touch; "
+              "slower than real time, about a tenth with two flies; both drawn at real size).", file=sys.stderr)
+    elif args.body == "physics":
         print("Body: physics (NeuroMechFly v2 legs in MuJoCo; about a tenth of real time"
               + ("; the senses see the pose averaged over a stride)." if args.stride_average else ")."), file=sys.stderr)
     partner_spec = None

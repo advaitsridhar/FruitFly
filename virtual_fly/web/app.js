@@ -238,12 +238,14 @@ function syncControls(s) {
 }
 let slowSince = 0, bodyNoted = false;
 const PHYSICS_PACE = "The physics body (NeuroMechFly's legs in MuJoCo) runs at about a tenth of real time, so the fly's world is in slow motion: that is the body's pace, not your computer's.";
+const PAIR_PACE = "Both flies are physics bodies (NeuroMechFly in one MuJoCo world, drawn at real size), which runs well under real time, about a tenth with two flies: that is the bodies' pace, not your computer's.";
 function slowHint(s) {
   if (s.paused || s.rtf >= 0.6) { slowSince = 0; if ($("hint").__slow) { $("hint").__slow = false; setText($("hint"), HINTS[tool] || ""); } return; }
   if (!slowSince) slowSince = performance.now();
   if (performance.now() - slowSince <= 3000) return;
   if (s.fly && s.fly.physics) {                     // expected with this body: said once, then the line is the tools' again
-    if (!bodyNoted) { bodyNoted = true; setText($("hint"), PHYSICS_PACE); $("stRtf").parentElement.title = PHYSICS_PACE; }
+    const pace = s.fly.physics.pair ? PAIR_PACE : PHYSICS_PACE;
+    if (!bodyNoted) { bodyNoted = true; setText($("hint"), pace); $("stRtf").parentElement.title = pace; }
     return;
   }
   $("hint").__slow = true; setText($("hint"), `Your computer is running the brain at ${fmt(s.rtf, 2)}× real time, so the fly's world is in slow motion to keep up. Closing other programs helps.`);

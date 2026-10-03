@@ -306,7 +306,7 @@ class Game:
         with brain_procs="off"), and optionally ``brain_kwargs`` (default: the protagonist's overrides), ``parts``
         (False, True or a PartsList), ``autopilot`` (default on: her walking urge, decision 13). ``social``: a
         senses.social.SocialConfig, or its comma list (default "seen,song,contact,collide")."""
-        from .agent import PARTNER_HOME, FlyAgent          # (agent.py imports this module's constants)
+        from .agent import HOME, PARTNER_HOME, FlyAgent    # (agent.py imports this module's constants)
         from .senses.social import SocialConfig
         if brain_procs not in ("auto", "on", "off", "server"):
             raise ValueError("brain_procs must be 'auto', 'on', 'off' or 'server'")
@@ -322,8 +322,14 @@ class Game:
         self.world = World(seed)
         self.events = EventLog()
         self.scenario = ScenarioRunner(self)
-        if partner is not None and body == "physics":
-            raise ValueError("a partner with the physics body is Phase 4's (docs/TWO_FLIES_PLAN.md D10): use the drawn body")
+        self.pair_world = None                           # a partner with the physics body: one MuJoCo world for both flies
+        if partner is not None and body == "physics":    # (physics_pair.py; docs/TWO_FLIES_PLAN.md 8.3-8.5)
+            from .physics_pair import PairWorld, available, unavailable_reason
+            if not available():
+                raise RuntimeError(unavailable_reason())
+            if stride_average:
+                raise ValueError("--stride-average is the single physics fly's: in a pair each fly's senses see its body as it is")
+            self.pair_world = PairWorld([HOME, PARTNER_HOME], seed=seed, world=self.world)
         # where the brains run: "local" (this process), "procs" (a process per brain), "server" (one process for every
         # brain: the GPU's way, docs/TWO_FLIES_PLAN.md 6.5, chosen by auto when a fly's brain_kwargs say backend cupy)
         self.brain_mode = self._brain_mode(brain_procs, brain_kwargs, partner)
@@ -337,7 +343,8 @@ class Game:
         # the flies: fly 0 keeps the game's own random stream and seed; fly k gets random.Random(f"{seed}:fly{k}") and
         # brain seed + 1000 k, and never draws from World.rng (docs/TWO_FLIES_PLAN.md D11)
         self.flies = [FlyAgent(self, 0, brain, sex=getattr(brain.conn, "sex", "male"), rng=self.rng, seed=seed,
-                               autopilot=autopilot, columnar=columnar, body=body, stride_average=stride_average,
+                               autopilot=autopilot, columnar=columnar, stride_average=stride_average,
+                               body=self.pair_world.bodies[0] if self.pair_world is not None else body,
                                parts_list=parts_list, brain_factory=brain_factory, brain_kwargs=brain_kwargs, retest=retest,
                                brain_procs=procs, pair=partner is not None, io_factory=io_factory)]
         del brain                                        # a process brain has been built from it: let it go
@@ -349,7 +356,8 @@ class Game:
             kw["seed"] = seed + 1000 * k
             self.flies.append(FlyAgent(self, k, None, conn=pconn, sex=getattr(pconn, "sex", "male"),
                                        rng=random.Random(f"{seed}:fly{k}"), seed=seed + 1000 * k,
-                                       autopilot=partner.get("autopilot", True), columnar=columnar, body="drawn",
+                                       autopilot=partner.get("autopilot", True), columnar=columnar,
+                                       body=self.pair_world.bodies[k] if self.pair_world is not None else "drawn",
                                        parts_list=parts_list, brain_kwargs=kw, retest=retest, brain_procs=procs,
                                        parts=partner.get("parts", False), pair=True, home=PARTNER_HOME, io_factory=io_factory))
             if self.social.mating == "mated":                # channel 6 (off by default): a mated female's SAG is silent
@@ -405,6 +413,8 @@ class Game:
             a.io.close()
         if self.brain_server is not None:            # every handle's close reached it already; once more is harmless
             self.brain_server.close()
+        if self.pair_world is not None:              # the shared MuJoCo world, once no tick can be using it (8.11)
+            self.pair_world.close()
 
     # ------------------------------------------------------------------ world
     def reset_world(self, first: bool = False):
@@ -754,6 +764,8 @@ class Game:
             bts = [f.advance_done(bt) for f, bt in zip(flies, advance_all([f.io for f in flies], inputs))]
         for f, bt, o in zip(flies, bts, others):
             f.act(dt, bt, o)
+        if self.pair_world is not None:                  # both drives set: the shared physics world steps once (8.5)
+            self.pair_world.advance_tick(dt)
         if len(flies) > 1 and self.social.collide:
             resolve_overlaps(flies)                      # both pushed apart equally (D4; senses/social.py)
         for f in flies:

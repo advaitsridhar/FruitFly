@@ -28,6 +28,8 @@ virtual_fly/
   world.py         the arena: food, posts, odour sources and plume puffs, wind, the drum, the female
   body.py          the fly's body: inertia, gait, appendages, collisions
   physics.py       the optional physics body: NeuroMechFly v2 legs in MuJoCo through flygym (--body physics)
+  physics_pair.py  two (or more) physics bodies in ONE MuJoCo world, able to touch (--partner ... --body physics; the
+                   two-flies work): the shared world, each fly's body in it, the contact pairs and the physical tap
   senses/
     vision.py      retina (two compound eyes), feature detectors, columnar T4/T5 motion detectors
     olfaction.py   odours -> glomeruli -> ORN rates, with adaptation
@@ -56,7 +58,10 @@ tools/
                        APL's and DPM's connections split by region
   vfb_overlay.json     the connector harvest: FBbt classes for the names the OBO lacks (an input of build_vfb_data.py)
   bench_two_flies.py   baseline speeds for the two-flies work: one brain, the male and female brains side by side,
-                       game ticks with the drawn and the physics body (hand-run; docs/TWO_FLIES_PLAN.md 4.8)
+                       game ticks with the drawn and the physics body, and the two-fly game with both as physics
+                       bodies per contact set (hand-run; docs/TWO_FLIES_PLAN.md 4.8, 8.2)
+  physics_table.py     docs/SCIENCE.md 6.7's physics table measured again on the kit as it is: the gate every speed
+                       lever of the two-flies work is checked against (hand-run; docs/TWO_FLIES_PLAN.md 8.2)
   golden_hashes.py     what one fly does on the real data, byte for byte: --save before a change, --compare after
                        (tests/test_golden_single_fly.py is the same check on the synthetic connectome, in CI)
   compare_experiments.py  every difference between two `fly_brain.py --json` files (a later run against the baselines)
