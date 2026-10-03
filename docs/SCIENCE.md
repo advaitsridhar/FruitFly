@@ -320,7 +320,7 @@ Two things made single verdicts less trustworthy than they looked.
   about 4 s with the after-stimulus test on every seed (parts list on).
 
 The ranges are unchanged. The model's absolute rates are not comparable with recordings
-(section 11), so there is no measured value to move most of them to; the fragile mark says where a
+(section 12), so there is no measured value to move most of them to; the fragile mark says where a
 range edge sits inside the model's own spread instead. The tables elsewhere in this document were
 measured on seed 0 and are left as they were measured.
 
@@ -364,7 +364,7 @@ settled. The split is shown, and the verdict stays on the total (calm below 1,00
 50,000). Counting spikes only would turn all ten of the male's RUNAWAY seed-runs into small loops with
 no change in the dynamics. Over the 13 distinct stimulus conditions (65 seed-runs), the male fly is
 calm in 34, a small loop in 31 and a runaway in none with the parts off; with the parts on, 43 / 12 / 10
-(v2.7's rule: 24 / 2 / 39). Section 11, limitation 3, says what keeps firing.
+(v2.7's rule: 24 / 2 / 39). Section 12, limitation 3, says what keeps firing.
 
 **The game's re-test runs in a separate process (v2.8).** When the parts list is switched or a fly is
 grown, the Genome card re-tests the reflexes while the game keeps running. In a thread of the game's own
@@ -2518,7 +2518,135 @@ two flies in one physics world (Phase 4); more than two flies in the physics wor
 
 ---
 
-## 11. Honest limitations
+## 11. A GPU brain (v2.10)
+
+`python fly_brain.py --backend cupy` and `python fly_game.py --partner female --backend cupy` run the brains on an NVIDIA GPU
+through CuPy, with hand-written CUDA kernels compiled at run time (NVRTC, from pip: no CUDA toolkit to install). The CPU stays
+the default; without `--backend cupy` nothing changes. The point of the backend is not a different model but the same one,
+spike for spike and bit for bit, on hardware that can run both flies' brains well above real time.
+
+### 11.1 The same arithmetic, on purpose
+
+The CPU step (section 1.2; `virtual_fly/brain.py`, and its compiled twin in `virtual_fly/fastbrain.py`) is a sequence of float32
+operations whose order decides the last bit of every voltage. The kernels in `virtual_fly/gpubrain.py` keep that order:
+
+| what the CPU does | what the GPU does |
+|---|---|
+| constants `decay_m`, `decay_s`, `coupling` computed once as float32 on the host | passed to the kernels as the host's float32 values, never recomputed on the device |
+| a delayed-input ring of `delay_steps + 1` slots; the slot that arrives this step is scaled by the tone gain (the gain of the *previous* block), added to `g`, then zeroed | the same ring on the device; the new block's gain is staged and copied in only after the first step of the block has read the old one |
+| background noise: Poisson draws on the brain's own generator, one `+ noise_mv` per hit | the same draws on the host, in the same order (noise count, then hits, then stimulus), uploaded; the device adds `noise_mv` once per hit (identical addends, so the order among threads cannot change the sum) |
+| refractory neurons (reset in the last `ref_steps - 1` steps) keep their input and sit at reset | a last-reset step per neuron; the same freeze |
+| leak and integrate: `v *= decay_m; v += g * coupling; g *= decay_s`, four separate float32 operations | the same four, with the compiler forbidden to fuse a multiply and an add (`--fmad=false`, and the rounded intrinsics) |
+| every 20 steps: the fatigue fade `thr = (thr - theta_i) * f + theta_i` with `f = float32(decay_f ** 20)`, the tone and APL blocks, then values below a microvolt snapped to zero | the fade and the flush on the device with the host's float32 factor; the tone and APL blocks on the host, their results uploaded before the block's first step |
+| stimulated neurons fire when a uniform draw falls under their probability, even while refractory | the draws on the host; the forced list uploaded per step |
+| graded cells (parts list) accumulate release in proportion to depolarisation, one event per quantum | the same float32 accumulation per graded cell |
+| short-term depression: `(1 - x)` in float32, promoted to float64, times `exp(-elapsed / tau)` in float64; the kick is `w * float32(x)` | the same mixed precision; the exponential comes from a host-computed float64 table indexed by the steps since the last spike (CUDA's double `exp` is not correctly rounded) |
+| every target receives its kicks in ascending presynaptic order, added one by one in float32 to the slot's value | the "ordered pull": spiking neurons mark their outgoing edges in a bitmap; each hit target walks its incoming edges in presynaptic order and adds the marked kicks one by one, from the slot's value |
+| tone deposits, the APL tally, the plasticity tallies and blocks, monitors, recording, callbacks | on the host, replayed step by step from the spike log the device returns (each step's list sorted) |
+| the quiet path: a brain at rest with nothing on the way skips the maths; waking fades the fatigue analytically | the host tracks it the same way; the sleep check is a device reduction every 200 steps; the analytic fade is one kernel with the host's float32 factor |
+
+Why not a library: a sparse matrix-vector product touches every connection every step (0.4-1 ms per step on the female's 15 million
+connections in others' measurements, most of a 0.5 ms step) and is not deterministic on CUDA; float atomics are not even
+run-to-run deterministic. The event-driven pull costs time in proportion to the spikes and the hit targets' in-degree (at most
+10,356 incoming connections on the female, 324 words of bitmap), and its additions happen in one fixed order.
+
+### 11.2 Evidence of equality
+
+Three layers, from the synthetic connectome of the test suite to the real flies (all measured on 2026-10-01, the machine of
+section 9.6: an RTX 4070 Laptop GPU, compute capability 8.9, CuPy 14.2.0, CUDA 13.4, NumPy 2.5.3, numba 0.67.0).
+
+1. `tests/test_gpubrain.py` (skipped without CuPy or a GPU, so CI never sees it; run here: 32 tests): on the synthetic
+   connectome every configuration of `tests/test_fastbrain.py` (the pure model, fatigue, depression, threshold jitter, noise,
+   everything at once, `dt` 1.0, the parts list, the parts list with the Kenyon cells firing so the APL releases locally),
+   the curated parts list and learning, run 540 ms on `backend="cupy"` and on NumPy and on numba: the same spikes on every
+   step, and the same bytes in `v`, `g`, `thr`, `spike_count`, `std_x`, `std_t`, the release accumulators, the tone levels and
+   gains, `w` and the APL's state; silence, modulate, snapshot and restore; a snapshot taken mid-run equal to the CPU's field
+   by field (the ring, the pending flags, the refractory lists, the generator's state) and a GPU brain restored from the
+   CPU's snapshot continuing identically; forced spikes while refractory; empty steps that launch nothing; `advance_steps(n)`
+   against `n` calls of `step()` for lengths that cross a block and the quiet check, with stimuli changed between calls; ten
+   repeated runs (fresh brains, and one brain reset between runs) with identical raster hashes and identical state bytes.
+2. The real flies under the busy input of `tools/bench_two_flies.py` (sugar, a looming object, song, odour at 80-150 Hz),
+   game profile, seed 0, 2 s = 4,000 steps, stepped a tick (50 steps) at a time on numba and on the GPU side by side
+   (`../runs/p2_real_equality.py`): male, parts list off: 358,953 spikes, every step's list identical; male, parts on:
+   440,318; female, off: 242,340; female, on: 431,990; after the 4,000 steps every state array (`v`, `g`, `thr`,
+   `spike_count`, `std_x`, `std_t`, the release accumulators, the tone levels and gains, the ring, `w`) byte for byte equal,
+   and `t`, the quiet flag, the spike total and the pending flags the same.
+3. The 16 validated experiments (section 2) with `--backend cupy`, male with the parts list off and on, female with both,
+   compared with the Phase 0 baseline by `tools/compare_experiments.py`: **identical** in all four runs (every readout's mean and
+   per-seed rates, the ok and fragile flags, the after-stimulus activity): the male 16/16 and 16/16, the female her 3/13
+   and 1/13 with the same three not applicable, as in section 9 (`../runs/p2-*-cupy.json`).
+
+### 11.3 Speed
+
+Measured on 2026-10-01 on the machine of section 9.6 (an RTX 4070 Laptop GPU: 36 multiprocessors, 8 GB on a 128-bit bus, a
+measured 225 GB/s device-to-device copy; CuPy 14.2.0, CUDA 13.4 through the Windows driver under WSL2; numba 0.67.0 on one core
+of the i9-14900HX), `tools/bench_gpu.py` and `tools/bench_two_flies.py`, 1-minute load average 1.1-1.3, one job at a time.
+
+One brain under the busy input of the benchmark (game profile, plasticity on, 2 s after 300 ms of warm-up, stepped a 25 ms
+tick at a time: `advance(50)`, chunks of 10 and 20 steps as captured graphs), microseconds per 0.5 ms step, median / 99th
+percentile, and the real-time factor:
+
+| brain | numba (one core) | the GPU | GPU events per second |
+|---|---|---|---|
+| male, parts list off | 131 / 238 µs (3.8x) | **61 / 78 µs (8.2x)** | 131,000 |
+| male, parts list on | 229 / 269 (2.2x) | 90 / 105 (5.6x) | 185,000 |
+| female, parts list off | 108 / 127 (4.7x) | 69 / 81 (7.3x) | 113,000 |
+| female, parts list on | 248 / 296 (2.0x) | 137 / 280 (3.7x) | 229,000 |
+
+A `step()` on its own (one launch per step, no graph) costs 500-630 µs on the GPU: the single step is for the tests and the
+API, the chunks are the way the kit runs. The equality runs of 11.2, which step numba and the GPU side by side with the
+other input, give the same picture: male 0.083 against 0.144 ms per step, female 0.089 against 0.125, parts on 0.119 against
+0.252 and 0.148 against 0.265. Where the time goes on the GPU (the profile of the speed work, male, 40 monitors with 25 ms bins
+as the game has): about 1.9 ms per tick on the device (per step: the dense pass 12 µs, the pull 10, the send 8, the hit list
+3, the rest 5) and 1.3-2.3 ms on the host (its own plasticity block, the monitors, the random draws, the replay loop).
+
+The two-fly game (`fly_game.py --partner female --backend cupy`: the male and the FlyWire female, both brains in the one
+brain server process, the four social channels on, `tools/bench_two_flies.py --only pair-game`, 400 ticks after 20 of
+warm-up, 1-minute load average 1.3 for the CPU rows and 2.7 for the GPU rows), real-time factor and the tick's median /
+99th percentile, against the CPU's two brain processes run the same hour:
+
+| two-fly game | the CPU (numba, a process per brain) | the GPU (both brains in the brain server) |
+|---|---|---|
+| parts list off, `dt` 0.5 | 2.8x, 8.9 / 11.2 ms | **3.6x, 7.0 / 8.4 ms** |
+| parts list off, `dt` 1.0 (`--fast`) | 4.0x, 6.1 / 9.0 ms | 4.3x, 5.7 / 9.0 ms |
+| parts list on, `dt` 0.5 | 1.8x, 14.0 / 16.5 ms | 2.6x, 9.8 / 12.0 ms |
+| parts list on, `dt` 1.0 | 2.6x, 9.5 / 11.1 ms | 2.7x, 9.3 / 13.6 ms |
+
+The game process used 19-28 % of one core with the GPU and the GPU itself 23-35 % (nvidia-smi sampled every half second);
+about 1.7 GB of device memory for both brains. The server resumes the two brains' ticks in turn, chunk by chunk (one brain's
+device time behind the other's host work, the two graphs on two streams): run one after the other instead, the same game made
+2.0x (11.5 / 20.6 ms), slower than the CPU's two parallel processes although each brain alone is faster on the GPU.
+
+**What this shows.** The plan's targets (6.9) were 3x real time for both brains under the busy input and a 99th-percentile
+tick under 25 ms: the game holds 3.6x with the parts list off (its slowest tick in a hundred 8.4 ms) and 2.6x with it on,
+where each brain's host replay (the tone deposits and the local release are the CPU's work every tick) is longer than the
+other brain's device time, so the overlap cannot hide all of it. Every number above is a measurement of this laptop's GPU
+under a Windows driver through WSL2; a desktop card with more bandwidth will do better, a smaller one worse, and both will
+give the same spikes.
+
+### 11.4 Tried, not adopted, and what is left
+
+**Tried, not adopted.** The first engine (2026-10-01, the same day) ran nine kernels per step, pulled each hit target with
+one thread (the female's largest in-degree, 10,356 edges, is 324 bitmap words walked one after another), downloaded the
+step boundaries and the spike log in two synchronising copies per chunk, and replayed the host's bookkeeping step by step:
+it gave the CPU's bits but at the CPU's pace (male 5.9 ms per tick, female 7.7). It also carried a race: its device arrays
+were made on CuPy's default stream and filled on the engine's own non-blocking stream, which CUDA does not order against each
+other, so beside another process's GPU load an initialising memset could land after an upload (2 of 50 runs next to a GPU hog
+gave different spikes). Every device operation now runs on one blocking stream (0 of 110 runs); the kernels are six per step;
+the pull is a warp per hit target; a chunk is one upload, one graph and one download; the host replays per chunk.
+
+**Not changed, on purpose.** No float atomics anywhere (their rounding and denormal handling are not guaranteed, and a float
+atomic push is not even run-to-run deterministic); no fast-math, no fused multiply-add, no flush-to-zero; no inexact
+fixed-point mode (plan 6.1's fallback was never needed: exactness held in every test and on the real data); the random
+numbers never move to the device; the chunk never crosses a block boundary that the host must serve.
+
+**What is left.** The device's share is now about 1.9 ms per brain per tick (about 38 µs per 0.5 ms step: the dense pass 12,
+the pull 10, the send 8, the hit list 3, the rest 5), the host's about 1.3-2.3 ms (its own plasticity block, the monitors, the
+draws, the replay loop). Two brains in one process run one after the other; launching both brains' chunks before waiting on
+either would hide one brain's device time behind the other's host replay (a generator-shaped `advance_steps` and a change in
+the brain server). The dense pass could lose a few microseconds with narrower per-neuron arrays. None of these changes a bit.
+
+## 12. Honest limitations
 
 The starter kit's list, extended. These are the things a neuroscientist would point at first.
 
@@ -2604,7 +2732,7 @@ The starter kit's list, extended. These are the things a neuroscientist would po
 
 ---
 
-## 12. References
+## 13. References
 
 * Ache JM, Polsky J, Alghailani S, Parekh R, Breads P, Peek MY, Bock DD, von Reyn CR, Card GM
   (2019). Neural basis for looming size and velocity encoding in the *Drosophila* giant fiber

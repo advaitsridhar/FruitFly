@@ -91,8 +91,8 @@ def _main(argv=None):
     ap.add_argument("--profile", choices=sorted(PROFILES), default="pure",
                     help="model profile: pure (the paper, default here), game (what the game runs), brakes")
     ap.add_argument("--dt", type=float, default=0.5, help="time step in ms (0.1 = the paper's Brian2 default, slower)")
-    ap.add_argument("--backend", choices=("auto", "numpy", "numba"), default="auto",
-                    help="integrator: compiled numba kernels when numba is installed (auto), or plain NumPy; same spikes either way")
+    ap.add_argument("--backend", choices=("auto", "numpy", "numba", "cupy"), default="auto",
+                    help="integrator: compiled numba kernels when numba is installed (auto), plain NumPy, or the GPU (cupy: needs the cupy package and an NVIDIA GPU); same spikes every way")
     ap.add_argument("--gain", type=float, default=None, help="global synaptic gain (default 0.65 for the male fly, 1.0 = the paper's value for the female fly)")
     ap.add_argument("--kenyon-gain", type=float, default=None, help="input gain of Kenyon cells (0.25 pure, 1.0 game)")
     ap.add_argument("--fatigue", type=float, default=None, metavar="MV", help="threshold increase per spike, fading over 2 s")
@@ -431,7 +431,8 @@ def _main(argv=None):
                 json.dump(rows, f, indent=1)
         return
 
-    integrator = ("compiled (numba)" if brain.backend == "numba" else "NumPy (--backend numpy)" if args.backend == "numpy"
+    integrator = ("the GPU (CuPy, --backend cupy)" if brain.backend == "cupy" else "compiled (numba)" if brain.backend == "numba"
+                  else "NumPy (--backend numpy)" if args.backend == "numpy"
                   else "NumPy; pip install numba makes it about twice as fast, same spikes")
     what = ("the pair experiments (their ranges are provisional: measured on the real connectome, docs/SCIENCE.md section 10)"
             if args.pair_experiments else "the validated experiments")
@@ -581,6 +582,11 @@ def _check_args(ap, args):
         if not fastbrain.available():
             raise SystemExit("--backend numba needs the numba package, which is not installed: pip install numba "
                              "(or leave out --backend: NumPy gives the same spikes, about half as fast)")
+    if args.backend == "cupy":                   # the same, for the GPU: one line naming what is missing, before loading
+        from . import gpubrain
+        reason = gpubrain.unavailable_reason()
+        if reason is not None:
+            raise SystemExit(f"--backend cupy: {reason} (or leave out --backend: the CPU gives the same spikes)")
 
 
 def check(conn, spec):

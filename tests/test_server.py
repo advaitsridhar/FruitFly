@@ -451,3 +451,15 @@ def test_play_says_numba_is_missing_before_loading_the_data(capsys, monkeypatch)
     assert e.value.code == 2
     err = capsys.readouterr().err
     assert "error: --backend numba needs the numba package: pip install numba" in err and "Traceback" not in err
+
+
+def test_play_says_cupy_is_missing_before_loading_the_data(capsys, monkeypatch):
+    """``--backend cupy`` without CuPy or a GPU: one line naming what is missing, exit code 2, nothing loaded."""
+    from virtual_fly import gpubrain, play
+    monkeypatch.setattr(gpubrain, "unavailable_reason", lambda: "the cupy backend needs an NVIDIA GPU: CUDA reports no device")
+    monkeypatch.setattr(play, "load_connectome", lambda **k: pytest.fail("loaded the data first"))
+    with pytest.raises(SystemExit) as e:
+        play.main(["--backend", "cupy", "--no-browser"])
+    assert e.value.code == 2
+    err = capsys.readouterr().err
+    assert "error: --backend cupy: the cupy backend needs an NVIDIA GPU: CUDA reports no device" in err and "Traceback" not in err

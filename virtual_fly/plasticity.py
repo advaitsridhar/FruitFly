@@ -195,6 +195,43 @@ class MushroomBodyPlasticity:
         if changed:
             brain.w[self.pe] = self.base * self.scale
 
+    def step_block(self, brain, spike_lists, t_last: int) -> bool:
+        """The same as calling :meth:`step` once per step for a run of consecutive steps ending at step ``t_last``
+        (``spike_lists``: each step's sorted spikes, in order; empty arrays for steps without), provided the run
+        crosses no block boundary before its last step: the tallies are exact integer counts in float32, so the
+        run's counts added at once equal the step-by-step additions, and the block itself (when ``t_last`` ends one)
+        runs once with the brain's step set to ``t_last``, as the last ``step`` call would have run it. Returns
+        whether the block changed the brain's weights (the GPU backend uploads them then)."""
+        if not spike_lists:
+            return False
+        if len(spike_lists) > 1:
+            spikes = np.concatenate(spike_lists)
+        else:
+            spikes = spike_lists[0]
+        if spikes.size:
+            k = self.kc_local[spikes]
+            k = k[k >= 0]
+            if k.size:
+                self._kc_acc += np.bincount(k, minlength=self.kc.size).astype(np.float32)
+            d = self.dan_local[spikes]
+            d = d[d >= 0]
+            if d.size:
+                self._dan_acc += np.bincount(d, minlength=self.dan.size).astype(np.float32)
+        if (t_last + 1) % self.block_steps:
+            return False
+        before = self.events
+        t_now = brain.t
+        brain.t = t_last
+        try:
+            w_pe = brain.w[self.pe]
+            self.step(brain, self._empty)
+            changed = self.events != before or not np.array_equal(w_pe.view(np.uint32), brain.w[self.pe].view(np.uint32))
+        finally:
+            brain.t = t_now
+        return changed
+
+    _empty = np.zeros(0, dtype=np.int64)
+
     # ------------------------------------------------------------------ inspection
     def summary(self, conn: Connectome | None = None) -> dict:
         """Per MBON type: mean remaining strength of its KC inputs (all of them, and weighted by the

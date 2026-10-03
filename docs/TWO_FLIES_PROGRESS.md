@@ -6,7 +6,8 @@ Plan: docs/TWO_FLIES_PLAN.md. Newest session notes first.
 | phase | branch | PR | state | last update |
 |---|---|---|---|---|
 | 0 | claude/two-flies-p0-baseline | #16 | merged (squash, `3631770`) | 2026-09-27 |
-| 1 | claude/two-flies-p1-two-brains | #17 | draft PR open, CI green | 2026-10-01 |
+| 1 | claude/two-flies-p1-two-brains | #17 | merged (squash, `f70d8be`) | 2026-10-01 |
+| 2 | claude/two-flies-p2-gpu | #18 | PR open, CI green | 2026-10-01 |
 
 ## This machine
 - OS: WSL2 (Ubuntu 24.04.5 LTS) on Windows; the repository lives under the Linux home folder, not `/mnt/c`.
@@ -22,7 +23,9 @@ Plan: docs/TWO_FLIES_PLAN.md. Newest session notes first.
 - Package versions after the installs of plan 4.5 (`[dev]`, `[female]`, `[physics]`, `flygym==1.2.1 --no-deps`):
   numpy 2.5.3, numba 0.67.0, llvmlite 0.49.0, pyarrow 25.0.1, pytest 9.1.1, mujoco 3.2.7, dm-control 1.0.27, dm-tree 0.1.8,
   flygym 1.2.1, scipy 1.18.1, gymnasium 1.3.0, setuptools 84.0.0 (brought in by the physics extra). `physics.available()` is true.
-  Not installed yet: cupy (Phase 2), playwright (Phase 3), trimesh (Phase 3).
+  Phase 2 (2026-10-01, the lean set of plan 6.2): cupy-cuda13x 14.2.0, nvidia-cuda-runtime 13.4.92, nvidia-cuda-nvrtc 13.4.92,
+  cuda-toolkit 13.4.2 (the meta-package), cuda-pathfinder 1.8.2; no cuBLAS, cuRAND, cuSOLVER, cuFFT or nvJitLink wheels.
+  Not installed yet: playwright (Phase 3), trimesh (Phase 3).
 
 ## Fresh-clone findings
 (the same text is under "Known state of main" in docs/TWO_FLIES_PLAN.md)
@@ -60,6 +63,8 @@ Plan: docs/TWO_FLIES_PLAN.md. Newest session notes first.
 | 13 | her walking urge | on for both flies, labelled; every claim checked against the 5.9 controls | default, owner | 2026-09-27 |
 | 14 | contact arousal to pC1 for a simulated partner (`contact_pc1`) | on for a male toucher, off for a female toucher, switchable; the scripted-female path unchanged | default, owner | 2026-09-27 |
 | 15 | if song barely reaches her vpoEN | report as measured; no compensating gain unless the owner asks | default, owner | 2026-09-27 |
+| 16 | GPU backend, exactness and install size | CuPy with the exact ordered pull; an inexact fixed-point mode only if exactness proves impossible (opt-in, documented, asked first); the lean install (cupy-cuda13x plus the nvrtc and cudart wheels), verified (Measurements) | default; the owner: "continue" after the defaults were put to them | 2026-10-01 |
+| 17 | where the GPU brains live | one GPU child process holding both brains; the game process stays on the CPU; the re-test child always uses the CPU | default, the same | 2026-10-01 |
 
 ## Measurements
 All on 2026-09-27, this machine, `nice -n 10`, one job at a time, machine otherwise idle (load average under 1.5).
@@ -73,6 +78,8 @@ All on 2026-09-27, this machine, `nice -n 10`, one job at a time, machine otherw
   (plan 4.9 item 3).
 - CI on PR #17 (2026-10-01, the same matrix): **547 passed, 3 skipped** on 3.10, 3.11 and 3.12 (the same three tests); here
   550 passed, 0 skipped with the physics extra.
+- CI on PR #18 (2026-10-01, the same matrix, no CuPy): **570 passed, 42 skipped** on 3.10, 3.11 and 3.12 (the 39 GPU tests and the
+  three physics ones); here 612 passed, 0 skipped with CuPy and the physics extra.
 
 ### Validated experiments, the baseline JSONs (plan 4.7; game profile, five seeds, numba)
 | run | file (work folder) | result |
@@ -240,6 +247,104 @@ readouts differ at the same t; the second brain's seed is the first's + 1000, SC
 non-interactive script left all three games ignoring SIGINT (a background job of a script has SIGINT ignored, as plan 1.7 warns):
 with job control on (`set -m`) the recipe behaves as in the terminal. (`../runs/p1-ctrlc-*.log`.)
 
+### Phase 2: the CuPy install and checks (plan 6.2; 2026-10-01)
+`pip install -c ../runs/constraints.txt cupy-cuda13x "cuda-toolkit[nvrtc,cudart]==13.*"` with numpy 2.5.3, numba 0.67.0 and llvmlite
+0.49.0 pinned: cupy-cuda13x 14.2.0, nvidia-cuda-runtime 13.4.92, nvidia-cuda-nvrtc 13.4.92, cuda-toolkit 13.4.2, cuda-pathfinder 1.8.2
+(about 70 MB of wheels); NumPy, numba and llvmlite unchanged. `cupy.show_config()`: CUDA driver 13.4 (13040), runtime 13.2 linked to
+CuPy / 13.4 installed, NVRTC 13.4, device NVIDIA GeForce RTX 4070 Laptop GPU, compute capability 8.9, 7,050 of 8,187 MB free; the cuRAND
+and cuSOLVER wheels absent as intended (the lean set), cuBLAS and cuSPARSE reported available. The plan's check: a `RawKernel` compiled
+with `--fmad=false` ran (0.86 s including NVRTC), and stream capture into a CUDA graph and its launch worked. The NVRTC cache lives in
+`~/.cupy/kernel_cache` unless `CUPY_CACHE_DIR` is set. After the install: **550 passed**, and `tools/golden_hashes.py --compare`
+**18 unchanged** (nothing moved).
+
+### Phase 2: the GPU brain's equality on the real data (plan 6.6; 2026-10-01; `../runs/p2_real_equality.py`, `../runs/p2-eq-*.json`)
+Game profile, seed 0, the benchmark's busy input, 2 s = 4,000 steps stepped a tick (50 steps) at a time on numba and on the GPU
+side by side, every step's spike list compared, then every state array byte for byte (`v`, `g`, `thr`, `spike_count`, `std_x`,
+`std_t`, the release accumulators, the tone levels and gains, the ring, `w`) and `t`, the quiet flag, the spike total and the
+pending flags: **identical** in all four runs: male parts off 358,953 spikes; male parts on 440,318; female off 242,340; female on
+431,990. The depression table has one entry in the game profile (no depression: `std_u` 0); `math.exp` equalled `np.exp` on every
+entry. Build: numba 0.3-0.8 s, cupy 2.0-3.1 s (the first NVRTC compile is cached). The engine's own tests: 32 passed in 3.3 s.
+
+### Phase 2: the 16 validated experiments on the GPU (plan 6.6, 6.9; 2026-10-01; `../runs/p2-experiments.sh`, `../runs/p2-*-cupy.json`)
+`fly_brain.py --profile game --backend cupy` (male, parts off and on) and `--female --profile game --backend cupy` (parts off and on):
+`tools/compare_experiments.py` against `../runs/p0-*.json` reports **identical** for all four (every readout's mean and per-seed rates,
+the ok and fragile flags, the after-stimulus activity); the closing lines name the integrator "the GPU (CuPy, --backend cupy)".
+About 15-20 s of wall time per run on the first engine.
+
+### Phase 2: the two-fly game on the GPU through the brain server (plan 6.5; 2026-10-01; `../runs/p2-ctrlc-gpu.log`)
+`fly_game.py --partner female --backend cupy` with the 1.7 `Ctrl+C` recipe: "Brain integrator: the GPU (CuPy) in the brain process";
+"Partner: flywire:v783 (female), its brain in the one brain process, as is the first fly's"; one brain child (plus multiprocessing's
+resource tracker) in the session, both flies in the state, he in court mode after 7 s; "Bye!", exit code 0, nothing left.
+
+### Phase 2: where a GPU tick's time went before the speed work (2026-10-01; the profile script in the session scratchpad)
+The same input, 80 ticks, 40 monitors with 25 ms bins as the game has, plasticity on, parts off, ms per 25 ms tick: male 5.92 in all
+(4.2x real time), of which the device stream (the input upload, the ten-step graph, the two downloads) 4.26, `plasticity.step`
+0.53, the per-launch weight comparison 0.31, the monitors 0.17, the random draws 0.19, the rest of the replay loop 0.46; female 7.68
+(3.3x): stream 5.77, plasticity 0.53, weights 0.49, monitors 0.16, draws 0.20, loop 0.53. The equality script's own numbers (no
+monitors): male 0.139 ms per step on the GPU against numba's 0.148; male with parts 0.239 against 0.257; female 0.180 against 0.122;
+female with parts 0.350 against 0.272. So the first engine runs the male at numba's pace and the female slower, well short of the
+6.9 target (both brains in 8 ms per tick): the device time is launches (nine kernels per step) and passes over the neuron arrays
+rather than the propagation, the host time is per-step Python. The speed work (merged kernels, one download per chunk, a warp per
+hit target, a per-block plasticity step, the monitors and weights checked only when they can change) follows, with the equality
+script and the tests as the guard.
+
+### Phase 2: the speed work on the GPU brain (2026-10-01; the profile script's numbers, ms per 25 ms tick, male / female)
+Game profile, busy input, 40 monitors with 25 ms bins, plasticity on, parts off unless said. A race fixed first: the first engine
+made its device arrays on CuPy's default stream and filled them on its own non-blocking one, which are unordered, so next to
+another process's GPU load an initialising memset could land after an upload (2 of 50 runs beside a GPU hog gave different
+spikes: a brain with every threshold wiped to zero fired everywhere at step 0); every device operation now runs on the engine's one
+blocking stream (0 of 110 runs). Then, in order: the start 5.92 / 7.68 (device stream 4.26 / 5.77); the stream fix 5.77 / 7.95;
+the kernels merged (a scatter kernel for the host's noise counts and forced marks, one dense kernel that also appends the spikes
+to the log), the send a block per spiking neuron, the hit list gathered with warp-aggregated atomics, the pull a warp per hit
+target with the kicks still added one at a time in edge order: 4.62 / 4.93 (device 1.94 / 2.06); pinned host buffers and one
+download per chunk: 4.44 / 4.24; the host's bookkeeping per chunk (`MushroomBodyPlasticity.step_block`, exact and tested
+field by field; `spike_count`, the APL tally, the tone deposits and the refractory lists per chunk; monitors only when a bin
+can close; the weight subsets through a scatter kernel, the plastic ones only after a block that changed them): 3.74 (male);
+chunks of 20 steps where a block starts (three launches per tick, two graphs) and the gain uploaded at block starts: **4.22 /
+3.95**, with the parts list on 5.11 / 6.43. The device's share is now 1.9 ms per brain per tick (about 38 µs per step: the dense
+pass 12, the pull 10, the send 8, the hits 3, the rest 5). Per step without monitors (the equality script): male 0.083 ms on
+the GPU against numba's 0.143 (6.0x against 3.5x real time), female 0.092 against 0.124, male parts on 0.116 against 0.252,
+female parts on 0.149 against 0.260. Both brains back to back in one process: about 8.2 ms per tick with the parts list off
+(3.0x real time, the 6.9 target just met) and 11.5 ms with it on (2.2x). Left for later: launching both brains' chunks before
+waiting on either (the device time would hide behind the other brain's host replay; it needs a generator-shaped
+`advance_steps` and a change in the brain server); narrower per-neuron arrays in the dense pass.
+
+### Phase 2: the final measurements on the committed engine (plan 6.6, 6.7; 2026-10-01; `../runs/p2-final-measure.sh`, 1-minute load 1.1-1.3)
+- Equality on the real data, rerun (`../runs/p2-eq-*.json`): **identical** in all four runs again (the same spike counts: 358,953 /
+  440,318 / 242,340 / 431,990); per step, the GPU against numba, no monitors: male 0.083 against 0.144 ms (6.0x against 3.5x real
+  time), male parts on 0.119 against 0.252 (4.2x against 2.0x), female 0.089 against 0.125 (5.6x against 4.0x), female parts on
+  0.148 against 0.265 (3.4x against 1.9x).
+- The 16 experiments with `--backend cupy`, rerun: **identical** to the Phase 0 baseline in all four runs; about 10 s per run now.
+- `tools/bench_gpu.py` (`../runs/p2-bench-gpu.json`): the environment row (an RTX 4070 Laptop GPU, 36 multiprocessors, 8,188 MB,
+  a 128-bit bus at 8.0 GHz effective, a measured 225 GB/s device-to-device copy; CuPy 14.2.0, CUDA runtime 13.2 / driver 13.4);
+  the steps rows (game profile, the busy input, 2 s after 300 ms of warm-up, stepped a tick at a time, microseconds per step,
+  median / 99th percentile): male numba 131 / 238 against cupy **61 / 78** (3.8x against 8.2x real time); male parts on 229 / 269
+  against 90 / 105 (2.2x against 5.6x); female 108 / 127 against 69 / 81 (4.7x against 7.3x); female parts on 248 / 296 against
+  137 / 280 (2.0x against 3.7x). One `step()` at a time on the GPU (its own launch, no graph) costs 500-630 µs: the API's single
+  step is for tests, the chunks are the way to run.
+- The two-fly game through the brain server (`tools/bench_two_flies.py --only pair-game --backend cupy`, 400 ticks after 20, in
+  `../runs/p2-bench-gpu.json`; the CPU's rows rerun the same minute into `../runs/p2-bench-pair-game-cpu.json`): parts off dt 0.5:
+  GPU RTF 2.03, tick 11.5 / 20.6 ms (median / 99th) against the CPU's two processes 2.78, 8.9 / 11.2; dt 1.0: 2.09, 11.3 / 19.6
+  against 4.03, 6.1 / 9.0; parts on dt 0.5: 1.46, 16.2 / 22.8 against 1.80, 14.0 / 16.5; parts on dt 1.0: 1.37, 18.1 / 22.8
+  against 2.63, 9.5 / 11.1. The GPU's game process used 11-15 % of a core, the GPU 38-40 % (nvidia-smi sampled), 1,650-1,670 MB
+  of device memory for both brains. **So the first server runs the two brains one after the other and loses to the CPU's two
+  parallel processes** although each brain alone is faster on the GPU: the 6.9 target of 8 ms of brain time per tick for both is
+  missed by a little (about 8.7 ms sequential) and the 99th-percentile tick stays under 25 ms. The fix is to launch both brains'
+  chunks before waiting on either (one brain's device time behind the other's host work, the two graphs on two streams): the next step.
+
+### Phase 2: the two brains overlapped in the brain server (plan 6.5; 2026-10-01; `../runs/p2-bench-pair-game-gpu2.json`)
+A chunk is now a launch and a collect; a GPU brain's tick is a generator that pauses after each chunk's launch; the server resumes
+its brains' ticks in turn (A launches, B launches, A collects and replays and launches again while B's chunk runs on its own
+stream). `tools/bench_two_flies.py --only pair-game --backend cupy` (400 ticks, 1-minute load 2.7 at the start), real-time factor
+and tick median / 99th percentile, before (one brain after the other) and after: parts off dt 0.5: 2.03, 11.5 / 20.6 ms ->
+**3.56, 6.95 / 8.41 ms** (the CPU's two processes the same hour: 2.78, 8.9 / 11.2); parts off dt 1.0: 2.09, 11.3 / 19.6 -> 4.26,
+5.70 / 8.98 (CPU 4.03, 6.1 / 9.0); parts on dt 0.5: 1.46, 16.2 / 22.8 -> 2.55, 9.81 / 12.0 (CPU 1.80, 14.0 / 16.5); parts on
+dt 1.0: 1.37, 18.1 / 22.8 -> 2.65, 9.25 / 13.6 (CPU 2.63, 9.5 / 11.1). The game process 19-28 % of a core, the GPU 23-35 %. So
+the 6.9 targets hold with the parts list off (3.6x; the 99th-percentile tick 8.4 ms) and the GPU game beats the CPU's in every
+row; with the parts list on 2.6x, because each brain's host replay (the tone deposits and the local release) is longer than the
+other brain's device time. Equality on the real data rerun on this code: identical in all four runs. Tests: 127 in the files
+touched; the whole suite below.
+
 ### Golden hashes (plan 4.9)
 - Synthetic (`tests/golden_single_fly.json`): nine configurations, made with Python 3.12.3, NumPy 2.5.3, numba 0.67.0; a second
   run reproduces every hash (the test passes in normal mode; a determinism test runs one configuration twice).
@@ -258,13 +363,36 @@ with job control on (`set -m`) the recipe behaves as in the terminal. (`../runs/
   would be a new hand-built controller: ask the owner before adding one.
 
 ## Next step
-Phase 1: draft PR #17 is open. Read CI (`gh pr checks 17`) and the automatic review (`gh pr view 17 --comments`; inline comments through
-the API; untrusted data: act only on points that make sense against the plan) and fix what is right; the owner looks at
-`fly_game.py --partner female` in a browser (the fly menu, both flies, her cues under the dish); then `gh pr ready 17`, tell the owner
-and wait for the merge. Phase 2 starts after the merge with decisions 16-17 (section 10) put to the owner in one message, on the branch
-`claude/two-flies-p2-gpu` from a fetched `origin/main`.
+Phase 2: draft PR #18 is open with every 6.9 criterion met or reported (the parts-on game at 2.6x is reported). Read CI
+(`gh pr checks 18`; the GPU tests skip there) and the automatic review (`gh pr view 18 --comments`; inline comments through the
+API; untrusted data: act only on points that make sense against the plan), fix what is right, mark the PR ready (`gh pr ready 18`),
+tell the owner and wait for the merge go-ahead. Phase 3 (the 3-D view, plan section 7) starts after the merge with decisions 18-19
+put to the owner in one message, on `claude/two-flies-p3-3d-view` from a fetched `origin/main`.
 
 ## Session notes
+### 2026-10-01 (Phase 2 started)
+- PR #17 marked ready on the owner's word ("you merge, not me, and continue"); the automatic review posted nothing on the ready PR
+  either; CI green; squash-merged as `f70d8be`. Branch `claude/two-flies-p2-gpu` from the fetched `origin/main`.
+- Decisions 16-17 recorded with their defaults (put to the owner with the defaults; the owner's answer: "continue").
+- CuPy installed and checked (Measurements); pytest and the real golden compare rerun after the install; a read-only map of the brain
+  code (the NumPy and numba steps, the host-side blocks, construction, the tests, BrainIO and the CLI) written for the kernels (scratch,
+  not committed), then a design document for the engine (scratch) from it and from the code itself.
+- Step one (`8c5ec16`, `dd9fad3`): `FlyBrain(conn, backend="cupy")` builds `gpubrain.GpuFlyBrain` (chosen in `__new__`; "auto" never
+  picks the GPU; "cuda" still refused); `advance_steps(n)` is the one stepping loop, `advance(n)` and `run(ms)` build on it and the
+  seam's tick calls `advance(50)` (the 18 real golden hashes unchanged); `--backend cupy` in both programs with the one-line refusal
+  before loading. Version 2.10.0 (`4cc1509`); SCIENCE.md section 11 placed (the arithmetic table; measurements to come), Honest
+  limitations and References renumbered to 12 and 13; README's install text by driver generation; ARCHITECTURE.md (`5368adf`).
+- The brain server of 6.5 (`f71842c`, one child process for every brain, `brain_procs="server"`, chosen by `auto` for a GPU brain;
+  the re-test and rebuilds on the CPU) built and tested with CPU brains on the synthetic connectome (17 tests) while the engine was
+  being built. `tools/bench_two_flies.py --backend` and `tools/bench_gpu.py` (`4c297ee`, `0420d3c`): the GPU's environment row
+  measured a 225 GB/s device-to-device copy (36 multiprocessors, a 128-bit bus).
+- The engine (`b7db401`): bit-identical to NumPy and numba on every test configuration and, in four real-data runs of 2 s, on
+  every step and every state byte; the 16 experiments with `--backend cupy` identical to the baseline. Its speed work (`5ed284f`):
+  a stream race fixed, six kernels per step, a warp per hit target, one upload and one download per chunk, the host's
+  bookkeeping per chunk; then the two brains overlapped in the server (Measurements): the two-fly game at 3.6x real time on the
+  GPU against 2.8x on the CPU. SCIENCE.md 11, README, ARCHITECTURE.md written with the measured numbers.
+- Pushed; draft PR #18 opened; CI green on 3.10-3.12 (570 passed, 42 skipped without CuPy); marked ready; the owner asked whether to merge.
+
 ### 2026-10-01 (Phase 1, the end)
 - The previous session ended on its usage limit with the third review launched but not run (its five agents failed at once) and the
   branch unpushed at `c957f5a`; this session started from the log's next step: 531 tests and the 18 golden hashes re-checked first.

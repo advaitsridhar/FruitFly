@@ -123,17 +123,28 @@ class FlyBrain:
         say it is: slow modulators, graded cells, per-type thresholds (see :mod:`virtual_fly.parts`).
     """
 
+    def __new__(cls, *args, **kwargs):
+        """``backend="cupy"`` builds the GPU subclass (:class:`virtual_fly.gpubrain.GpuFlyBrain`), which refuses
+        with one line when CuPy or an NVIDIA GPU is missing; every other backend builds this class."""
+        backend = kwargs.get("backend", args[13] if len(args) > 13 else "auto")
+        if backend == "cupy" and cls is FlyBrain:
+            from .gpubrain import GpuFlyBrain
+            return object.__new__(GpuFlyBrain)
+        return object.__new__(cls)
+
     def __init__(self, conn: Connectome, dt: float = 0.5, gain: float | None = None, kenyon_gain: float = 0.25,
                  fatigue_mv: float = 0.0, fatigue_ms: float = 2000.0,
                  std_u: float = 0.0, std_tau_ms: float = 500.0,
                  noise_hz: float = 0.0, noise_mv: float = 1.0, noise_spec: str = "all",
                  threshold_jitter: float = 0.0, seed: int = 0, backend: str = "auto", parts=None):
         self.conn = conn
-        if backend not in ("auto", "numpy", "numba"):
-            raise ValueError("backend must be 'auto', 'numpy' or 'numba'")
+        if backend not in ("auto", "numpy", "numba", "cupy"):
+            raise ValueError("backend must be 'auto', 'numpy', 'numba' or 'cupy'")
         if backend == "numba" and not fastbrain.available():
             raise RuntimeError("the numba backend needs the numba package: pip install numba")
-        self.backend = "numba" if (backend == "numba" or (backend == "auto" and fastbrain.available())) else "numpy"
+        # "cupy" is the GPU subclass (virtual_fly.gpubrain.GpuFlyBrain, chosen in __new__); "auto" never picks it
+        self.backend = "cupy" if backend == "cupy" else \
+            "numba" if (backend == "numba" or (backend == "auto" and fastbrain.available())) else "numpy"
         self.dt = float(dt)
         if gain is None:
             gain = DEFAULT_GAIN.get(getattr(conn, "sex", "male"), DEFAULT_GAIN["male"])
@@ -415,6 +426,8 @@ class FlyBrain:
         self.quiet = False
         if self.backend == "numba":
             return self._step_numba(slot)
+        if self.backend == "cupy":
+            return self._step_gpu(slot)
         if self._pending[slot]:
             arriving = self.queue[slot]
             if self._mod_active:                         # neuromodulation: the tone scales what arrives
@@ -729,15 +742,41 @@ class FlyBrain:
             weights = weights * np.repeat(x, lengths).astype(np.float32)
         np.add.at(target, self.post_idx[edges], weights)
 
-    def run(self, ms: float, record: bool = False):
-        """Simulate ``ms`` milliseconds. With ``record=True`` returns a list of (time_ms, spike indices)."""
-        steps = int(round(ms / self.dt))
-        rec = [] if record else None
-        for _ in range(steps):
+    def advance_steps(self, n_steps: int) -> list:
+        """Advance ``n_steps`` steps and return ``[(t, spikes), ...]`` for every step that had spikes, in order:
+        ``t`` the step's own number (before it was counted) and ``spikes`` its sorted indices, as :meth:`step`
+        returns them. On the CPU this is ``n_steps`` calls of :meth:`step`, identical by construction; the GPU
+        backend runs whole chunks of steps at once and replays the host-side work from its spike log."""
+        out = []
+        for _ in range(int(n_steps)):
+            t = self.t
             s = self.step()
-            if record and s.size:
-                rec.append((self.t * self.dt, s))
-        return rec
+            if s.size:
+                out.append((t, s))
+        return out
+
+    def advance_steps_lazy(self, n_steps: int):
+        """The generator form of :meth:`advance_steps`, for a driver that runs several brains at once (the brain
+        server of ``brainio.py``): a GPU brain pauses after each chunk's launch so another brain's work can overlap
+        it; on the CPU the whole run happens at the first resumption and nothing pauses. The generator's return value
+        (its ``StopIteration``'s) is the list :meth:`advance_steps` returns."""
+        return self.advance_steps(n_steps)
+        yield  # noqa: unreachable; it makes this a generator, as the GPU backend's override is one
+
+    def advance(self, n_steps: int) -> np.ndarray:
+        """Advance ``n_steps`` steps and return every spike of those steps in order (each step's sorted indices,
+        step after step): what the game reads per 25 ms tick (:meth:`advance_steps` without the step numbers)."""
+        steps = self.advance_steps(n_steps)
+        return np.concatenate([s for _, s in steps]) if steps else self._empty
+
+    def run(self, ms: float, record: bool = False):
+        """Simulate ``ms`` milliseconds. With ``record=True`` returns a list of (time_ms, spike indices), each
+        stamped with the time after its step (``advance_steps`` gives the step numbers before)."""
+        steps = int(round(ms / self.dt))
+        rec = self.advance_steps(steps)
+        if not record:
+            return None
+        return [((t + 1) * self.dt, s) for t, s in rec]
 
     def run_until_quiet(self, max_ms: float = 2000.0, check_ms: float = 100.0) -> float:
         """Run with the current input until the brain is silent (or ``max_ms``); returns ms simulated."""

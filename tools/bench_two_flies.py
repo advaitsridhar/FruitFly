@@ -14,6 +14,11 @@ Real-time factor (RTF) = simulated time / wall time; 1.0 = real time.
            the social channels on), parts list off and on, dt 0.5 and 1.0: ticks, and the peak memory of the
            parent and of each brain child (Phase 1, docs/TWO_FLIES_PLAN.md 5.9 item 4)
 
+``--backend cupy`` (Phase 2, docs/TWO_FLIES_PLAN.md 6.7 item 3) runs the brains of every row on the GPU: the brain and pair rows
+inline, the game rows with the brain server (one child process for every brain); the pair-game row then also samples the GPU's
+utilisation and memory through nvidia-smi while it ticks (where nvidia-smi answers: on WSL2 it reports utilisation but no
+per-process memory).
+
 Every row is measured in a fresh child process (``spawn``), so its peak memory is its own: a process's high-water mark
 never falls, and on Linux a child inherits the parent's ``ru_maxrss``, so rows measured one after another in one process
 would all report the largest so far. ``peak_rss_mb`` reads ``VmHWM`` from ``/proc/self/status`` where it exists.
@@ -123,21 +128,22 @@ def in_children(jobs: list[tuple], together: bool = False) -> list[dict]:
     return rows
 
 
-def pair_rtf(parts: bool, seconds: float) -> list[dict]:
+def pair_rtf(parts: bool, seconds: float, backend: str = "auto") -> list[dict]:
     """The male and the female brain at the same time, one process each, timed from a shared barrier."""
-    rows = in_children([(brain_rtf, {"female": female, "parts": parts, "seconds": seconds}) for female in (False, True)],
-                       together=True)
+    rows = in_children([(brain_rtf, {"female": female, "parts": parts, "seconds": seconds, "backend": backend})
+                        for female in (False, True)], together=True)
     return sorted(rows, key=lambda r: r["fly"] != "male")      # male first, whichever finished first
 
 
-def game_rtf(body: str, ticks: int, female: bool = False, parts: bool = False) -> dict:
+def game_rtf(body: str, ticks: int, female: bool = False, parts: bool = False, backend: str = "auto") -> dict:
     from virtual_fly import load_connectome
     from virtual_fly.game import TICK_MS, Game
     from virtual_fly.settings import build_brain
     conn = load_connectome(female=female, quiet=True)
-    brain = build_brain(conn, "game", seed=0, **({"parts": True} if parts else {}))
+    kw = {"seed": 0, "backend": backend}
+    brain = build_brain(conn, "game", **kw, **({"parts": True} if parts else {}))
     t0 = time.perf_counter()
-    game = Game(brain, seed=0, body=body)
+    game = Game(brain, seed=0, body=body, brain_kwargs=dict(kw))
     setup_s = time.perf_counter() - t0
     game.world.toggle_female(True, 14.0, 10.0)         # something to look at and chase
     for _ in range(20):
@@ -167,16 +173,56 @@ def _vmhwm_mb(pid: int) -> float | None:
     return None
 
 
-def pair_game_rtf(parts: bool, dt: float, ticks: int) -> dict:
-    """The two-fly game: the male with a simulated FlyWire female, each brain in its own process, lockstepped."""
+class _GpuSampler:
+    """Samples the GPU's utilisation and memory through nvidia-smi every half second in a thread (plan 6.7 item 3);
+    silent where nvidia-smi is missing or answers nothing."""
+
+    def __init__(self):
+        import threading
+        self.samples, self._stop = [], threading.Event()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+
+    def _run(self):
+        while not self._stop.is_set():
+            try:
+                out = subprocess.run(["nvidia-smi", "--query-gpu=utilization.gpu,memory.used", "--format=csv,noheader,nounits"],
+                                     capture_output=True, text=True, timeout=5)
+                util, mem = (float(x) for x in out.stdout.strip().split(",")[:2])
+                self.samples.append((util, mem))
+            except (OSError, ValueError, subprocess.SubprocessError):
+                pass
+            self._stop.wait(0.5)
+
+    def __enter__(self):
+        self._thread.start()
+        return self
+
+    def __exit__(self, *exc):
+        self._stop.set()
+        self._thread.join(timeout=10)
+
+    def summary(self) -> dict | None:
+        if not self.samples:
+            return None
+        return {"samples": len(self.samples), "util_percent_mean": round(statistics.fmean(u for u, _ in self.samples), 1),
+                "util_percent_max": max(u for u, _ in self.samples), "memory_used_mb_max": max(m for _, m in self.samples)}
+
+
+def pair_game_rtf(parts: bool, dt: float, ticks: int, backend: str = "auto") -> dict:
+    """The two-fly game: the male with a simulated FlyWire female, each brain in its own process (or, with the cupy
+    backend, both in the brain server's process on the GPU), lockstepped."""
+    import contextlib
     from virtual_fly import load_connectome
     from virtual_fly.game import TICK_MS, Game
     from virtual_fly.parts import PartsList
     from virtual_fly.settings import build_brain
     conn, fconn = load_connectome(quiet=True), load_connectome(female=True, quiet=True)
     parts_list = PartsList() if parts else None
-    kw = {"seed": 0, "dt": dt}
-    brain = build_brain(conn, "game", **kw, **({"parts": parts_list} if parts else {}))
+    kw = {"seed": 0, "dt": dt, "backend": backend}
+    # the game process builds the first brain on the CPU to describe it to its child (as fly_game.py does); the child
+    # builds the brain the kwargs ask for
+    brain = build_brain(conn, "game", **{**kw, "backend": "auto" if backend == "cupy" else backend},
+                        **({"parts": parts_list} if parts else {}))
     t0 = time.perf_counter()
     game = Game(brain, seed=0, brain_kwargs=dict(kw), parts_list=parts_list, brain_procs="auto",
                 partner={"conn": fconn, "brain_kwargs": dict(kw), "parts": parts_list if parts else False})
@@ -186,21 +232,30 @@ def pair_game_rtf(parts: bool, dt: float, ticks: int) -> dict:
         for _ in range(20):
             game.tick()
         per_tick = []
-        for _ in range(ticks):
-            t1 = time.perf_counter()
-            game.tick()
-            per_tick.append(time.perf_counter() - t1)
+        import resource
+        cpu0 = resource.getrusage(resource.RUSAGE_SELF)
+        with (_GpuSampler() if backend == "cupy" else contextlib.nullcontext()) as gpu:
+            for _ in range(ticks):
+                t1 = time.perf_counter()
+                game.tick()
+                per_tick.append(time.perf_counter() - t1)
+        cpu1 = resource.getrusage(resource.RUSAGE_SELF)
         wall = sum(per_tick)
         q = statistics.quantiles(per_tick, n=100)
-        children = {}
-        for a in game.flies:
+        children, seen = {}, set()
+        for a in game.flies:                      # a process per brain, or the one brain server for every brain (6.5)
+            server = getattr(a.io, "server", None)
             proc = getattr(a.io, "proc", None)
-            if proc is not None:
-                children[f"fly{a.id}_{a.sex}"] = _vmhwm_mb(proc.pid)
+            if proc is not None and proc.pid not in seen:
+                seen.add(proc.pid)
+                children["brain_server" if server is not None else f"fly{a.id}_{a.sex}"] = _vmhwm_mb(proc.pid)
         return {"fly": "male+female", "body": "drawn", "parts": parts, "dt": dt, "ticks": ticks, "flies": len(game.flies),
+                "backend": game.flies[0].io.settings().get("backend"),
                 "channels": sorted(game.social.names()) if hasattr(game.social, "names") else None,
                 "rtf": round(ticks * TICK_MS / 1000.0 / wall, 3),
                 "tick_ms_p50": round(q[49] * 1000, 2), "tick_ms_p99": round(q[98] * 1000, 2),
+                "game_process_cpu_percent": round(100.0 * ((cpu1.ru_utime - cpu0.ru_utime) + (cpu1.ru_stime - cpu0.ru_stime)) / wall, 1),
+                "gpu": gpu.summary() if backend == "cupy" else None,
                 "setup_s": round(setup_s, 1), "peak_rss_mb": peak_rss_mb(), "children_peak_rss_mb": children}
     finally:
         game.close()
@@ -215,6 +270,13 @@ def machine() -> dict:
         info["numba"] = numba.__version__
     except ImportError:
         info["numba"] = None
+    try:
+        import cupy
+        info["cupy"] = cupy.__version__
+        info["cuda_runtime"] = cupy.cuda.runtime.runtimeGetVersion()
+        info["cuda_driver"] = cupy.cuda.runtime.driverGetVersion()
+    except Exception:
+        info["cupy"] = None
     try:
         info["load_avg"] = os.getloadavg()
     except (AttributeError, OSError):
@@ -233,6 +295,8 @@ def main():
     ap.add_argument("--only", default=",".join(KINDS), help="comma list of " + ", ".join(KINDS) + " (default: all)")
     ap.add_argument("--seconds", type=float, default=3.0, help="simulated seconds per brain measurement")
     ap.add_argument("--json", metavar="FILE")
+    ap.add_argument("--backend", choices=("auto", "numpy", "numba", "cupy"), default="auto",
+                    help="the brains' integrator for every row (cupy: the GPU, Phase 2; checked before anything loads)")
     args = ap.parse_args()
     # refuse bad values before anything is loaded (the kit's rule for every option: one line, exit code 2)
     want = {s.strip() for s in args.only.split(",") if s.strip()}
@@ -247,6 +311,11 @@ def main():
         folder = Path(args.json).resolve().parent
         if not folder.is_dir():
             ap.error(f"--json: the folder {folder} does not exist; make it first, so the results are not lost at the end")
+    if args.backend == "cupy":           # one line before anything loads, as fly_brain.py and fly_game.py say it
+        from virtual_fly import gpubrain
+        reason = gpubrain.unavailable_reason()
+        if reason is not None:
+            ap.error(f"--backend cupy: {reason}")
     from virtual_fly import fastbrain
     fastbrain.warm_up()                  # compile or load the kernels once, before any child starts
     out = {"when": time.strftime("%Y-%m-%d %H:%M:%S"), "machine": machine(), "rows": []}
@@ -258,24 +327,25 @@ def main():
     if "brain" in want:
         for female in (False, True):
             for parts in (False, True):
-                add("brain", in_children([(brain_rtf, {"female": female, "parts": parts, "seconds": args.seconds})])[0])
+                add("brain", in_children([(brain_rtf, {"female": female, "parts": parts, "seconds": args.seconds,
+                                                        "backend": args.backend})])[0])
     if "pair" in want:
         for parts in (False, True):
-            for row in pair_rtf(parts, args.seconds):
+            for row in pair_rtf(parts, args.seconds, args.backend):
                 add("pair", row)
     if "game" in want:
         for female in (False, True):
-            add("game", in_children([(game_rtf, {"body": "drawn", "ticks": 400, "female": female})])[0])
+            add("game", in_children([(game_rtf, {"body": "drawn", "ticks": 400, "female": female, "backend": args.backend})])[0])
     if "physics" in want:
         from virtual_fly import physics
         if physics.available():
-            add("game", in_children([(game_rtf, {"body": "physics", "ticks": 80})])[0])
+            add("game", in_children([(game_rtf, {"body": "physics", "ticks": 80, "backend": args.backend})])[0])
         else:
             print("physics: flygym is not installed, skipped")
     if "pair-game" in want:
         for parts in (False, True):
             for dt in (0.5, 1.0):
-                add("pair-game", in_children([(pair_game_rtf, {"parts": parts, "dt": dt, "ticks": 400})])[0])
+                add("pair-game", in_children([(pair_game_rtf, {"parts": parts, "dt": dt, "ticks": 400, "backend": args.backend})])[0])
     if args.json:
         Path(args.json).write_text(json.dumps(out, indent=1))
 

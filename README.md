@@ -120,6 +120,23 @@ on 3.13 or newer) and about 680 MB of packages; in a virtual environment made wi
 `py -m pip install -e ".[physics]"`, then `py -m pip install --no-deps flygym==1.2.1`
 (docs/SCIENCE.md section 6.7).
 
+**The GPU brain** (`--backend cupy`, optional; Windows and Linux with an NVIDIA GPU, no CUDA toolkit to install) runs
+the same model, spike for spike, on the graphics card through CuPy (`docs/SCIENCE.md` section 11). Install CuPy for
+your driver generation, with the kit's NumPy and numba pinned so nothing else moves. With a driver of the R580 series
+or newer (CUDA 13; `nvidia-smi` shows the version) on a Turing card or newer:
+
+    py -m pip freeze | findstr /R "^numpy== ^numba== ^llvmlite==" > constraints.txt
+    py -m pip install -c constraints.txt cupy-cuda13x "cuda-toolkit[nvrtc,cudart]==13.*"
+
+(macOS / Linux: `python3 -m pip freeze | grep -E '^(numpy|numba|llvmlite)==' > constraints.txt`, then the same
+`install` line with `python3 -m pip`; macOS has no CUDA, so the GPU brain is Windows and Linux only.) With a driver of
+the R525-R579 series: `cupy-cuda12x "cuda-toolkit[nvrtc,cudart]==12.*"` instead. About 70 MB of wheels, under
+NVIDIA's own licence; the first run compiles the kernels (a few seconds, cached in `~/.cupy/kernel_cache`). Then
+`py fly_game.py --partner female --backend cupy` (the terminal says "Brain integrator: the GPU (CuPy)") or
+`py fly_brain.py --backend cupy`. Measured here (an RTX 4070 Laptop GPU, `docs/SCIENCE.md` 11.3): one busy brain steps
+about twice as fast as numba on one core (the male 8x real time against 4x, the female 7x against 5x; with the parts list
+on 6x and 4x against 2x), spike for spike the same. GAME_SPEED_README_PLACEHOLDER
+
 **If something goes wrong**
 
 | Problem | Fix |
@@ -131,6 +148,7 @@ on 3.13 or newer) and about 680 MB of packages; in a virtual environment made wi
 | Download fails with a certificate error (macOS) | Run "Install Certificates.command" in your Python folder in Applications. |
 | Download blocked by a firewall | Download [the file](https://raw.githubusercontent.com/blendi-remade/fly-brain-minecraft/6cfa30175003ef25da68a237d5eda958f8047b82/src/main/resources/connectome/malecns-v1.0.flyb.gz) in your browser and put it in `data/` as it is (named `malecns-v1.0.flyb.gz`, not unpacked); the error message gives the exact path. |
 | "Could not find a free port" | Run the same command again with `--port 9000` added (the message names the ports it tried; if 9000 was among them, any other number from 1024 to 65535) |
+| `--backend cupy` stops with "the cupy backend needs ..." | CuPy is not installed in this virtual environment, or no NVIDIA GPU (or driver) is visible: install it as in "The GPU brain" above, or leave out `--backend` (the CPU gives the same spikes). On Windows, WSL2 works too when the Windows NVIDIA driver is current. |
 | The game says it's running below real time | Your computer is simulating 176k neurons slower than real time; the fly's world slows down to keep up. First make sure numba is installed (`py -m pip install numba`; the terminal says "Brain integrator: compiled (numba)" at start-up): with it, a 4-core laptop-class machine manages about 1.5x real time with a busy brain, without it about 0.7x. Then close other programs, or start it with `py fly_game.py --fast` (a 1 ms time step, about twice as fast again; every classic experiment still passes). With `--body physics` about 0.1x is normal: the physics body (MuJoCo) sets that pace, not your computer (`docs/SCIENCE.md` section 6.7). |
 | The 3-D brain map goes dark while its yaw counter keeps ticking | Your browser took the graphics (WebGL) context away, for instance after a GPU driver reset, sleep and resume, or too many WebGL tabs (Firefox drops the least recently used one past 16). The page now asks for it back and redraws the map when it returns, and says "graphics reset, restoring…" in the map meanwhile; if it says to reload, reload the tab. A flat map with the note that WebGL is unavailable means the browser refused WebGL altogether (check its graphics settings). |
 
@@ -260,7 +278,7 @@ against 72 Hz with sugar alone. The parts list, the physics body and the
 background re-test run on her too; `docs/SCIENCE.md` section 9.5 compares each with the male. Most readouts differ from the male's, and
 `docs/SCIENCE.md` section 9 says why most of those differences are not yet sex differences.
 
-**Two simulated flies.** `py fly_game.py --partner female` puts the male and FlyWire's female in one dish, each brain in its own process (2.7-2.9x real time in two runs on a 16-core laptop, `docs/SCIENCE.md` 10.2; `--fast` if yours is slower). Nothing links the two brains but the world: she sees him as a small dark thing, hears his song through her Johnston's organ (at up to 70 Hz on her sound cells, the loudest steady drive that does not startle *him*), tastes him when a foreleg lands, and the two bodies bump. `--social seen,song` keeps only those channels; `--partner male` gives him a male rival; `--female --partner male` gives her a male. A fly menu in the page's header picks which fly the panels, the retina and the brain map follow, and the checklist gains pair items (he saw her, sang, tapped; she heard, saw him, was tapped); the Scenarios card gains "Courtship, two brains", 90 s of both flies with the numbers logged at the end. Her decision neurons (`DNp37`, the vaginal plate opening command; `DNp13`, ovipositor extrusion; `vpoEN`, `pC2l`, `SAG`) are shown as watches, never as a verdict: in this data his song reaches her hearing and her giant fibre but not those neurons (`docs/SCIENCE.md` 10.3). `py fly_brain.py --female --pair-experiments` runs the pair experiments, whose ranges are provisional and measured, not validated.
+**Two simulated flies.** `py fly_game.py --partner female` puts the male and FlyWire's female in one dish, each brain in its own process (2.7-2.9x real time in two runs on a 16-core laptop, `docs/SCIENCE.md` 10.2; 3.6x with `--backend cupy` on its GPU, section 11.3; `--fast` if yours is slower). Nothing links the two brains but the world: she sees him as a small dark thing, hears his song through her Johnston's organ (at up to 70 Hz on her sound cells, the loudest steady drive that does not startle *him*), tastes him when a foreleg lands, and the two bodies bump. `--social seen,song` keeps only those channels; `--partner male` gives him a male rival; `--female --partner male` gives her a male. A fly menu in the page's header picks which fly the panels, the retina and the brain map follow, and the checklist gains pair items (he saw her, sang, tapped; she heard, saw him, was tapped); the Scenarios card gains "Courtship, two brains", 90 s of both flies with the numbers logged at the end. Her decision neurons (`DNp37`, the vaginal plate opening command; `DNp13`, ovipositor extrusion; `vpoEN`, `pC2l`, `SAG`) are shown as watches, never as a verdict: in this data his song reaches her hearing and her giant fibre but not those neurons (`docs/SCIENCE.md` 10.3). `py fly_brain.py --female --pair-experiments` runs the pair experiments, whose ranges are provisional and measured, not validated.
 
 **In code**, start with `my_first_fly.py`: poke, wait, listen, in three lines. Then:
 

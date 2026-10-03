@@ -294,3 +294,37 @@ def test_kenyon_gain_scales_inputs_to_kenyon_cells(conn):
     assert np.allclose(pure._w_original[kc_edges] * 4, game._w_original[kc_edges])
     assert np.allclose(pure._w_original[other], game._w_original[other])
     assert np.allclose(game._w_original[other], conn.n_syn[other] * 0.275 * 0.65)
+
+
+def test_advance_is_the_same_as_stepping(conn):
+    """``advance(n)`` returns every spike of n steps in order and leaves the brain where n calls of ``step()`` do."""
+    from virtual_fly import fastbrain
+    for backend in ("numpy", "numba") if fastbrain.available() else ("numpy",):
+        a = FlyBrain(conn, seed=3, backend=backend, fatigue_mv=0.05, std_u=0.1)
+        b = FlyBrain(conn, seed=3, backend=backend, fatigue_mv=0.05, std_u=0.1)
+        for br in (a, b):
+            br.stimulate("LB3b,LB3c", 120)
+        stepped = [s for s in (a.step() for _ in range(120)) if s.size]
+        advanced = b.advance(120)
+        assert advanced.dtype == np.int64 and advanced.size > 0
+        assert np.array_equal(np.concatenate(stepped), advanced)
+        assert a.t == b.t == 120 and a.total_spikes == b.total_spikes
+        assert np.array_equal(a.v, b.v) and np.array_equal(a.g, b.g) and np.array_equal(a.thr, b.thr)
+        assert np.array_equal(a.spike_count, b.spike_count) and np.array_equal(a.std_x, b.std_x)
+        assert b.advance(0).size == 0 and b.t == 120
+        b.clear_stimuli()
+        b.run(400)                                              # down to rest: the quiet path
+        assert b.quiet and b.advance(10).size == 0 and b.t == 120 + 800 + 10
+
+
+def test_the_cupy_backend_is_the_gpu_subclass_and_says_what_is_missing(conn, monkeypatch):
+    """``backend="cupy"`` builds ``gpubrain.GpuFlyBrain``; without CuPy or a GPU it refuses with one line, before
+    anything is built; a made-up backend is still a ValueError."""
+    from virtual_fly import gpubrain
+    monkeypatch.setattr(gpubrain, "unavailable_reason", lambda: "the cupy backend needs the cupy package (test)")
+    with pytest.raises(RuntimeError, match="needs the cupy package"):
+        FlyBrain(conn, backend="cupy")
+    with pytest.raises(ValueError):
+        FlyBrain(conn, backend="cuda")
+    assert issubclass(gpubrain.GpuFlyBrain, FlyBrain)
+    assert FlyBrain(conn, backend="numpy").backend == "numpy"
