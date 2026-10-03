@@ -12,6 +12,8 @@ Real-time factor (RTF) = simulated time / wall time; 1.0 = real time.
   physics  male game ticks with the physics body (needs flygym)
   pair-game  the two-fly game (male protagonist, FlyWire female partner, both brains in their own processes,
            the social channels on), parts list off and on, dt 0.5 and 1.0: ticks, and the peak memory of the
+  pair-physics  the same game with both flies as NeuroMechFly bodies in one MuJoCo world (physics_pair.py; parts on,
+             80 ticks), one row per --contact-sets entry: the real-time factor and MuJoCo's share, pairs and contacts
            parent and of each brain child (Phase 1, docs/TWO_FLIES_PLAN.md 5.9 item 4)
 
 ``--backend cupy`` (Phase 2, docs/TWO_FLIES_PLAN.md 6.7 item 3) runs the brains of every row on the GPU: the brain and pair rows
@@ -40,7 +42,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-KINDS = ("brain", "pair", "game", "physics", "pair-game")     # the rows --only can choose
+KINDS = ("brain", "pair", "game", "physics", "pair-game", "pair-physics")     # the rows --only can choose
 
 # Busy input (the names resolve on both flies; the female reaches LB3b,LB3c through her aliases)
 BUSY = {"LB3b,LB3c": 120.0, "LC4/R,LPLC2/R": 150.0,
@@ -135,7 +137,7 @@ def pair_rtf(parts: bool, seconds: float, backend: str = "auto") -> list[dict]:
     return sorted(rows, key=lambda r: r["fly"] != "male")      # male first, whichever finished first
 
 
-def game_rtf(body: str, ticks: int, female: bool = False, parts: bool = False, backend: str = "auto") -> dict:
+def game_rtf(body: str, ticks: int, female: bool = False, parts: bool = False, backend: str = "auto", levers: tuple = ()) -> dict:
     from virtual_fly import load_connectome
     from virtual_fly.game import TICK_MS, Game
     from virtual_fly.settings import build_brain
@@ -143,7 +145,7 @@ def game_rtf(body: str, ticks: int, female: bool = False, parts: bool = False, b
     kw = {"seed": 0, "backend": backend}
     brain = build_brain(conn, "game", **kw, **({"parts": True} if parts else {}))
     t0 = time.perf_counter()
-    game = Game(brain, seed=0, body=body, brain_kwargs=dict(kw))
+    game = Game(brain, seed=0, body=body, brain_kwargs=dict(kw), physics_levers=levers)
     setup_s = time.perf_counter() - t0
     game.world.toggle_female(True, 14.0, 10.0)         # something to look at and chase
     for _ in range(20):
@@ -155,7 +157,7 @@ def game_rtf(body: str, ticks: int, female: bool = False, parts: bool = False, b
         per_tick.append(time.perf_counter() - t1)
     wall = sum(per_tick)
     q = statistics.quantiles(per_tick, n=100)
-    return {"fly": "female" if female else "male", "body": body, "parts": parts, "ticks": ticks,
+    return {"fly": "female" if female else "male", "body": body, "parts": parts, "ticks": ticks, "levers": list(levers),
             "rtf": round(ticks * TICK_MS / 1000.0 / wall, 3),
             "tick_ms_p50": round(q[49] * 1000, 2), "tick_ms_p99": round(q[98] * 1000, 2),
             "setup_s": round(setup_s, 1), "peak_rss_mb": peak_rss_mb()}
@@ -208,7 +210,8 @@ class _GpuSampler:
                 "util_percent_max": max(u for u, _ in self.samples), "memory_used_mb_max": max(m for _, m in self.samples)}
 
 
-def pair_game_rtf(parts: bool, dt: float, ticks: int, backend: str = "auto") -> dict:
+def pair_game_rtf(parts: bool, dt: float, ticks: int, backend: str = "auto", body: str = "drawn", contact_set: str = "forelegs",
+                  levers: tuple = ()) -> dict:
     """The two-fly game: the male with a simulated FlyWire female, each brain in its own process (or, with the cupy
     backend, both in the brain server's process on the GPU), lockstepped."""
     import contextlib
@@ -224,23 +227,43 @@ def pair_game_rtf(parts: bool, dt: float, ticks: int, backend: str = "auto") -> 
     brain = build_brain(conn, "game", **{**kw, "backend": "auto" if backend == "cupy" else backend},
                         **({"parts": parts_list} if parts else {}))
     t0 = time.perf_counter()
-    game = Game(brain, seed=0, brain_kwargs=dict(kw), parts_list=parts_list, brain_procs="auto",
+    game = Game(brain, seed=0, brain_kwargs=dict(kw), parts_list=parts_list, brain_procs="auto", body=body, physics_levers=levers,
                 partner={"conn": fconn, "brain_kwargs": dict(kw), "parts": parts_list if parts else False})
     del brain
+    if game.pair_world is not None and contact_set != game.pair_world.contact_set:    # the pair's contact set, measured
+        from virtual_fly.agent import HOME, PARTNER_HOME
+        from virtual_fly.physics_pair import PairWorld
+        game.pair_world.close()
+        game.pair_world = PairWorld([HOME, PARTNER_HOME], seed=0, world=game.world, contact_set=contact_set, levers=levers)
+        for f, b in zip(game.flies, game.pair_world.bodies):
+            b.world, b.rng, f.body = f.world, f.rng, b
+        game.reset_world()
     setup_s = time.perf_counter() - t0
     try:
         for _ in range(20):
             game.tick()
-        per_tick = []
+        per_tick, ncon = [], []
         import resource
         cpu0 = resource.getrusage(resource.RUSAGE_SELF)
+        mj0 = game.pair_world.wall_s if game.pair_world is not None else 0.0
         with (_GpuSampler() if backend == "cupy" else contextlib.nullcontext()) as gpu:
             for _ in range(ticks):
                 t1 = time.perf_counter()
                 game.tick()
                 per_tick.append(time.perf_counter() - t1)
+                if game.pair_world is not None:
+                    ncon.append(game.pair_world.ncon)
         cpu1 = resource.getrusage(resource.RUSAGE_SELF)
         wall = sum(per_tick)
+        physics_row = None
+        if game.pair_world is not None:           # the shared MuJoCo world's share (docs/TWO_FLIES_PLAN.md 8.2, 8.6)
+            mj = game.pair_world.wall_s - mj0
+            physics_row = {"contact_set": game.pair_world.contact_set, "fly_to_fly_pairs": len(game.pair_world.pairs),
+                           "model_pairs": int(game.pair_world._m.npair), "mujoco_s": round(mj, 2),
+                           "mujoco_share": round(mj / wall, 3), "mujoco_rtf": round(ticks * TICK_MS / 1000.0 / mj, 3) if mj else None,
+                           "ms_per_step": round(mj / (ticks * TICK_MS / 1000.0 / game.pair_world.timestep) * 1000, 4),
+                           "ncon_mean": round(statistics.fmean(ncon), 1), "ncon_max": max(ncon),
+                           "min_distance_mm": None}
         q = statistics.quantiles(per_tick, n=100)
         children, seen = {}, set()
         for a in game.flies:                      # a process per brain, or the one brain server for every brain (6.5)
@@ -249,7 +272,8 @@ def pair_game_rtf(parts: bool, dt: float, ticks: int, backend: str = "auto") -> 
             if proc is not None and proc.pid not in seen:
                 seen.add(proc.pid)
                 children["brain_server" if server is not None else f"fly{a.id}_{a.sex}"] = _vmhwm_mb(proc.pid)
-        return {"fly": "male+female", "body": "drawn", "parts": parts, "dt": dt, "ticks": ticks, "flies": len(game.flies),
+        return {"fly": "male+female", "body": body, "parts": parts, "dt": dt, "ticks": ticks, "flies": len(game.flies),
+                "physics": physics_row, "levers": list(levers),
                 "backend": game.flies[0].io.settings().get("backend"),
                 "channels": sorted(game.social.names()) if hasattr(game.social, "names") else None,
                 "rtf": round(ticks * TICK_MS / 1000.0 / wall, 3),
@@ -295,10 +319,18 @@ def main():
     ap.add_argument("--only", default=",".join(KINDS), help="comma list of " + ", ".join(KINDS) + " (default: all)")
     ap.add_argument("--seconds", type=float, default=3.0, help="simulated seconds per brain measurement")
     ap.add_argument("--json", metavar="FILE")
+    ap.add_argument("--contact-sets", default="forelegs", help="pair-physics: the fly-to-fly contact sets to measure, a comma list "
+                                                               "of forelegs, full, none (physics_pair.CONTACT_SETS)")
+    ap.add_argument("--levers", default="", help="physics and pair-physics: speed levers to switch on (physics.LEVERS), a comma list")
     ap.add_argument("--backend", choices=("auto", "numpy", "numba", "cupy"), default="auto",
                     help="the brains' integrator for every row (cupy: the GPU, Phase 2; checked before anything loads)")
     args = ap.parse_args()
     # refuse bad values before anything is loaded (the kit's rule for every option: one line, exit code 2)
+    from virtual_fly.physics import parse_levers
+    try:
+        levers = parse_levers(args.levers)
+    except ValueError as e:
+        ap.error(str(e))
     want = {s.strip() for s in args.only.split(",") if s.strip()}
     unknown = sorted(want - set(KINDS))
     if unknown or not want:
@@ -339,9 +371,13 @@ def main():
     if "physics" in want:
         from virtual_fly import physics
         if physics.available():
-            add("game", in_children([(game_rtf, {"body": "physics", "ticks": 80, "backend": args.backend})])[0])
+            add("game", in_children([(game_rtf, {"body": "physics", "ticks": 80, "backend": args.backend, "levers": levers})])[0])
         else:
             print("physics: flygym is not installed, skipped")
+    if "pair-physics" in want:                # both flies NeuroMechFly bodies in one MuJoCo world (8.3): parts on, per contact set
+        for contact_set in args.contact_sets.split(","):
+            add("pair-physics", in_children([(pair_game_rtf, {"parts": True, "dt": 0.5, "ticks": 80, "backend": args.backend,
+                                                               "body": "physics", "contact_set": contact_set.strip(), "levers": levers})])[0])
     if "pair-game" in want:
         for parts in (False, True):
             for dt in (0.5, 1.0):

@@ -426,8 +426,14 @@ def test_play_refuses_flags_it_cannot_honour(capsys, monkeypatch):
                       # physics body's own check
                       (["--social", "seen"], "--social only applies with --partner female or male; add it, or leave out --social"),
                       (["--partner-body", "drawn"], "--partner-body only applies with --partner female or male"),
-                      (["--partner", "female", "--body", "physics"], "Phase 4"),
-                      (["--partner", "female", "--body", "physics"], "run the same command without --body physics"),
+                      # a physics pair shares one body kind (docs/TWO_FLIES_PLAN.md 8.3): mixed bodies and the single fly's
+                      # stride average are refused before anything loads
+                      (["--partner", "female", "--body", "physics", "--partner-body", "drawn"], "both flies have the same kind of body"),
+                      (["--partner", "female", "--partner-body", "physics"], "--partner-body physics with --body drawn"),
+                      (["--partner", "female", "--body", "physics", "--stride-average"], "single physics fly's"),
+                      # the physics speed levers (docs/TWO_FLIES_PLAN.md 8.6): named, checked, physics only
+                      (["--physics-levers", "dedupe"], "--physics-levers only applies to the physics body"),
+                      (["--body", "physics", "--physics-levers", "dedupe,nope"], "unknown physics lever nope"),
                       (["--partner", "female", "--social", "seen,sogn"], "unknown social channel 'sogn'"),
                       (["--partner", "male", "--social", "mating:maybe"], "mating takes mating:virgin or mating:mated"),
                       (["--partner", "cat"], "invalid choice: 'cat'")):

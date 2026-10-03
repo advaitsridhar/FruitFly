@@ -151,7 +151,7 @@ on 6x and 4x against 2x), spike for spike the same. GAME_SPEED_README_PLACEHOLDE
 | Download blocked by a firewall | Download [the file](https://raw.githubusercontent.com/blendi-remade/fly-brain-minecraft/6cfa30175003ef25da68a237d5eda958f8047b82/src/main/resources/connectome/malecns-v1.0.flyb.gz) in your browser and put it in `data/` as it is (named `malecns-v1.0.flyb.gz`, not unpacked); the error message gives the exact path. |
 | "Could not find a free port" | Run the same command again with `--port 9000` added (the message names the ports it tried; if 9000 was among them, any other number from 1024 to 65535) |
 | `--backend cupy` stops with "the cupy backend needs ..." | CuPy is not installed in this virtual environment, or no NVIDIA GPU (or driver) is visible: install it as in "The GPU brain" above, or leave out `--backend` (the CPU gives the same spikes). On Windows, WSL2 works too when the Windows NVIDIA driver is current. |
-| The game says it's running below real time | Your computer is simulating 176k neurons slower than real time; the fly's world slows down to keep up. First make sure numba is installed (`py -m pip install numba`; the terminal says "Brain integrator: compiled (numba)" at start-up): with it, a 4-core laptop-class machine manages about 1.5x real time with a busy brain, without it about 0.7x. Then close other programs, or start it with `py fly_game.py --fast` (a 1 ms time step, about twice as fast again; every classic experiment still passes). With `--body physics` about 0.1x is normal: the physics body (MuJoCo) sets that pace, not your computer (`docs/SCIENCE.md` section 6.7). |
+| The game says it's running below real time | Your computer is simulating 176k neurons slower than real time; the fly's world slows down to keep up. First make sure numba is installed (`py -m pip install numba`; the terminal says "Brain integrator: compiled (numba)" at start-up): with it, a 4-core laptop-class machine manages about 1.5x real time with a busy brain, without it about 0.7x. Then close other programs, or start it with `py fly_game.py --fast` (a 1 ms time step, about twice as fast again; every classic experiment still passes). With `--body physics` about 0.1x is normal, and about 0.08x with a partner (two bodies in one world): the physics body (MuJoCo) sets that pace, not your computer (`docs/SCIENCE.md` sections 6.7 and 13). |
 | The 3-D brain map goes dark while its yaw counter keeps ticking | Your browser took the graphics (WebGL) context away, for instance after a GPU driver reset, sleep and resume, or too many WebGL tabs (Firefox drops the least recently used one past 16). The page now asks for it back and redraws the map when it returns, and says "graphics reset, restoring…" in the map meanwhile; if it says to reload, reload the tab. A flat map with the note that WebGL is unavailable means the browser refused WebGL altogether (check its graphics settings). |
 
 ## 3. How it works (the whole idea)
@@ -289,6 +289,13 @@ both flies wear the female body model, and the flies are drawn at about three ti
 and "What's real here?" say (`docs/SCIENCE.md` section 12). Nothing of it loads until the button is pressed; without WebGL2
 the page stays in 2-D and says so.
 
+**Two physics flies.** `py fly_game.py --partner female --body physics` puts both flies into one MuJoCo world as NeuroMechFly
+bodies, each driven by its own brain, able to touch each other: the tap is a physical contact with its force, both flies are
+drawn at real size, and the pair runs at about a tenth of real time (that is the bodies' pace, the page says so). The single
+physics fly is unchanged (`docs/SCIENCE.md` section 13). The page's "Save replay" switch writes the run to `recordings/`, and
+`py tools/render_replay.py recordings/<id>` turns a physics replay into a 1080p MP4 at real speed with MuJoCo's own renderer
+(`--camera overhead`, `follow` or `side`; section 13.4).
+
 **In code**, start with `my_first_fly.py`: poke, wait, listen, in three lines. Then:
 
 | Command (macOS / Linux: `python3` instead of `py`) | What it does |
@@ -304,6 +311,8 @@ the page stays in 2-D and says so.
 | `py fly_brain.py --silence GNG087 --only bitter` | Knock out the bitter relay |
 | `py fly_brain.py --stim "prefix:JO-B:100" --record spikes.npz` | Every spike, with neuPrint IDs |
 | `py fly_game.py --partner female` | Two simulated brains in one dish (the male and FlyWire's female) |
+| `py fly_game.py --partner female --body physics` | The same pair as two NeuroMechFly bodies in one MuJoCo world, able to touch (about 0.1x real time) |
+| `py tools/render_replay.py recordings/<id> --camera follow` | A saved physics replay as a 1080p MP4 at real speed, rendered by MuJoCo (overhead, follow or side camera) |
 | `py fly_brain.py --female --pair-experiments` | Her song, pC1, pC2l, cVA and SAG routes, measured (provisional ranges) |
 | `py fly_game.py --pure` | The paper's model, seizures and all |
 | `py fly_game.py --noise 5:15` | Spontaneous activity (parts list off; docs/SCIENCE.md 3.4) |

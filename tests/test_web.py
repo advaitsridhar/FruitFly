@@ -215,3 +215,19 @@ def test_the_3d_view_says_what_is_hand_built_in_whats_real(conn):
         assert not re.search(r"accept(ance|ed)|reject(ion|ed)", text, re.I)
     finally:
         g.close()
+
+
+def test_the_replay_player_is_there():
+    """Record-and-replay in the page (docs/TWO_FLIES_PLAN.md 8.8): the Recording card's save switch and replay list, the player
+    and its badge in the stage, the recorded poses driving the 3-D view, the live ticks kept aside while a replay plays."""
+    html = (WEB / "index.html").read_text(encoding="utf-8")
+    for i in ("capBtn", "capInfo", "replayList", "replayRefresh", "player", "plPlay", "plSpeed", "plScrub", "plTime", "plLeave",
+              "replayBadge", "badge3dText"):
+        assert f'id="{i}"' in html, i
+    assert "replay of a recorded run" in html
+    app = (WEB / "app.js").read_text(encoding="utf-8")
+    assert "api/replay/" in app and "function replayLoad" in app and 'get("replay")' in app
+    assert "if (replay.active) return;" in app                       # the live ticks are kept, not shown, while a replay plays
+    assert "replayPoses" in (WEB / "arena3d.js").read_text(encoding="utf-8")
+    panels = (WEB / "panels.js").read_text(encoding="utf-8")
+    assert 'type: "capture"' in panels and "api/replays" in panels

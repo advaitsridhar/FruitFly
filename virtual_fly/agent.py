@@ -85,7 +85,7 @@ class FlyAgent:
     def __init__(self, game, id: int, brain=None, *, conn=None, sex: str, rng, seed: int, autopilot: bool = True,
                  columnar: bool = True, body: str = "drawn", stride_average: bool = False, parts_list=None,
                  brain_factory=None, brain_kwargs: dict | None = None, retest: str = "auto", brain_procs: bool = False,
-                 parts=False, pair: bool = False, home: tuple | None = None, io_factory=None):
+                 parts=False, pair: bool = False, home: tuple | None = None, io_factory=None, physics_levers=()):
         """``brain``: a built FlyBrain (the protagonist's, as play.py builds it); or ``brain=None`` with ``conn``: a fly
         whose brain is built from ``brain_kwargs`` and ``parts`` (False, True or a PartsList), in its own process when
         ``brain_procs`` is set, else here (a partner, docs/TWO_FLIES_PLAN.md 5.4). ``pair``: this fly shares the dish
@@ -150,12 +150,18 @@ class FlyAgent:
                 self.io = LocalBrain(brain)
         self.histories: dict[str, list] = {}             # a process brain's readout histories, one value per tick
         self.autopilot = autopilot
-        if body == "physics":                          # optional: NeuroMechFly v2 in MuJoCo (virtual_fly/physics.py)
-            from .physics import make_body
-            self.body = make_body("physics", self.world, self.rng, seed=seed, stride_average=stride_average)
-        else:
-            self.body = FlyBody(self.world, self.rng)
-        self.body_kind = body
+        if isinstance(body, str):
+            if body == "physics":                      # optional: NeuroMechFly v2 in MuJoCo (virtual_fly/physics.py)
+                from .physics import make_body
+                self.body = make_body("physics", self.world, self.rng, seed=seed, stride_average=stride_average,
+                                      levers=physics_levers)
+            else:
+                self.body = FlyBody(self.world, self.rng)
+            self.body_kind = body
+        else:                                          # a body the game made: this fly's body in the shared MuJoCo world
+            self.body = body                           # of a physics pair (physics_pair.PairPhysicsBody; docs/TWO_FLIES_PLAN.md 8.3)
+            self.body.world, self.body.rng = self.world, self.rng
+            self.body_kind = body.kind
         self.retina = Retina(self.world, self.conn, columnar=columnar)
         self.columnar_on = self.retina.columnar is not None
         self.nose = Nose(self.world)
@@ -707,9 +713,16 @@ class FlyAgent:
         does. Only called when there are other flies."""
         cfg, pose = self.game.social, self.body.pose
         if cfg.contact:                                  # channel 3: a foreleg tip on the other fly
-            touched = social.touching(pose, others)
+            if hasattr(self.body, "touching_other"):     # a physics pair: the tap is MuJoCo's contact of this fly's head or
+                tap = self.body.touching_other           # forelegs on the other's body, with its force (8.4, decision 23)
+                touched = next((o for o in others if o.id == tap[0]), None) if tap is not None else None
+            else:
+                tap = None
+                touched = social.touching(pose, others)  # the drawn rule: a foreleg tip within 3.4 mm of the other's centre
             if touched is not None:
                 felt["touches_fly"] = touched.id
+                if tap is not None:
+                    felt["tap_force"] = round(tap[1], 1)   # MuJoCo's units (the fly weighs about 9,800)
                 if touched.sex == "female":              # these leg taste cells answer female pheromone (hand-built rule)
                     if self.has_leg_taste:
                         for spec, hz in PHEROMONE_GRNS.items():
@@ -1331,7 +1344,16 @@ class FlyAgent:
                 "When the 3-D view is on, the legs replay NeuroMechFly's recorded stride (flygym 1.2.1), never this fly's own leg "
                 "commands: the brain's descending neurons move the drawn body, and the meshes follow it.",
                 "When the 3-D view is on, the flies are drawn at the drawn scale, about three times real size (as the 2-D dish and "
-                "the senses; docs/TWO_FLIES_PLAN.md decision 19); in the physics and replay modes they will be real size.",
+                "the senses; docs/TWO_FLIES_PLAN.md decision 19); two physics flies in one world are drawn at real size, as replays will be.",
+                # the physics pair (docs/TWO_FLIES_PLAN.md 8.3-8.5, decisions 22-24; physics_pair.py)
+                *(["Both flies are NeuroMechFly bodies in ONE MuJoCo world (physics_pair.py): the contact between them is physical, "
+                   "through explicit contact pairs (each fly's head and forelegs against the other's body, and body to body; which "
+                   "parts may touch is a hand-built choice, the last tarsal segment never, since it carries the adhesion), and the "
+                   "tap that arouses pC1 is MuJoCo's contact force on those parts, not the drawn 3.4 mm rule. The other fly is "
+                   "seen at real size (a 0.7 mm cylinder 1.1 mm tall, from the model's measured 2.8 x 1.0 x 1.1 mm), and both "
+                   "flies are drawn at real size, about a third of the drawn fly.",
+                   "The male wears NeuroMechFly's body model, built from a female fly (micro-CT): flygym 1.2.1 has no male body, "
+                   "and scaling this one would be hand-built."] if hasattr(self.body, "pair") else []),
             ],
             "not_modelled": [
                 "Real neuron shapes and individual properties, hormones, electrical synapses, most neuromodulation, development.",

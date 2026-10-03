@@ -87,11 +87,22 @@
       <canvas id="arena3d" hidden></canvas>
       <div class="badge3d" id="badge3d" hidden title="What the 3-D view is: an animation of the drawn flies' poses on NeuroMechFly's meshes, not a physics simulation; the wings, the abdomen and the proboscis are hand-built rotations; the flies are drawn at about three times real size, as in the 2-D dish">
         <span class="tag">hand-built</span>
-        <span>3-D animation: the legs follow the gait phase; not physics. Both flies use NeuroMechFly's body, built from a female fly; the legs replay NeuroMechFly's recorded stride</span>
+        <span id="badge3dText">3-D animation: the legs follow the gait phase; not physics. Both flies use NeuroMechFly's body, built from a female fly; the legs replay NeuroMechFly's recorded stride</span>
         <select id="cam3d" title="The camera: the whole dish from above, behind the fly in focus, or from the side; right-drag orbits it, the wheel zooms"><option value="top">camera: top</option><option value="follow">camera: follow</option><option value="side">camera: side</option></select>
         <span class="fps" id="fps3d" title="Frames drawn per second by this browser, counted over the last second (the plan's target for two flies at 1080p is 50)">– fps</span>
       </div>
       <div class="msg3d" id="msg3d" hidden></div>
+      <!-- a replay of a recorded run (docs/TWO_FLIES_PLAN.md 8.8): the badge says so in both views; the player drives it -->
+      <div class="replaybadge" id="replayBadge" hidden title="What you see is a recording played back from disk, not the live fly: the dish, the readouts and the senses are the recorded ticks, played at the run's own clock times the speed you choose. The live game keeps running behind it; Leave goes back to it."><span class="tag">replay</span><span>replay of a recorded run</span></div>
+      <div class="player" id="player" hidden>
+        <button class="btn" id="plPlay" title="Play or pause the replay (Space)">▶</button>
+        <select id="plSpeed" title="Playback speed: 1× is the run's own clock, however slowly it was simulated">
+          <option value="0.1">0.1×</option><option value="0.25">0.25×</option><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option>
+        </select>
+        <input type="range" id="plScrub" min="0" max="0" step="1" value="0" title="Scrub through the recording">
+        <span class="time" id="plTime">– / – s</span>
+        <button class="btn" id="plLeave" title="Back to the live fly">Leave</button>
+      </div>
       <div class="retina" id="retinaBox">
         <canvas id="retina"></canvas>
         <div class="retlabels"><span>L eye</span><span>R eye</span></div>
@@ -284,6 +295,16 @@
           <a class="btn" href="api/recording" download="fly-session.json">⤓ frames (JSON)</a>
           <a class="btn" href="api/spikes" download="fly-spikes.npz">⤓ spikes (npz)</a>
         </div>
+        <!-- replays saved to disk (docs/TWO_FLIES_PLAN.md 8.7-8.8; docs/API.md): the capture action, taken only from this page -->
+        <div class="row">
+          <button class="btn" id="capBtn" title="Save a replay to disk: a folder recordings/&lt;time stamp&gt;/ in the kit's folder with every tick of every fly and the dish (with physics bodies MuJoCo's whole state and the model too), 2 GB for all replays at most; nothing is deleted for you">💾 Save replay</button>
+          <span class="feedback" id="capInfo">no replay being saved</span>
+        </div>
+        <div class="row">
+          <span class="feedback">saved replays</span>
+          <button class="mini" id="replayRefresh" title="List the replays saved on disk again">refresh</button>
+        </div>
+        <ul class="replays" id="replayList"></ul>
       </div>
     </div>
 

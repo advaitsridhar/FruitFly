@@ -450,7 +450,7 @@ def test_actions_refuse_unknown_types_bad_fields_and_drops_the_dish_cannot_take(
     assert state["world"]["food"] == [] and state["world"]["stripes"]["drum_speed"] == 1.5
     assert set(ACTIONS) == {"hand", "hand_off", "tool", "drop", "remove", "dust", "shock", "sound", "stripes", "zap", "silence",
                             "unsilence", "modulate", "watch", "unwatch", "grow", "parts", "clear", "reset", "calm", "autopilot",
-                            "pause", "speed", "wind", "female", "learning", "scenario", "record", "state", "place_fly"}
+                            "pause", "speed", "wind", "female", "learning", "scenario", "record", "state", "place_fly", "capture"}
 
 
 def test_every_action_the_page_sends_is_known():
@@ -485,6 +485,7 @@ DOCUMENTED = [
     ({"type": "learning", "on": True, "forget": True}, {"ok": True}), ({"type": "scenario", "id": "escape"}, {"ok": True}),
     ({"type": "scenario"}, {"ok": True}), ({"type": "record", "on": True, "spikes": True}, {"ok": True}),
     ({"type": "record", "on": False}, {"ok": True}), ({"type": "state", "hunger": 0.5, "thirst": 0.9}, {"ok": True}),
+    ({"type": "capture", "on": False}, {"ok": False, "error": "no replay is being saved"}),   # starting one writes to disk: tests/test_recording.py
     ({"type": "place_fly", "x": 5, "y": 5, "h": 1.57}, {"ok": True}),
     ({"type": "grow", "level": "type", "seed": 3}, {"ok": True}),                     # last: it starts growing a fly
 ]

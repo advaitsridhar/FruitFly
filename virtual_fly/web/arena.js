@@ -266,7 +266,8 @@ export class Arena {
     const wl = f.wingL || 0, wr = f.wingR || 0, ab = f.abdomen || 0;
     const song = mode !== "escape" && f.jump == null && (wl > 0.35 || wr > 0.35) && (!fem || o.sim);   // she sings only with song cells
     const sim = !!o.sim, receptive = fem && !sim && f.receptive > 0.05;                                   // the glow: the scripted female's interest
-    const sz = fem ? 1.32 : 1.25;
+    const fs = f.scale || 1;                                    // a physics fly in a shared world: real size (0.39 of drawn)
+    const sz = (fem ? 1.32 : 1.25) * fs;
     c.save();
     c.translate(X, Y);
     if (receptive) {  // her interest: a warm glow (the scripted female; a simulated one has readouts instead)
@@ -275,7 +276,7 @@ export class Arena {
       c.fillStyle = g; c.beginPath(); c.arc(0, 0, 9 * k, 0, 2 * Math.PI); c.fill();
     }
     c.fillStyle = `rgba(0,0,0,${0.35 - 0.15 * jump})`;
-    c.beginPath(); c.ellipse(4 + 10 * jump, 5 + 10 * jump, 4.2 * k, 2.4 * k, -f.h, 0, 2 * Math.PI); c.fill();
+    c.beginPath(); c.ellipse((4 + 10 * jump) * fs, (5 + 10 * jump) * fs, 4.2 * k * fs, 2.4 * k * fs, -f.h, 0, 2 * Math.PI); c.fill();
     c.rotate(-f.h); c.scale(sz * k * lift, sz * k * lift);
     c.lineCap = "round"; c.lineJoin = "round";
     // legs: tripod gait (front-left + mid-right + hind-left swing together)

@@ -280,7 +280,13 @@ export class Arena3D {
   /** Place a fly's geom nodes for this frame: the atlas pose at its gait phase (interpolated), then the hand-built
    *  rotations of the wings, the abdomen and the proboscis about their hinges, then the body's pose in the dish. */
   _poseFly(fly, f, o) {
-    const THREE = this.THREE, A = this.A, G = this.G, [i0, i1, t] = this._frameOf(f);
+    const THREE = this.THREE, G = this.G;
+    // a replay with recorded poses (docs/TWO_FLIES_PLAN.md 8.8: every geom's pose per tick in its fly's thorax frame, the
+    // atlas's own convention) drives the nodes instead of the gait atlas: the legs are then physics, as MuJoCo moved them
+    const rp = o.replay && o.replay.A && f.id != null && f.id < o.replay.n ? o.replay : null;
+    const A = rp ? rp.A : this.A, u = rp ? this.unitScale : 1;                      // the recording is in mm; the atlas in its unit
+    const [i0, i1, t] = rp ? [rp.i0, rp.i1, rp.t] : this._frameOf(f);
+    const stride = rp ? rp.n * G : G, base = rp ? f.id * G : 0;                     // (frame, fly, geom) rows of 7 numbers
     const p0 = this._p0, p1 = this._p1, q0 = this._q0, q1 = this._q1, now = performance.now() / 1000;
     const wl = f.wingL || 0, wr = f.wingR || 0, ab = f.abdomen || 0, pr = f.prob || 0;
     const mode = f.mode || "walk", fem = fly.sex === "female";
@@ -295,8 +301,8 @@ export class Arena3D {
     if (this.parts.proboscis.length && pr > 0.02) rots.push([new Set(this.parts.proboscis), this.hinges.proboscis, this._rot.clone().setFromAxisAngle(this._axis.set(0, 1, 0), PROBOSCIS_RAD * pr)]);
     for (let g = 0; g < G; g++) {
       const node = fly.nodes[g]; if (!node) continue;
-      const a0 = (i0 * G + g) * 7, a1 = (i1 * G + g) * 7;
-      p0.set(A[a0], A[a0 + 1], A[a0 + 2]); p1.set(A[a1], A[a1 + 1], A[a1 + 2]);
+      const a0 = (i0 * stride + base + g) * 7, a1 = (i1 * stride + base + g) * 7;
+      p0.set(A[a0] / u, A[a0 + 1] / u, A[a0 + 2] / u); p1.set(A[a1] / u, A[a1 + 1] / u, A[a1 + 2] / u);
       q0.set(A[a0 + 4], A[a0 + 5], A[a0 + 6], A[a0 + 3]); q1.set(A[a1 + 4], A[a1 + 5], A[a1 + 6], A[a1 + 3]);   // MuJoCo w,x,y,z -> three x,y,z,w
       p0.lerp(p1, t); q0.slerp(q1, t);                                   // in the model's unit: the body node scales it to mm
       for (const [set, hinge, rq] of rots) {
@@ -307,6 +313,8 @@ export class Arena3D {
       node.position.copy(p0); node.quaternion.copy(q0);
     }
     const jump = f.jump == null ? 0 : Math.sin(Math.PI * f.jump);
+    const gs = this.modelScale * (SEX_SIZE[fly.sex] || 1) * (f.scale || 1);   // f.scale: a physics fly in a shared world is real size
+    if (fly.group.scale.x !== gs) fly.group.scale.setScalar(gs);
     fly.group.position.set(f.x, f.y, this.floorLift * fly.group.scale.x + JUMP_LIFT_MM * jump);
     fly.group.rotation.set(0, 0, f.h || 0);
     fly.group.visible = true;
@@ -320,10 +328,11 @@ export class Arena3D {
     const THREE = this.THREE, w = (S && S.world) || {};
     // the flies: every simulated one, and the scripted female of single-fly play
     for (const fly of this.flies.values()) fly.group.visible = false;
+    this.replayPoses = !!(view.replay && view.replay.A);                           // (for the badge and the tests)
     for (const f of flies) {
       const key = f.id == null ? 0 : f.id, sex = f.sex || this.L.sex || "male";
       const fly = this.flies.get(key) || this._makeFly(key, sex);
-      this._poseFly(fly, f, { sim: true });
+      this._poseFly(fly, f, { sim: true, replay: view.replay || null });
     }
     if (female) this._poseFly(this.flies.get("female") || this._makeFly("female", "female"), { ...female, walking: !!female.walking }, { sim: false });
     // the camera: follows the focused fly above zoom 1 or in the follow preset
@@ -421,7 +430,8 @@ export class Arena3D {
     }
     const info = this.renderer.info.render;
     window.__vf3d = { on: this.on, flies: [...this.flies.values()].filter((f) => f.group.visible).length, triangles: info.triangles, calls: info.calls,
-                      fps: this.fps, lost: this.lost, missingNodes: this.missing.size, modelLengthMm: this.modelLengthMm, scale: this.modelScale, camera: this.cameraMode };
+                      fps: this.fps, lost: this.lost, missingNodes: this.missing.size, modelLengthMm: this.modelLengthMm, scale: this.modelScale, camera: this.cameraMode,
+                      replayPoses: !!this.replayPoses };
   }
   show() { this.on = true; this.canvas.hidden = false; this.resize(); this._stats(); }
   hide() { this.on = false; this.canvas.hidden = true; if (window.__vf3d) window.__vf3d.on = false; }

@@ -320,7 +320,7 @@ Two things made single verdicts less trustworthy than they looked.
   about 4 s with the after-stimulus test on every seed (parts list on).
 
 The ranges are unchanged. The model's absolute rates are not comparable with recordings
-(section 13), so there is no measured value to move most of them to; the fragile mark says where a
+(section 14), so there is no measured value to move most of them to; the fragile mark says where a
 range edge sits inside the model's own spread instead. The tables elsewhere in this document were
 measured on seed 0 and are left as they were measured.
 
@@ -2659,7 +2659,7 @@ in "What's real here?":
 * **The bodies are the drawn bodies.** In live mode a fly's position, heading, speed, wing gesture, abdomen bend,
   proboscis and jump come from the same hand-built drawn body the 2-D dish shows (section 7 of this document); the
   3-D view only draws them. The flies are drawn at the drawn scale, about three times real size, as the 2-D dish and the
-  senses are (decision 19 of docs/TWO_FLIES_PLAN.md); in physics and replay modes (Phase 4) they will be drawn at real size.
+  senses are (decision 19 of docs/TWO_FLIES_PLAN.md); two physics flies in one world (section 13) are drawn at real size, as replays will be.
 * **The legs replay NeuroMechFly's recorded stride.** A gait atlas (`nmf_gait.bin`, 64 phases of one stride plus a
   standing pose) holds every body part's pose from MuJoCo's kinematics of the joint targets the kit's own walking
   controller would command at that phase (the recorded step and the tripod offsets of `physics.py`), computed once by the
@@ -2679,7 +2679,125 @@ is switched on; the frame rate on the owner's screen (the badge's own count, 202
 this laptop; which GPU the browser used, the window size and whether the brain map was open were not recorded): **about 80 frames
 per second**, against the plan's target of 50; headless Chromium on a software renderer (the page's tests) draws 5-12.
 
-## 13. Honest limitations
+## 13. Two physics bodies in one world (v2.12)
+
+`python fly_game.py --partner female --body physics` puts both flies into ONE MuJoCo world as NeuroMechFly v2
+bodies, each driven by its own brain, able to touch each other (`virtual_fly/physics_pair.py`; the two-flies work,
+docs/TWO_FLIES_PLAN.md section 8, decisions 20-24). The single physics body of section 6.7 (`physics.py`) is not
+touched: the pair module reuses its drive mapping, its walled floor and its fly class, and builds flygym's multi-fly
+`Simulation` instead of its `SingleFlySimulation`. Without a partner nothing changes (the golden hashes, the physics
+one included, are unchanged); without `--body physics` the two-fly game is section 10's.
+
+### 13.1 What is physical and what is hand-built
+
+Physical, in MuJoCo: the two bodies, the floor and the wall, the contact between the flies, and the tap. The world
+is flygym's `Simulation(flies=[fly0, fly1], arena=the kit's walled floor centred at the origin, timestep 0.1 ms)`;
+MuJoCo's frame is the kit's frame here (the single fly builds its world around its start instead). Each fly is
+spawned at its kit pose, and since the thorax sits 0.496 mm ahead of the spawn site (measured on the built model,
+a constant: the thorax is fixed to the root), each fly is then moved by writing its root free joint so that its
+thorax lands on the kit pose exactly; the same write (its joints back to the spawn pose, its velocities zeroed, its
+CPG reset) moves a fly later without rebuilding the model, which costs about a second. Each fly has its own six
+coupled oscillators (seeded `seed + 1000 k`, as its brain is); per 0.1 ms step both flies' leg targets and adhesion
+are written, then MuJoCo steps once; per 25 ms tick the game sets both drives first, then the world steps 250 times,
+then each body reads its thorax pose, its own wall contact and its tap.
+
+The flies touch through explicit contact pairs, because flygym gives every fly geom `contype 0, conaffinity 0`
+(only pairs collide). Every pair is checked on every step, so the set is a choice (decision 22, hand-built, a
+switch): each fly's head and forelegs (Tibia, Tarsus1-4) against the other's thorax, abdomen (A1A2, A3-A6), head
+and wings, plus body to body (thorax, head, abdomen): 233 distinct pairs. Never Tarsus5: it carries the adhesion
+actuator, and MuJoCo's adhesion acts on every contact of that body, so a stance foot would glue itself to the other
+fly. The tap of channel 3 (section 10.1) is then MuJoCo's contact: a foreleg or the head of one fly on the other's
+body, with the summed normal force (the model's units, mm and mg: 1 is 1 nN, and the fly weighs about 9,800), in
+place of the drawn rule (a foreleg tip within 3.4 mm of the other's centre). Each fly's wall bump is its own
+contact with the wall, not the other fly's.
+
+Hand-built, labelled in "What's real here?", on the page's pace line and here: the contact set; the size the other
+fly's retina gives a physics fly (a dark cylinder 0.7 mm in radius and 1.1 mm tall, from the standing model's
+measured 2.8 x 1.0 x 1.1 mm; a drawn fly is 1.6 and 2.2, section 10.1); that both flies are drawn at real size,
+0.389 of the drawn fly, in the 2-D dish and the 3-D view (decision 23: two physics flies in contact are 1-2 mm
+apart, which the drawn-scale senses would get wrong); and, as for one fly, the decoder's weights, the forward term
+and the drawn proboscis, wings and abdomen. Song and cVA already use real centre-to-centre millimetres (section
+10.1). NeuroMechFly's body was built from a micro-CT scan of a female fly: the male wears it too (decision 24;
+flygym 1.2.1 has no male body, and scaling this one would be hand-built). Not modelled: the escape jump (a
+giant-fibre burst is the escape command with the legs standing, as in section 6.7); the drawn bodies' capsule
+collisions do not apply (the contact is physical).
+
+### 13.2 Measured (flygym 1.2.1, MuJoCo 3.2.7, this laptop)
+
+- Placement: both thoraxes land on their kit poses to 1e-6 mm after the build and after a move; a fly moved into
+  a new place stands on its legs within 0.2 s.
+- Contact: two flies 3 mm apart (thorax to thorax) walking at each other at full drive touch within 0.25 s, 6 mm
+  apart within 0.4 s; the first contact is head to head; the tap registers on the tapping fly with a force of 2-18
+  units. Two flies that keep walking at each other do not stop: their rounded heads push each other aside (the first
+  contact's normal points mostly sideways), fly 0 veers about 0.9 mm and 9 deg and walks past the other's flank,
+  so a head-on meeting ends with the flies past each other, as it does with every stiffness tried (below). A fly
+  that backs away from the one it touched separates at once; nothing holds it (no adhesion between flies).
+- Deterministic: the same seed and drives give the same poses and paths, bit for bit, in two worlds.
+- Speed (`tools/bench_two_flies.py --only pair-physics --contact-sets forelegs,full,none`: the two-fly game, parts
+  list on, brains in their own processes, 80 ticks after 20; `../runs/p4-bench-pair-physics.json`):
+
+| fly-to-fly contact set | pairs (in the model) | real-time factor | tick p50 / p99 | MuJoCo's share | ms per 0.1 ms step (both flies) | contacts per step |
+|---|---|---|---|---|---|---|
+| forelegs (the default) | 233 (6,017) | **0.085** | 234 / 1,113 ms | 95 % | 1.11 | 24 |
+| full (45 x 45) | 1,521 (7,305) | 0.055 | 323 / 1,792 ms | 97 % | 1.74 | 25 |
+| none | 0 (5,784) | 0.110 | 221 / 292 ms | 94 % | 0.85 | 24 |
+
+  One physics fly alone runs at 0.22 (0.359 ms per step, section 6.7's table measured again in docs/TWO_FLIES_PROGRESS.md);
+  two flies without pairs cost 2.4 steps' worth, with the default pairs 3.1. The p99 ticks are the ticks in contact:
+  the Newton solver (flygym's 1,000 iterations at 1e-12) converges slowly on fly-to-fly contacts, which is where the
+  levers of the plan's 8.6 start. The game process holds 2.6 GB (the world plus the kit) and the two brain processes
+  0.5 and 0.7 GB. `Ctrl+C` on `fly_game.py --partner female --body physics` prints "Bye!" and exits with code 0 with
+  nothing left behind, as it does for one fly.
+
+### 13.3 Tried, not adopted
+
+- A stiffer contact between the flies (the pairs' own `solref`, 2e-4 to 1e-3 s at damping ratio 1 instead of
+  flygym's 1,000): no change in how a head-on meeting ends (the sliding is geometry, not softness); off.
+- Convex hulls for the meshes (a contype bit no conaffinity answers, so that MuJoCo's compiler builds them): the flies
+  walk 8 % faster (15.3 against 14.2 mm/s at full drive) and the world runs 1.3x faster, because the floor and self
+  contacts change too; a lever to measure against section 6.7's table (8.6), not a default.
+- MuJoCo's native convex collider instead of libccd's: the same gait (14.20 against 14.17 mm/s), the same contacts; off.
+
+### 13.4 Record and replay, and a video (plan 8.7-8.9)
+
+A physics pair runs at about a tenth of real time, so the way to see it move naturally is to record it and play
+it back at real speed. The `capture` action (the page's "Save replay" switch; `docs/API.md`) writes a folder
+`recordings/<YYYYmmdd-HHMMSS>/` in a checkout (ignored by git) or under the data folder in an installed copy, never
+into site-packages: `header.json` (the kit's version and commit, the tick, every fly's sex, dataset, body and brain
+settings, the social channels, the physics settings and the model's name), `frames.jsonl.gz` (one line per tick:
+every fly's body, mode, rates, senses and events-per-second, and the dish), and, with physics bodies, `qpos.npy`
+and `t.npy` (MuJoCo's whole state after every tick), the model as compiled with its assets (`model/`, dm_control's
+export, about 16 MB for the pair) and, when the recording stops, `poses.f32`: every geom of every fly, per tick, in
+its fly's thorax frame, computed by replaying `qpos` through MuJoCo's kinematics on the exported model. The browser
+plays the legs from that file with no kinematics of its own; a drawn-body recording has none of the MuJoCo files and
+the page animates the legs as it does live. The recordings folder has a size cap of 2 GB: at the cap a recording
+refuses to start, one in progress stops, and nothing is deleted for you. The existing Record button (frames kept in
+memory, `GET /api/recording`) is as it was.
+
+Checked (`tests/test_recording.py`): reloading the exported model, setting a recorded `qpos` and calling
+`mj_kinematics` gives every geom's position **exactly** (the largest difference 0.0 mm against the live world, once the
+live world's own kinematics are refreshed: after a step MuJoCo's positions are one step stale); the replay poses use
+the gait atlas's convention (the standing thorax entry agrees to 1e-3 mm), so the page feeds a replay frame to the
+same nodes; every `.npy` is loaded with `allow_pickle=False`; a recording id must be a plain folder name.
+
+The replay endpoints (`GET /api/replays`, `/api/replay/<id>/header`, `/frames`, `/poses`) send no wildcard CORS
+header, and the `capture` action, the one API call that writes to disk, is taken only from the server's own page: a
+request with another `Origin` header, or a `Host` that is not `localhost` or `127.0.0.1` with the server's port,
+gets 403 (tested), so another web page open in the owner's browser can neither fill the disk nor read replays.
+
+**A video.** `python tools/render_replay.py recordings/<id>` renders a physics recording to an MP4 with MuJoCo's own
+renderer: the exported model and `qpos` replayed through MuJoCo's kinematics at the video's frame rate (the joints
+interpolated between ticks, the root quaternions normalised), an `overhead` camera framing the flies, a `follow` camera
+behind and above one fly turning with its heading, or a low `side` view, each aim smoothed over a quarter of a second so
+that a stride's wobble does not shake the picture; the second fly's body is tinted lighter so the two can be told apart,
+and a label gives the recording, the time and the speed (all hand-built choices). Measured on this laptop under WSL2 on
+an 8 s recording of the pair: a 1080p MP4 at 30 fps, 241 frames, in 40 s (overhead, 3.1 MB) and 36 s (follow, 3.6 MB),
+about 6-7 frames rendered per second; the whole model's 1,005,562 mesh triangles are what each frame costs (about 130 ms
+at any size from 640 x 480 up, and the same with `MUJOCO_GL=egl`, `osmesa` or `glfw`, all of which render here;
+`egl` is the tool's default and needs no display). The MP4 is written by OpenCV (`mp4v`), which the physics extra
+brings; `tests/test_render_replay.py` renders a six-tick recording and reads the file back.
+
+## 14. Honest limitations
 
 The starter kit's list, extended. These are the things a neuroscientist would point at first.
 
@@ -2765,7 +2883,7 @@ The starter kit's list, extended. These are the things a neuroscientist would po
 
 ---
 
-## 14. References
+## 15. References
 
 * Ache JM, Polsky J, Alghailani S, Parekh R, Breads P, Peek MY, Bock DD, von Reyn CR, Card GM
   (2019). Neural basis for looming size and velocity encoding in the *Drosophila* giant fiber
