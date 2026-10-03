@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "virtual-fly"
-version = "2.10.0"
+version = "2.11.0"
 description = "A whole fruit-fly nervous system (MaleCNS v1.0 connectome) as a leaky integrate-and-fire simulator, plus a browser game driven by it"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -21,6 +21,7 @@ classifiers = [
 fast = ["numba>=0.59"]                 # compiled integrator: about twice as fast, identical spikes
 female = ["pyarrow>=12"]               # to build the female fly (FlyWire 783) from its connectivity table
 dev = ["pytest>=7", "numba>=0.59"]
+browser = ["playwright==1.63.0"]      # the page's browser tests (tests/test_browser.py); then: python -m playwright install chromium
 # the physics body (virtual_fly/physics.py; Python 3.10-3.12 only, as flygym 1.2.1 is): these, then
 # `pip install --no-deps flygym==1.2.1` (flygym's own requirements pin numba 0.60 and pull in Jupyter; it imports
 # numba, so numba is here)

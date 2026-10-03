@@ -105,7 +105,9 @@ Step by step:
 
 On macOS or Linux, use `python3` instead of `py`. To install the package with its console scripts
 and the test tools (in the virtual environment): `py -m pip install -e ".[dev]"` then `fly-game`,
-`fly-brain`, `pytest`. A plain `pip install .` (or `pip install git+https://github.com/advaitsridhar/FruitFly.git`,
+`fly-brain`, `pytest`. The page's own tests in a browser (`tests/test_browser.py`) need one more extra, `py -m pip install -e ".[browser]"`,
+and a one-time browser download, `py -m playwright install chromium` (about 150 MB; on Linux also `py -m playwright install-deps`,
+which asks for sudo); they run only with `VF_BROWSER_TESTS=1` set. A plain `pip install .` (or `pip install git+https://github.com/advaitsridhar/FruitFly.git`,
 without a clone) works too: that copy carries the four small data files inside the package and
 downloads the connectome to `~/.cache/virtual-fly` instead of `data/`. `FLY_DATA_DIR` sets another folder
 for everything the kit downloads or builds, in an installed copy and in a checkout alike (a checkout then
