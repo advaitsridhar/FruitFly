@@ -66,12 +66,14 @@ async function loadLayout() {
   panels.genetics = new P.GeneticsPanel(L, panels.lab);
   panels.genome = new P.GenomePanel(L);
   panels.events = new P.EventsPanel();
-  panels.recording = new P.RecordingPanel();
+  panels.recording = new P.RecordingPanel({ play: replayLoad });
   panels.model = new P.ModelPanel(L);
   layout = new PanelManager($("aside"), $("panelsBtn"), $("panelMenu"));
   buildDialogs();
   setTool("lure");
   connect();
+  const want = new URLSearchParams(location.search).get("replay");   // ?replay=<id>: play that recording straight away
+  if (want) replayLoad(want);
 }
 
 function setLegend(Lk) {
@@ -179,7 +181,9 @@ function gotState(s) {
   if (!s || !s.seq || !s.fly) return;
   if (s.seq < lastSeq - 200) { location.reload(); return; }        // the server was restarted: its layout may differ
   if (s.seq === lastSeq) return;
-  lastSeq = s.seq;
+  lastSeq = s.seq; lastStateAt = performance.now();
+  liveS = s;                                                       // the latest live tick, shown again when a replay is left
+  if (replay.active) return;                                       // a replay is showing: the live ticks are kept, not shown
   onState(s);
 }
 
@@ -192,7 +196,7 @@ function onState(s) {
   const now = performance.now();
   if (S) Sgap = Math.min(200, Math.max(15, 0.7 * Sgap + 0.3 * (now - Stime)));
   Sprev = S; S = s; Stime = now; lastStateAt = now;
-  if (s.flies && !pairReady) setupPair(s);
+  if (s.flies && !pairReady && !replay.active) setupPair(s);       // (a replay's flies need no layout of their own)
   const V = viewOf(s);
   if (s.flies) for (const f of s.flies) { if (brains[f.id]) brains[f.id].setSpikes(f.spikes, now / 1000); }
   else brain.setSpikes(s.spikes, now / 1000);
@@ -210,12 +214,12 @@ function renderState(s0) {
   const tip = partsOn ? `events per second in the whole brain: ${((s.sps || 0) - graded).toLocaleString()} spikes and ` +
     `${graded.toLocaleString()} release quanta of the graded cells (parts list)` : "spikes per second in the whole brain";
   if ($("stSpsBox").title !== tip) $("stSpsBox").title = tip;
-  setText($("stRtf"), s.paused ? "paused" : (s.rtf >= 0.97 ? "real time" : fmt(s.rtf, 2) + "×") + (s.speed !== 1 ? ` (×${fmt(s.speed, 2)})` : ""));
+  setText($("stRtf"), s.replay ? `replay ×${fmt(s.replay.speed, 2)}` : s.paused ? "paused" : (s.rtf >= 0.97 ? "real time" : fmt(s.rtf, 2) + "×") + (s.speed !== 1 ? ` (×${fmt(s.speed, 2)})` : ""));
   setText($("stT"), fmt(s.t, 1));
   slowHint(s);
   for (const k in panels) panels[k].update(s);
   if (retinaOn) retina.update(s.retina, s.senses);
-  syncControls(s);
+  if (!s.replay) syncControls(s);                     // the controls are the live game's, not the recording's
   toast(s.msg);
 }
 function syncControls(s) {
@@ -261,6 +265,111 @@ function toast(msg, holdMs = 0) {
   if (!msg && toastText) $("toast").classList.remove("show");
   toastText = msg || "";
 }
+
+// ---------------------------------------------------------------- replays (docs/TWO_FLIES_PLAN.md 8.7-8.8)
+// A recording played back from disk: its ticks go through the same onState() the live stream feeds, at the run's own clock
+// (header.tick_ms per frame) times the speed control, so a physics pair that ran at a tenth of real time plays at real
+// speed. The live ticks keep arriving and are kept (liveS) but not shown until Leave. A recording of physics bodies carries
+// every geom's pose per tick (poses.f32): the 3-D view then moves the legs as MuJoCo did, not by the gait animation.
+const replay = { active: false, id: null, header: null, frames: null, poses: null, pos: 0, shown: -1, playing: false, speed: 1, total: 0, loading: false };
+let liveS = null, badge3dText = null;
+/** The recorded tick as the state the page's panels read (docs/API.md): fly 0's entry on top, every fly in `flies`; the
+ *  fields a recording lacks (retina images, the spike sample, events, the lab's lists, the genome) are given neutral values. */
+function replayState(fr) {
+  const entry = (f) => ({ id: f.id, sex: f.sex, dataset: "", fly: f.fly, mode: f.mode || "idle", autopilot: true, driver: f.driver || "",
+                          senses: f.senses || {}, retina: null, hz: f.hz || {}, motor: {}, spikes: [], sps: f.sps || 0, graded_eps: f.graded_eps || 0,
+                          stims: 0, calms: 0, state: {}, learning: null, silenced: [], baseline: [], modulated: {}, custom: {}, genome: null, done: [] });
+  const flies = (fr.flies || []).map(entry), f0 = flies[0] || entry({ id: 0, sex: L ? L.sex : "male", fly: {} });
+  return { ...f0, seq: fr.seq, t: fr.t, rtf: 1, speed: replay.speed, paused: false, world: fr.world || {}, msg: "", events: [], event_seq: 0,
+           scenario: null, recording: liveS ? liveS.recording : null, capture: liveS ? liveS.capture : null, flies,
+           replay: { id: replay.id, speed: replay.speed, frames: replay.frames ? replay.frames.length : 0 } };
+}
+async function replayLoad(id) {
+  if (!L || !arena || replay.loading || typeof id !== "string") return;
+  replay.loading = true; toast(`Loading the replay ${id}…`, 30000);
+  try {
+    const q = encodeURIComponent(id);
+    const hr = await fetch(`api/replay/${q}/header`, { cache: "no-store" });
+    if (!hr.ok) throw new Error(`no such replay: ${id}`);
+    const header = await hr.json();
+    const fr = await fetch(`api/replay/${q}/frames`, { cache: "no-store" });   // gzip on disk; the browser inflates it
+    if (!fr.ok) throw new Error(`the replay's frames did not load (${fr.status})`);
+    const frames = [];
+    for (const line of (await fr.text()).split("\n")) { if (!line) continue; try { frames.push(JSON.parse(line)); } catch (e) { /* a torn last line of a recording still being written */ } }
+    if (!frames.length) throw new Error("the recording holds no ticks");
+    let poses = null;
+    if (header.poses && header.poses.geoms && header.poses.fly_names) {
+      const pr = await fetch(`api/replay/${q}/poses`, { cache: "no-store" });
+      if (pr.ok) {
+        const buf = await pr.arrayBuffer(), G = header.poses.geoms.length, n = header.poses.fly_names.length;
+        if (buf.byteLength >= frames.length * n * G * 7 * 4) poses = new Float32Array(buf);
+      }
+    }
+    replayStart(id, header, frames, poses);
+  } catch (e) {
+    toast(`Replay: ${e && e.message ? e.message : e}`, 6000);
+  } finally {
+    replay.loading = false;
+  }
+}
+function replayStart(id, header, frames, poses) {
+  Object.assign(replay, { active: true, id, header, frames, poses, pos: 0, shown: -1, playing: true, total: frames[frames.length - 1].t || 0 });
+  replay.speed = parseFloat($("plSpeed").value) || 1;
+  $("plScrub").max = String(frames.length - 1); $("plScrub").value = "0";
+  setShown($("player"), true); setShown($("replayBadge"), true); $("stage").classList.add("replaying");
+  setShown($("retinaBox"), false);                                               // no retina images in a recording
+  if (badge3dText === null) badge3dText = $("badge3dText").textContent;
+  setText($("badge3dText"), poses ? "3-D replay: every leg joint as MuJoCo moved it in the recorded run (physics, not the gait animation); the wings, "
+    + "the abdomen and the proboscis are still hand-built rotations; the flies at the recording's size" : badge3dText);
+  Sprev = null;
+  replayControls();
+  toastHold = 0; toast(`Replay ${id}: ${frames.length.toLocaleString()} ticks, ${fmt(replay.total, 1)} s` + (poses ? ", with every geom's recorded pose" : ""), 3000);
+}
+function replayLeave() {
+  if (!replay.active) return;
+  Object.assign(replay, { active: false, id: null, header: null, frames: null, poses: null, playing: false, shown: -1, pos: 0 });
+  setShown($("player"), false); setShown($("replayBadge"), false); $("stage").classList.remove("replaying");
+  setShown($("retinaBox"), retinaOn);
+  if (badge3dText !== null) setText($("badge3dText"), badge3dText);
+  Sprev = null;
+  if (liveS) onState(liveS);                                                     // straight back to the live fly's last tick
+  toastHold = 0; toast("");
+}
+function replayControls() {
+  setText($("plPlay"), replay.playing ? "❚❚" : "▶");
+  $("plPlay").title = replay.playing ? "Pause the replay (Space)" : "Play the replay (Space)";
+}
+function replayToggle() {
+  if (!replay.active) return;
+  if (!replay.playing && replay.pos >= replay.frames.length - 1) { replay.pos = 0; replay.shown = -1; }   // at the end: again from the start
+  replay.playing = !replay.playing; replayControls();
+}
+/** Every animation frame: advance the replay clock and feed the tick it reached (the 2-D dish interpolates between ticks as
+ *  it does live; the 3-D dish gets the recorded poses with the fraction between two ticks). */
+function replayFrame(dt) {
+  if (!replay.active || !replay.frames) return null;
+  const n = replay.frames.length;
+  if (replay.playing) {
+    replay.pos += dt * 1000 / (replay.header.tick_ms || 25) * replay.speed;
+    if (replay.pos >= n - 1) { replay.pos = n - 1; replay.playing = false; replayControls(); }
+  }
+  const i = Math.min(n - 1, Math.max(0, Math.floor(replay.pos)));
+  if (i !== replay.shown) {
+    replay.shown = i;
+    onState(replayState(replay.frames[i]));
+    if (document.activeElement !== $("plScrub")) $("plScrub").value = String(i);
+    setText($("plTime"), `${fmt(replay.frames[i].t, 2)} / ${fmt(replay.total, 2)} s`);
+  }
+  if (!replay.poses) return null;
+  const h = replay.header.poses, i1 = Math.min(n - 1, i + 1);
+  return { A: replay.poses, G: h.geoms.length, n: h.fly_names.length, i0: i, i1, t: Math.min(1, Math.max(0, replay.pos - i)) };
+}
+$("plPlay").onclick = replayToggle;
+$("plLeave").onclick = replayLeave;
+$("plSpeed").onchange = (e) => { replay.speed = parseFloat(e.target.value) || 1; e.target.blur(); };
+$("plScrub").oninput = (e) => { if (!replay.active) return; replay.pos = parseFloat(e.target.value) || 0; replay.shown = -1; };
+window.__vfReplay = () => ({ active: replay.active, id: replay.id, frame: replay.shown, frames: replay.frames ? replay.frames.length : 0, playing: replay.playing,
+                             poses: !!replay.poses, speed: replay.speed, liveSeq: lastSeq, shownSeq: S ? S.seq : 0, loading: replay.loading });
 
 // ---------------------------------------------------------------- poses, interpolated between ticks
 function onePose(f, p, sex, id, hz, senses) {
@@ -585,7 +694,7 @@ window.addEventListener("keydown", (e) => {
   if (!L) return;
   if (/^[0-9]$/.test(e.key)) { const k = e.key === "0" ? 9 : parseInt(e.key) - 1; if (toolOrder[k]) setTool(toolOrder[k]); return; }
   switch (e.key) {
-    case " ": e.preventDefault(); post({ type: "pause", on: !(S && S.paused) }); break;
+    case " ": e.preventDefault(); if (replay.active) replayToggle(); else post({ type: "pause", on: !(S && S.paused) }); break;
     case "f": case "F": if (S && S.flies) toast("The female is simulated here (--partner); the scripted female is for single-fly play.", 3000); else post({ type: "female", on: !(S && S.world && S.world.female) }); break;
     case "c": case "C": clap(); break;
     case "s": case "S": $("seesToggle").checked = sees = !sees; break;
@@ -612,9 +721,11 @@ function frame(now) {
   try {
     const dt = Math.min(0.1, (now - last) / 1000); last = now;
     if (L && arena) {
+      let rp = null;
+      guard("the replay", () => { rp = replayFrame(dt); });
       if (renderPending && S) { renderPending = false; guard("panels", () => renderState(S)); }
       const poses = S ? posesOf(S) : [], pose = poses[focus] || poses[0] || null, female = S ? scriptedFemalePose() : null;
-      const view = { S, pose, flies: poses, female, pointer, tool, sees, cues: true, handAng: S ? serverHandAngle() : 0, stripes: S ? stripesNow() : null };
+      const view = { S, pose, flies: poses, female, pointer, tool, sees, cues: true, handAng: S ? serverHandAngle() : 0, stripes: S ? stripesNow() : null, replay: rp };
       if (view3dState === "on" && view3d) guard("the 3-D dish", () => view3d.draw(dt, view));
       else guard("the dish", () => arena.draw(dt, view));
       guard("the brain map", () => brain.frame(dt, now / 1000));

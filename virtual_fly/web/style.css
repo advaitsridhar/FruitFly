@@ -118,6 +118,22 @@ body.dragging, body.dragging * { cursor: grabbing !important; }
 .msg3d { position: absolute; left: 50%; top: 45%; transform: translate(-50%, -50%); z-index: 2; background: rgba(17,23,31,.92); border: 1px solid var(--line);
   border-radius: 8px; padding: 8px 14px; font-size: 13px; pointer-events: none; }
 .msg3d[hidden] { display: none; }
+/* a replay of a recorded run (docs/TWO_FLIES_PLAN.md 8.8): the badge at the top left of the stage in both views, the player at
+   its foot (the 3-D badge moves up out of its way) */
+.replaybadge { position: absolute; left: 8px; top: 8px; z-index: 3; display: flex; align-items: center; gap: 8px; background: rgba(6,9,13,.85);
+  border: 1px solid var(--line); border-radius: 8px; padding: 4px 8px; font-size: 11px; color: var(--muted); cursor: help; }
+.replaybadge[hidden] { display: none; }
+.player { position: absolute; left: 8px; right: 8px; bottom: 8px; z-index: 3; display: flex; align-items: center; gap: 8px; background: rgba(6,9,13,.88);
+  border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px; font-size: 12px; }
+.player[hidden] { display: none; }
+.player input[type=range] { flex: 1; min-width: 60px; }
+.player select { font-size: 11px; background: var(--panel2); color: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 1px 4px; }
+.player .time { font-variant-numeric: tabular-nums; color: var(--ink); white-space: nowrap; }
+.stage.replaying .badge3d { bottom: 48px; }
+.replays { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; max-height: 150px; overflow: auto; font-size: 12px; }
+.replays li { display: flex; align-items: center; gap: 8px; }
+.replays li span { flex: 1; min-width: 0; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.replays li.none { color: var(--muted); }
 .toast { position: absolute; left: 50%; top: 12px; transform: translateX(-50%); background: rgba(17,23,31,.92);
   border: 1px solid var(--line); border-radius: 999px; padding: 7px 14px; font-size: 13.5px; pointer-events: none;
   opacity: 0; transition: opacity .25s; max-width: 90%; text-align: center; z-index: 3; }

@@ -89,7 +89,7 @@ def two_flies(conn, mini_vfb, chromium_ok):
 class _Page:
     """A Chromium page on the game, with the requests and the console errors it made."""
 
-    def __init__(self, p, base, init_script=None):
+    def __init__(self, p, base, init_script=None, query=""):
         self.browser = p.chromium.launch(headless=True, args=CHROMIUM_ARGS)
         self.page = self.browser.new_page(viewport={"width": 1280, "height": 800})
         if init_script:
@@ -98,7 +98,7 @@ class _Page:
         self.page.on("request", lambda r: self.requests.append(r.url))
         self.page.on("console", lambda m: self.errors.append(m.text) if m.type == "error" else None)
         self.page.on("pageerror", lambda e: self.errors.append(str(e)))
-        self.page.goto(base + "/", wait_until="load")
+        self.page.goto(base + "/" + query, wait_until="load")
         self.page.wait_for_function("() => document.getElementById('loading').hidden === true", timeout=30000)
 
     def close(self):
@@ -202,5 +202,116 @@ def test_frame_rate_probe_reports(one_fly):
             print(f"\n3-D view in headless Chromium: {info['fps']} fps, {info['triangles']:,} triangles, {info['calls']} draw calls, renderer {gl!r} "
                   f"(headless: a software renderer is likely; the plan's 50 fps target is for a headed browser on the GPU)")
             assert info["fps"] >= 0
+        finally:
+            pg.close()
+
+
+# ---------------------------------------------------------------- record-and-replay (docs/TWO_FLIES_PLAN.md 8.7-8.8)
+def _save_replay(game, ticks=12):
+    """A short recording of the served game (its loop is running): the capture action on, at least ``ticks`` ticks, off."""
+    from virtual_fly import recording
+    r = game.action({"type": "capture", "on": True})
+    assert r["ok"], r
+    deadline = time.time() + 15
+    while time.time() < deadline:
+        c = game.state_dict.get("capture")
+        if c and c["ticks"] >= ticks:
+            break
+        time.sleep(0.05)
+    r = game.action({"type": "capture", "on": False})
+    assert r["ok"], r
+    while game.capture is not None and time.time() < deadline:
+        time.sleep(0.05)
+    assert game.capture is None
+    return recording.list_recordings()[0]["id"]
+
+
+def test_a_saved_replay_plays_in_the_page_and_leaves_cleanly(one_fly, tmp_path, monkeypatch):
+    from virtual_fly import recording
+    monkeypatch.setattr(recording, "recordings_dir", lambda: tmp_path / "recordings")
+    game, base = one_fly
+    rid = _save_replay(game)
+    with sync_playwright() as p:
+        pg = _Page(p, base)
+        try:
+            pg.page.click("#replayRefresh")
+            pg.page.wait_for_function(f"() => document.querySelector('#replayList button[data-id=\"{rid}\"]') !== null", timeout=10000)
+            assert pg.page.evaluate("() => document.getElementById('player').hidden") is True
+            pg.page.click(f'#replayList button[data-id="{rid}"]')
+            pg.page.wait_for_function("() => window.__vfReplay().active && window.__vfReplay().frame >= 2", timeout=20000)
+            assert pg.page.is_visible("#player") and pg.page.is_visible("#replayBadge")
+            assert "replay of a recorded run" in pg.page.inner_text("#replayBadge")
+            info = pg.page.evaluate("() => window.__vfReplay()")
+            assert info["id"] == rid and info["frames"] >= 12 and info["poses"] is False
+            assert pg.page.inner_text("#stRtf").startswith("replay")
+            # the time advances while it plays, and the live ticks keep arriving behind it without being shown
+            pg.page.wait_for_function("() => !window.__vfReplay().playing", timeout=20000)          # 12 ticks at 1x: 0.3 s
+            a = pg.page.evaluate("() => window.__vfReplay()")
+            time.sleep(0.4)
+            b = pg.page.evaluate("() => window.__vfReplay()")
+            # (a recording keeps the live game's own tick numbers, so the shown one stays put and below the live one)
+            assert b["liveSeq"] > a["liveSeq"] and b["shownSeq"] == a["shownSeq"] and b["shownSeq"] < a["liveSeq"]
+            # scrubbing: to the start, then to the end, where the time reads the whole length
+            pg.page.evaluate("() => { const s = document.getElementById('plScrub'); s.value = '0'; s.dispatchEvent(new Event('input')); }")
+            pg.page.wait_for_function("() => window.__vfReplay().frame === 0", timeout=5000)
+            pg.page.evaluate("() => { const s = document.getElementById('plScrub'); s.value = s.max; s.dispatchEvent(new Event('input')); }")
+            pg.page.wait_for_function("() => window.__vfReplay().frame === window.__vfReplay().frames - 1", timeout=5000)
+            now, total = pg.page.inner_text("#plTime").split(" / ")
+            assert now + " s" == total and total != "– s"
+            # play again from the end starts over
+            pg.page.click("#plPlay")
+            pg.page.wait_for_function("() => window.__vfReplay().playing && window.__vfReplay().frame < 3", timeout=5000)
+            # Leave: the player goes, the live fly is back and its ticks show again
+            pg.page.click("#plLeave")
+            pg.page.wait_for_function("() => !window.__vfReplay().active && document.getElementById('player').hidden", timeout=5000)
+            assert pg.page.evaluate("() => document.getElementById('replayBadge').hidden") is True
+            c = pg.page.evaluate("() => window.__vfReplay()")
+            pg.page.wait_for_function(f"() => window.__vfReplay().shownSeq > {c['shownSeq']} + 5", timeout=10000)
+            assert not pg.page.inner_text("#stRtf").startswith("replay")
+            assert [e for e in pg.errors if "favicon" not in e] == [], pg.errors
+        finally:
+            pg.close()
+
+
+def _physics_available():
+    from virtual_fly import physics
+    return physics.available()
+
+
+@pytest.mark.skipif(not _physics_available(), reason="the physics pair needs flygym (optional)")
+def test_a_physics_pair_replay_moves_the_legs_from_the_recording(one_fly, conn, tmp_path, monkeypatch):
+    """A recording of two physics bodies carries every geom's pose per tick: the 3-D view moves the legs from it (the
+    recorded physics), not from the gait animation, and says so on its badge."""
+    from virtual_fly import recording
+    monkeypatch.setattr(recording, "recordings_dir", lambda: tmp_path / "recordings")
+    game, base = one_fly
+    g = Game(build_brain(conn, "game", seed=0), seed=1, body="physics", brain_procs="off",
+             partner={"conn": conn, "brain_kwargs": {"seed": 1000}, "parts": False})
+    try:
+        assert g.action({"type": "capture", "on": True})["ok"]
+        for _ in range(6):
+            g.tick()
+        rid = g.capture.id
+        assert g.action({"type": "capture", "on": False})["ok"]
+        g.tick()
+    finally:
+        g.close()
+    assert recording.list_recordings()[0]["poses"] is True
+    with sync_playwright() as p:
+        pg = _Page(p, base, query=f"?replay={rid}")
+        try:
+            pg.page.wait_for_function("() => window.__vfReplay().active && window.__vfReplay().poses === true", timeout=30000)
+            pg.toggle_3d()
+            info = pg.wait_3d()
+            assert info["flies"] == 2 and info["missingNodes"] == 0
+            pg.page.wait_for_function("() => window.__vf3d.replayPoses === true", timeout=20000)
+            assert "physics" in pg.page.inner_text("#badge3dText") and "replay" in pg.page.inner_text("#badge3dText")
+            assert pg.page.is_visible("#replayBadge")
+            pg.page.click("#plLeave")
+            pg.page.wait_for_function("() => !window.__vfReplay().active", timeout=5000)
+            time.sleep(0.5)
+            assert pg.page.evaluate("() => window.__vf3d.replayPoses") is False
+            assert "not physics" in pg.page.inner_text("#badge3dText")
+            assert [e for e in pg.errors if "favicon" not in e] == [], pg.errors
         finally:
             pg.close()
