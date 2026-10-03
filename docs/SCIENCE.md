@@ -2673,7 +2673,9 @@ in "What's real here?":
 
 Not modelled: anything the 2-D dish does not model either. Cost: the model files 1.6 MB on disk (the glTF 1.4 MB, 58,293
 triangles for one fly, decimated from 502,781; the atlas 126 kB), three.js 2.3 MB vendored, none of it fetched until the view
-is switched on; the frame rate: FPS_PLACEHOLDER
+is switched on; the frame rate is not measured yet: the plan's target (50 frames per second at 1080p with two flies and the
+brain map open) is a number from a normal browser on the owner's screen, and the page's browser tests need a Chromium that
+the owner has not yet agreed to download (plan 1.6).
 
 ## 13. Honest limitations
 

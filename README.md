@@ -282,6 +282,13 @@ background re-test run on her too; `docs/SCIENCE.md` section 9.5 compares each w
 
 **Two simulated flies.** `py fly_game.py --partner female` puts the male and FlyWire's female in one dish, each brain in its own process (2.7-2.9x real time in two runs on a 16-core laptop, `docs/SCIENCE.md` 10.2; 3.6x with `--backend cupy` on its GPU, section 11.3; `--fast` if yours is slower). Nothing links the two brains but the world: she sees him as a small dark thing, hears his song through her Johnston's organ (at up to 70 Hz on her sound cells, the loudest steady drive that does not startle *him*), tastes him when a foreleg lands, and the two bodies bump. `--social seen,song` keeps only those channels; `--partner male` gives him a male rival; `--female --partner male` gives her a male. A fly menu in the page's header picks which fly the panels, the retina and the brain map follow, and the checklist gains pair items (he saw her, sang, tapped; she heard, saw him, was tapped); the Scenarios card gains "Courtship, two brains", 90 s of both flies with the numbers logged at the end. Her decision neurons (`DNp37`, the vaginal plate opening command; `DNp13`, ovipositor extrusion; `vpoEN`, `pC2l`, `SAG`) are shown as watches, never as a verdict: in this data his song reaches her hearing and her giant fibre but not those neurons (`docs/SCIENCE.md` 10.3). `py fly_brain.py --female --pair-experiments` runs the pair experiments, whose ranges are provisional and measured, not validated.
 
+**The dish in 3-D.** The 🧊 3-D button beside the zoom (or `D`) shows the dish as a three.js scene with both flies as
+NeuroMechFly's meshes; right-drag orbits the camera, the wheel zooms, and the camera menu follows the fly in focus or looks
+from the side. It is an animation, not physics: the legs replay NeuroMechFly's recorded stride at the drawn body's gait phase,
+both flies wear the female body model, and the flies are drawn at about three times real size, as the badge on the canvas
+and "What's real here?" say (`docs/SCIENCE.md` section 12). Nothing of it loads until the button is pressed; without WebGL2
+the page stays in 2-D and says so.
+
 **In code**, start with `my_first_fly.py`: poke, wait, listen, in three lines. Then:
 
 | Command (macOS / Linux: `python3` instead of `py`) | What it does |
