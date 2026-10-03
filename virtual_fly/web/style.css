@@ -113,6 +113,7 @@ body.dragging, body.dragging * { cursor: grabbing !important; }
   background: rgba(6,9,13,.85); border: 1px solid var(--line); border-radius: 8px; padding: 4px 8px; font-size: 11px; color: var(--muted); cursor: help; }
 .badge3d[hidden] { display: none; }
 .badge3d .tag { flex: none; }
+.badge3d .fps { flex: none; font-variant-numeric: tabular-nums; color: var(--ink); }
 .badge3d select { font-size: 11px; background: var(--panel2); color: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 1px 4px; flex: none; }
 .msg3d { position: absolute; left: 50%; top: 45%; transform: translate(-50%, -50%); z-index: 2; background: rgba(17,23,31,.92); border: 1px solid var(--line);
   border-radius: 8px; padding: 8px 14px; font-size: 13px; pointer-events: none; }

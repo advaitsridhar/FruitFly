@@ -404,7 +404,7 @@ async function toggle3d() {
     view3dState = "loading"; setText($("view3dBtn"), "🧊 loading…"); toast("Loading the 3-D view: three.js and the fly model…", 10000);
     try {
       const mod = await import("./arena3d.js");       // nothing of three.js or the model is fetched before this
-      view3d = await mod.Arena3D.create($("arena3d"), $("stage"), L, { msg: $("msg3d") });
+      view3d = await mod.Arena3D.create($("arena3d"), $("stage"), L, { msg: $("msg3d"), fps: $("fps3d") });
     } catch (e) {
       view3dState = "unavailable"; view3dReason = `The 3-D view cannot run here: ${e && e.message ? e.message : e}`;
       console.warn(view3dReason, e);

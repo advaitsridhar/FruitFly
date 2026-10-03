@@ -405,7 +405,8 @@ badge and the camera menu in place. The model is 3.72 mm long at real size and i
 The owner looked at the 3-D view in their browser on 2026-10-03 ("looks decent") and asked for colour ("it is all brown"): the flies
 are now coloured by part (`PALETTE` in arena3d.js: red compound eyes, a tan head and thorax, an abdomen banded tan and dark with a dark
 tip on the male, clear wings at 38 % opacity, darker legs and tarsi, dark aristae; the female a shade lighter and greyer), said to be
-hand-chosen in "What's real here?" and SCIENCE.md 12. The frame rate in the owner's own browser was not reported.
+hand-chosen in "What's real here?" and SCIENCE.md 12. The owner then said "color looks good and it is smooth" and asked how to see the frame rate: the badge now carries a
+frame-rate readout the dish updates once a second (`#fps3d`; `window.__vf3d.fps` holds the same number for the console).
 
 ### Golden hashes (plan 4.9)
 - Synthetic (`tests/golden_single_fly.json`): nine configurations, made with Python 3.12.3, NumPy 2.5.3, numba 0.67.0; a second
@@ -426,7 +427,7 @@ hand-chosen in "What's real here?" and SCIENCE.md 12. The frame rate in the owne
 
 ## Next step
 Phase 3: PR #19 is ready for review, every 7.7 criterion met except the frame-rate number from a headed browser on this GPU (the owner
-looked and said the view "looks decent" but gave no number; headless SwiftShader gives 9-12 fps, which is not that number). Wait for
+looked and said the view "looks decent" and later "smooth", but gave no number (the badge now shows one); headless SwiftShader gives 9-12 fps, which is not that number). Wait for
 the owner's merge word (or their frame rate). Phase 4 (physics for both flies, plan section 8) starts after the merge with decisions
 20-26 put to the owner in one message and the Open issue on the physics body, on `claude/two-flies-p4-physics-pair`.
 

@@ -415,7 +415,10 @@ export class Arena3D {
   _stats() {
     this.frames++;
     const now = performance.now();
-    if (now - this.fpsAt >= 1000) { this.fps = Math.round(this.frames * 1000 / (now - this.fpsAt)); this.frames = 0; this.fpsAt = now; }
+    if (now - this.fpsAt >= 1000) {
+      this.fps = Math.round(this.frames * 1000 / (now - this.fpsAt)); this.frames = 0; this.fpsAt = now;
+      if (this.ui.fps) this.ui.fps.textContent = `${this.fps} fps`;                        // the readout in the badge
+    }
     const info = this.renderer.info.render;
     window.__vf3d = { on: this.on, flies: [...this.flies.values()].filter((f) => f.group.visible).length, triangles: info.triangles, calls: info.calls,
                       fps: this.fps, lost: this.lost, missingNodes: this.missing.size, modelLengthMm: this.modelLengthMm, scale: this.modelScale, camera: this.cameraMode };

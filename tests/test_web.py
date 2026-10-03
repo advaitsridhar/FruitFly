@@ -192,6 +192,14 @@ def test_the_3d_dish_is_there_and_fetches_three_only_when_asked():
         assert (WEB / "vendor" / "three" / name).is_file(), name
 
 
+def test_the_badge_shows_the_frame_rate():
+    """The 3-D badge carries a frame-rate readout the dish updates once a second (plan 7.5: measured, never promised)."""
+    html = (WEB / "index.html").read_text()
+    assert 'id="fps3d"' in html and "fps" in html
+    js = (WEB / "arena3d.js").read_text()
+    assert "this.ui.fps" in js and "fps3d" in (WEB / "app.js").read_text()
+
+
 def test_the_3d_view_says_what_is_hand_built_in_whats_real(conn):
     # plan 1.5 rule 2: the animation, the female body model for both flies, the recorded stride and the drawn scale are
     # in the "What's real here?" hand-built list of every fly, and the words acceptance/rejection never appear in it
