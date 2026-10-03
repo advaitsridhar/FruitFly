@@ -33,6 +33,7 @@ import io
 import json
 import mimetypes
 import queue
+import re
 import socket
 import threading
 import time
@@ -43,7 +44,7 @@ from pathlib import Path
 
 import numpy as np
 
-from . import genetics, vfb, wiring
+from . import genetics, recording, vfb, wiring
 from . import parts as partslib
 
 from .pathways import relay_ranking, strongest_partners, trace
@@ -65,25 +66,42 @@ def make_handler(game):
         def log_message(self, *args):
             pass
 
-        def _send(self, code, body, ctype, extra=None):
-            if len(body) > 4096 and "gzip" in (self.headers.get("Accept-Encoding") or ""):
+        def _send(self, code, body, ctype, extra=None, cors=True, compress=True):
+            """``cors``: the wildcard CORS header every live endpoint carries; the replay endpoints send none (8.8).
+            ``compress``: gzip a big body for a client that takes it (not a body that is gzip already)."""
+            if compress and len(body) > 4096 and "gzip" in (self.headers.get("Accept-Encoding") or ""):
                 body = gzip.compress(body, 3)
                 extra = {**(extra or {}), "Content-Encoding": "gzip"}
             self.send_response(code)
             self.send_header("Content-Type", ctype)
             self.send_header("Content-Length", str(len(body)))
             self.send_header("Cache-Control", "no-store")
-            self.send_header("Access-Control-Allow-Origin", "*")
+            if cors:
+                self.send_header("Access-Control-Allow-Origin", "*")
             for k, v in (extra or {}).items():
                 self.send_header(k, v)
             self.end_headers()
             self.wfile.write(body)
 
-        def _json(self, obj, code=200):
-            self._send(code, json.dumps(obj, separators=(",", ":")).encode(), "application/json")
+        def _json(self, obj, code=200, cors=True):
+            self._send(code, json.dumps(obj, separators=(",", ":")).encode(), "application/json", cors=cors)
 
-        def _error(self, msg, code=400):
-            self._json({"ok": False, "error": str(msg)}, code)
+        def _error(self, msg, code=400, cors=True):
+            self._json({"ok": False, "error": str(msg)}, code, cors=cors)
+
+        def _own_page(self):
+            """None when the request comes from this server's own page (no Origin header, or ours, and a Host of
+            localhost or 127.0.0.1 with our port), else why not: the one action that writes to disk takes nothing else,
+            so another page open in the owner's browser cannot fill the disk (docs/TWO_FLIES_PLAN.md 8.8)."""
+            port = self.server.server_address[1]
+            host = (self.headers.get("Host") or "").strip()
+            name, _, hport = host.partition(":")
+            if name not in ("localhost", "127.0.0.1") or (hport and hport != str(port)):
+                return f"refused: the Host header is {host!r}, not this server's localhost:{port} or 127.0.0.1:{port}"
+            origin = self.headers.get("Origin")
+            if origin is not None and origin.rstrip("/") not in (f"http://localhost:{port}", f"http://127.0.0.1:{port}"):
+                return f"refused: the request comes from {origin!r}, not from this server's own page"
+            return None
 
         def do_OPTIONS(self):
             self.send_response(204)
@@ -103,6 +121,24 @@ def make_handler(game):
                     return self._send(200, game.state_json, "application/json")
                 if path == "/api/stream":
                     return self._stream()
+                # the replays saved to disk (recording.py): no wildcard CORS header on any of these (8.8)
+                if path == "/api/replays":
+                    return self._json({"ok": True, "replays": recording.list_recordings()}, cors=False)
+                m = re.fullmatch(r"/api/replay/([^/]{1,40})/(header|frames|poses)", path)
+                if m:
+                    folder = recording.folder_of(m.group(1))
+                    if folder is None:
+                        return self._error("no such replay", 404, cors=False)
+                    what = m.group(2)
+                    if what == "header":
+                        return self._send(200, (folder / "header.json").read_bytes(), "application/json", cors=False)
+                    if what == "frames":                # stored gzipped: sent as it is, the browser's fetch inflates it
+                        return self._send(200, (folder / "frames.jsonl.gz").read_bytes(), "application/x-ndjson",
+                                          {"Content-Encoding": "gzip"}, cors=False, compress=False)
+                    poses = folder / "poses.f32"
+                    if not poses.is_file():
+                        return self._error("this replay has no poses (a drawn-body run)", 404, cors=False)
+                    return self._send(200, poses.read_bytes(), "application/octet-stream", cors=False, compress=False)
                 # every endpoint that reads one fly takes ?fly=k (default 0, the protagonist; docs/TWO_FLIES_PLAN.md 5.7)
                 raw = get("fly", "0")
                 # a few ASCII digits only: str.isdigit also takes '\u00b2' and the like, which int() refuses, and a
@@ -291,6 +327,10 @@ def make_handler(game):
                 data = json.loads(raw or b"{}")
                 if not isinstance(data, dict):
                     raise ValueError("the action must be a JSON object")
+                if data.get("type") == "capture":    # writes to disk: only from this server's own page (8.8)
+                    why = self._own_page()
+                    if why:
+                        return self._json({"ok": False, "error": why}, 403, cors=False)
                 reply = game.action(data)
             except Exception as e:
                 reply = {"ok": False, "error": str(e)}

@@ -153,6 +153,7 @@ ACTIONS = {
     "female": {"x": (float, False), "y": (float, False), "on": (bool, False)},
     "learning": {"on": (bool, False), "forget": (bool, False)}, "scenario": {},
     "record": {"on": (bool, False), "spikes": (bool, False)}, "state": {"hunger": (float, False), "thirst": (float, False)},
+    "capture": {"on": (bool, False)},                     # save a replay to disk (recording.py; the server checks its origin)
     "place_fly": {"x": (float, True), "y": (float, True), "h": (float, False)},
 }
 # the tools the page offers (and "none", which scenarios use): the "tool" action takes these and the odour ids
@@ -374,6 +375,7 @@ class Game:
         self.recording: list | None = None
         self.record_active = False
         self.record_spikes = False
+        self.capture = None                              # a replay being saved to disk (recording.Capture)
         self.lock = threading.RLock()
         self.stop_loop = threading.Event()               # set: loop() returns after the tick it is in
         self.subscribers: list[queue.Queue] = []
@@ -409,6 +411,9 @@ class Game:
         """Stop the loop (it returns after the tick it is in) and let every fly's brain process go. server.serve calls
         this after Ctrl+C, once the loop thread has been joined, so no child is closed while a tick is still using it."""
         self.stop_loop.set()
+        if self.capture is not None:                 # a replay being saved is finished first (its files, poses, header)
+            c, self.capture = self.capture, None
+            c.stop()
         for a in self.flies:
             a.io.close()
         if self.brain_server is not None:            # every handle's close reached it already; once more is harmless
@@ -539,6 +544,14 @@ class Game:
             why = pair_available(self, a["id"])              # a two-fly scenario (docs/TWO_FLIES_PLAN.md 5.9 item 3)
             if why is not None:
                 return {"ok": False, "error": why}
+        if kind == "capture":                                # refused here, with the reason, before it is queued (8.8)
+            from . import recording
+            if a.get("on", True):
+                why = recording.cannot_start(self)
+                if why:
+                    return {"ok": False, "error": why}
+            elif self.capture is None:
+                return {"ok": False, "error": "no replay is being saved"}
         if kind == "grow":
             level = str(a.get("level", "type")).strip().lower()
             if not wiring.valid_level(level):
@@ -715,6 +728,18 @@ class Game:
                     if io.record("active"):
                         io.record("stop")
                 self.events.add(self.t, "system", f"recording stopped ({len(self.recording or [])} frames)")
+        elif kind == "capture":
+            from . import recording
+            if a.get("on", True):
+                if self.capture is None:
+                    self.capture = recording.Capture.start(self)
+                    self.events.add(self.t, "system", f"saving a replay: recordings/{self.capture.id}")
+                    self.say(f"Saving a replay to recordings/{self.capture.id}", 3.0)
+            elif self.capture is not None:
+                c, self.capture = self.capture, None
+                c.stop()
+                self.events.add(self.t, "system", f"replay saved: recordings/{c.id} ({c.ticks} ticks)")
+                self.say(f"Replay saved: recordings/{c.id} ({c.ticks} ticks)", 3.0)
         elif kind == "grow":
             f._start_grow(a["level"], a["seed"])
         elif kind == "parts":
@@ -789,6 +814,17 @@ class Game:
                 w = self.world.to_dict()
                 frame["world"] = {k: w[k] for k in ("food", "obstacles", "odours", "wind", "stripes", "tool")}
             self.recording.append(frame)
+        if self.capture is not None:                     # a replay saved to disk: its own frame (recording.py)
+            c = self.capture
+            try:
+                c.add(self)
+            except Exception as e:                       # a full disk must not kill the loop: the replay stops here
+                c.error = f"{e!r}"
+                c.stop()
+            if c.error and self.capture is c:            # stopped on its own (the cap, a rebuilt world, an error)
+                self.capture = None
+                self.events.add(self.t, "system", f"replay recordings/{c.id} stopped: {c.error}")
+                self.say(f"Replay stopped: {c.error}", 5.0)
         self.publish(bt, a.hz_shown, a.sps, bts)
 
     # ------------------------------------------------------------------ publishing
@@ -827,6 +863,7 @@ class Game:
             "genome": a.genome_status(bt.parts_status, known=True),
             "recording": None if self.recording is None else {"frames": len(self.recording), "spikes": self.record_spikes,
                                                               "active": self.record_active},
+            "capture": None if self.capture is None else self.capture.status(),
         }
         if len(self.flies) > 1 and bts is not None:
             state["flies"] = [f.state_entry(b) for f, b in zip(self.flies, bts)]
