@@ -8,7 +8,7 @@ Plan: docs/TWO_FLIES_PLAN.md. Newest session notes first.
 | 0 | claude/two-flies-p0-baseline | #16 | merged (squash, `3631770`) | 2026-09-27 |
 | 1 | claude/two-flies-p1-two-brains | #17 | merged (squash, `f70d8be`) | 2026-10-01 |
 | 2 | claude/two-flies-p2-gpu | #18 | merged (squash, `63681db`) | 2026-10-03 |
-| 3 | claude/two-flies-p3-3d-view | #19 | draft PR open | 2026-10-03 |
+| 3 | claude/two-flies-p3-3d-view | #19 | draft PR open, CI green | 2026-10-03 |
 
 ## This machine
 - OS: WSL2 (Ubuntu 24.04.5 LTS) on Windows; the repository lives under the Linux home folder, not `/mnt/c`.
@@ -83,6 +83,8 @@ All on 2026-09-27, this machine, `nice -n 10`, one job at a time, machine otherw
   550 passed, 0 skipped with the physics extra.
 - CI on PR #18 (2026-10-01, the same matrix, no CuPy): **570 passed, 42 skipped** on 3.10, 3.11 and 3.12 (the 39 GPU tests and the
   three physics ones); here 612 passed, 0 skipped with CuPy and the physics extra.
+- CI on PR #19 (2026-10-03, the same matrix): **577 passed, 44 skipped** on 3.10 and 3.11, 576 and 45 on 3.12 (one more skip there,
+  not identified from the quiet log); here 620 passed, 5 skipped (the browser tests, no Chromium yet).
 
 ### Validated experiments, the baseline JSONs (plan 4.7; game profile, five seeds, numba)
 | run | file (work folder) | result |
