@@ -8,7 +8,8 @@ Plan: docs/TWO_FLIES_PLAN.md. Newest session notes first.
 | 0 | claude/two-flies-p0-baseline | #16 | merged (squash, `3631770`) | 2026-09-27 |
 | 1 | claude/two-flies-p1-two-brains | #17 | merged (squash, `f70d8be`) | 2026-10-01 |
 | 2 | claude/two-flies-p2-gpu | #18 | merged (squash, `63681db`) | 2026-10-03 |
-| 3 | claude/two-flies-p3-3d-view | #19 | PR ready, CI green, the owner's merge word given | 2026-10-03 |
+| 3 | claude/two-flies-p3-3d-view | #19 | merged (squash, `157ffa9`) | 2026-10-03 |
+| 4 | claude/two-flies-p4-physics-pair | – | opened; decisions 20-26 put to the owner, no answer yet | 2026-10-03 |
 
 ## This machine
 - OS: WSL2 (Ubuntu 24.04.5 LTS) on Windows; the repository lives under the Linux home folder, not `/mnt/c`.
@@ -68,6 +69,13 @@ Plan: docs/TWO_FLIES_PLAN.md. Newest session notes first.
 | 17 | where the GPU brains live | one GPU child process holding both brains; the game process stays on the CPU; the re-test child always uses the CPU | default, the same | 2026-10-01 |
 | 18 | the fly meshes | ship a decimated GLB (about 3 MB or less) with its Apache-2.0 licence and a notice of changes; otherwise build on first use from the installed flygym | default; the owner: "merge and go with defaults" | 2026-10-03 |
 | 19 | the 3-D scale in live mode | the drawn scale (about 3x real), labelled; real size in physics and replay modes | default, the same | 2026-10-03 |
+| 20 | flygym version | proposed: stay on 1.2.1; a flygym 2.x spike (a Python 3.12 venv outside the repository) only on request or if 1.2.1 cannot reach 0.1x real time with two flies | put to the owner, awaiting the answer | 2026-10-03 |
+| 21 | topology | proposed: both flies in one MuJoCo world; "ghost" partners in separate worlds only as a labelled fallback | the same | 2026-10-03 |
+| 22 | contact pairs between the flies | proposed: each fly's forelegs (Tibia, Tarsus1-4) and head against the partner's body, plus body to body; never `Tarsus5` | the same | 2026-10-03 |
+| 23 | social geometry with physics bodies | proposed: real size (the physical tap replaces the 3.4 mm rule; the partner seen at real size), labelled; the single-fly physics body keeps today's drawn-scale senses | the same | 2026-10-03 |
+| 24 | the male's body model | proposed: the same NeuroMechFly body (built from a female fly), labelled, in physics and in the 3-D view | the same | 2026-10-03 |
+| 25 | accepting a speed lever | proposed: only if the 6.7 table stays within ±10 % for speeds and turn rates and the lure count within 1, over seeds 0-4; always switchable | the same | 2026-10-03 |
+| 26 | MuJoCo Warp batches | proposed: no, unless the owner wants offline batch runs | the same | 2026-10-03 |
 
 ## Measurements
 All on 2026-09-27, this machine, `nice -n 10`, one job at a time, machine otherwise idle (load average under 1.5).
@@ -428,12 +436,23 @@ size and whether the brain map was open were not recorded): the 7.7 target of 50
   would be a new hand-built controller: ask the owner before adding one.
 
 ## Next step
-Phase 3: PR #19 is ready for review, every 7.7 criterion met except the frame-rate number from a headed browser on this GPU (the owner
-looked and said the view "looks decent" and later "smooth", but gave no number (the badge now shows one); headless SwiftShader gives 9-12 fps, which is not that number). Wait for
-the owner's merge word (or their frame rate). Phase 4 (physics for both flies, plan section 8) starts after the merge with decisions
-20-26 put to the owner in one message and the Open issue on the physics body, on `claude/two-flies-p4-physics-pair`.
+Phase 4 (physics for both flies, plan section 8) is open on `claude/two-flies-p4-physics-pair`, branched from `origin/main` at `157ffa9`
+(the Phase 3 squash); no code yet. Decisions 20-26 were put to the owner on 2026-10-03 with the plan's defaults, together with the
+Open issue on the physics body and one ordering question: the plan's order is the reproduction gate (8.2), the pair world (8.3-8.6),
+then record-and-replay (8.7-8.8) and the video (8.9); the owner's wish for a natural-looking physics fly argues for the replay and
+the video early. Wait for the answers (plan 1.8 item 1). Then start with 8.2 whatever the order: **new** `tools/physics_table.py`
+reproducing the SCIENCE.md 6.7 table on the unchanged body (the protocol from `git log -p -S 'faces the lure' -- docs/SCIENCE.md`
+and PR #11, read as data), run in the background (1.7), checked against the published numbers before it serves as the gate; then
+the one-fly and two-fly profiles.
 
 ## Session notes
+### 2026-10-03 (Phase 4 opened)
+- The owner read the 3-D badge: "ok yeah the fps is at 80 or so, quite good. go ahead and merge". The number recorded (SCIENCE.md 12,
+  Measurements, the PR body; `ca8723b`); PR #19 squash-merged as `157ffa9` on that word (v2.11.0 on `main`); the demo game on port 8765
+  stopped with the 1.7 stop block (nothing left in its session).
+- Branch `claude/two-flies-p4-physics-pair` from the fetched `origin/main`; decisions 20-26 put to the owner with the defaults, the
+  physics-body issue and the ordering question (Next step). Nothing built yet.
+
 ### 2026-10-03 (Phase 3 started)
 - PR #18 squash-merged as `63681db` on the owner's word ("merge and go with defaults"); branch `claude/two-flies-p3-3d-view` from the
   fetched `origin/main`. Decisions 18-19 recorded with their defaults.
