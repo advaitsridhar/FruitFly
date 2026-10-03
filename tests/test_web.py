@@ -157,3 +157,53 @@ def test_her_cues_are_labelled_hand_built_on_screen_and_events_say_whose_they_ar
     assert 'setShown($("cuesNote"), s.flies.some((f) => f.sex === "female"))' in _js("app.js")
     css = (WEB / "style.css").read_text(encoding="utf-8")
     assert _rule(css, ".events li .who") and _rule(css, ".rows .grp .note") and _rule(css, ".cuesnote")
+
+
+def test_the_3d_dish_is_there_and_fetches_three_only_when_asked():
+    # docs/TWO_FLIES_PLAN.md 7.1, 7.3, 7.4: a 3-D canvas over the stage, a toggle beside the zoom button, the badge that says
+    # the legs are an animation and whose body model the flies wear, the camera presets, a message box for the fallback;
+    # three.js (the import map's "three") and arena3d.js are imported lazily, never statically, so the default page fetches
+    # nothing under vendor/three/ or models/
+    html = (WEB / "index.html").read_text(encoding="utf-8")
+    ids = set(_ids())
+    assert {"arena3d", "view3dBtn", "badge3d", "cam3d", "msg3d"} <= ids
+    assert '<canvas id="arena3d" hidden></canvas>' in html and 'id="badge3d" hidden' in html
+    assert "3-D animation: the legs follow the gait phase; not physics. Both flies use NeuroMechFly's body, built from a female fly; the legs replay NeuroMechFly's recorded stride" in html
+    assert '"three": "./vendor/three/three.module.js"' in html and '"three/addons/": "./vendor/three/addons/"' in html
+    assert html.index('type="importmap"') < html.index('type="module" src="app.js"')
+    for js in sorted(WEB.glob("*.js")):
+        text = js.read_text(encoding="utf-8")
+        assert not re.search(r'(?m)^\s*import\b[^\n]*\bfrom\s*["\']three', text), js.name      # no static import of three anywhere
+        if js.name != "arena3d.js":
+            assert 'import("three' not in text, js.name
+    a3 = _js("arena3d.js")
+    assert 'await import("three")' in a3 and 'await import("three/addons/loaders/GLTFLoader.js")' in a3 and 'await import("three/addons/controls/OrbitControls.js")' in a3
+    assert '"models/nmf_fly.glb"' in a3 and '"models/nmf_gait.json"' in a3 and '"models/nmf_gait.bin"' in a3
+    assert "webgl2" in a3 and "webglcontextlost" in a3 and "webglcontextrestored" in a3
+    assert "hand-built" in a3.lower() and "not physics" in a3
+    app = _js("app.js")
+    assert 'await import("./arena3d.js")' in app and 'from "./arena3d.js"' not in app
+    assert "function activeArena()" in app and 'guard("the 3-D dish"' in app and 'onDish("pointerdown"' in app
+    css = (WEB / "style.css").read_text(encoding="utf-8")
+    assert "position: absolute" in _rule(css, "#arena3d") and "inset: 0" in _rule(css, "#arena3d")
+    assert "z-index: 2" in _rule(css, ".retina") and "z-index: 2" in _rule(css, ".badge3d") and "z-index: 3" in _rule(css, ".toast")
+    # the vendored files the import map points at exist, with their licence and version record
+    for name in ("three.module.js", "three.core.js", "LICENSE", "VERSION.txt", "addons/loaders/GLTFLoader.js", "addons/controls/OrbitControls.js"):
+        assert (WEB / "vendor" / "three" / name).is_file(), name
+
+
+def test_the_3d_view_says_what_is_hand_built_in_whats_real(conn):
+    # plan 1.5 rule 2: the animation, the female body model for both flies, the recorded stride and the drawn scale are
+    # in the "What's real here?" hand-built list of every fly, and the words acceptance/rejection never appear in it
+    from virtual_fly.game import Game
+    from virtual_fly.settings import build_brain
+    g = Game(build_brain(conn, "game", seed=0), autopilot=False, seed=1)
+    try:
+        hb = g.whats_real()["hand_built"]
+        text = " ".join(hb)
+        assert "an animation, not physics" in text and "NeuroMechFly's recorded stride" in text
+        assert "built from a female fly" in text and "about three times real size" in text
+        assert sum("When the 3-D view is on" in h for h in hb) == 4
+        assert not re.search(r"accept(ance|ed)|reject(ion|ed)", text, re.I)
+    finally:
+        g.close()

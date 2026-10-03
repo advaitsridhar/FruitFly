@@ -13,6 +13,11 @@ let L = null;                       // layout (brain map, arena size, readouts, 
 let S = null, Sprev = null, Stime = 0, Sgap = 25, lastSeq = 0, lastStateAt = 0, firstState = false;
 let tool = "lure", odourFood = "", pointer = null, lastSent = 0, sees = false;
 let arena = null, brain = null, retina = null, layout = null;
+// the 3-D dish (arena3d.js, docs/TWO_FLIES_PLAN.md 7.4): built on the first press of the 3-D button, which is when three.js
+// and the model are fetched; "off" | "loading" | "on" | "unavailable" (no WebGL2, or the model did not load)
+let view3d = null, view3dState = "off", view3dReason = "";
+/** The dish that is showing: the 3-D one while it is on, else the 2-D canvas (both answer the same calls). */
+function activeArena() { return view3dState === "on" && view3d ? view3d : arena; }
 const panels = {};
 // two flies (docs/API.md "Two flies"): the state then lists `flies`; `focus` is the one the panels, the eye inset, the brain
 // map and the camera follow; each fly has its own layout (api/layout?fly=k) and its own brain map, kept alive side by side
@@ -40,7 +45,7 @@ async function loadLayout() {
   setText($("sub"), `${L.n.toLocaleString()} neurons · ${(L.edges / 1e6).toFixed(1)} M connections · ${(L.synapses / 1e6).toFixed(0)} M synapses · ${L.sex === "female" ? "FlyWire 783 (female)" : "MaleCNS v1.0"}`);
   buildToolbar();
   arena = new Arena($("arena"), $("stage"), L);
-  new ResizeObserver(() => arena.resize()).observe($("stage"));
+  new ResizeObserver(() => { arena.resize(); if (view3d) view3d.resize(); }).observe($("stage"));
   retina = new RetinaView($("retina"), L.retina || {});
   layouts[0] = L; L.fly_id = 0;
   brain = brains[0] = new BrainView($("brain"), $("brainOverlay"), L);
@@ -282,13 +287,15 @@ function serverHandAngle() {
 }
 
 // ---------------------------------------------------------------- arena input
-const arenaEl = $("arena");
+const arenaEl = $("arena"), arena3dEl = $("arena3d");
 function pointerAt(e) {
-  const r = arenaEl.getBoundingClientRect(), px = e.clientX - r.left, py = e.clientY - r.top;
-  const [x, y] = arena.C2W(px, py);
+  const r = e.currentTarget.getBoundingClientRect(), px = e.clientX - r.left, py = e.clientY - r.top;
+  const [x, y] = activeArena().C2W(px, py);
   return { px, py, x, y, inside: Math.hypot(x, y) < L.arena_r };
 }
-arenaEl.addEventListener("pointermove", (e) => {
+// the pointer works on whichever dish is showing: the same handlers on both canvases
+const onDish = (type, fn, opts) => { arenaEl.addEventListener(type, fn, opts); arena3dEl.addEventListener(type, fn, opts); };
+onDish("pointermove", (e) => {
   if (!arena) return;
   const p = pointerAt(e), now = performance.now();
   if (pointer && pointer.t) {
@@ -302,17 +309,17 @@ arenaEl.addEventListener("pointermove", (e) => {
     post(p.inside && (tool === "lure" || tool === "hand") ? { type: "hand", x: p.x, y: p.y } : { type: "hand_off" });
   }
 });
-arenaEl.addEventListener("pointerleave", () => { pointer = null; post({ type: "hand_off" }); });
-// zoom: the wheel over the dish, the button, or + / -; above 1x the view follows the fly
+onDish("pointerleave", () => { pointer = null; post({ type: "hand_off" }); });
+// zoom: the wheel over the dish, the button, or + / -; above 1x the view follows the fly (in 3-D the wheel is the camera's)
 function setZoom(z) {
   if (!arena) return;
-  const zoom = arena.setZoom(z);
+  const zoom = activeArena().setZoom(z);
   setText($("zoomBtn"), `🔍 ${zoom % 1 ? zoom.toFixed(1) : zoom}×`);
   setClass($("zoomBtn"), "on", zoom > 1);
 }
 function zoomStep(dir) {
   if (!arena) return;
-  const z = arena.zoom, next = dir > 0 ? ZOOMS.find((v) => v > z + 1e-6) : [...ZOOMS].reverse().find((v) => v < z - 1e-6);
+  const z = activeArena().zoom, next = dir > 0 ? ZOOMS.find((v) => v > z + 1e-6) : [...ZOOMS].reverse().find((v) => v < z - 1e-6);
   setZoom(next == null ? z : next);                     // already past the last step: stay there
 }
 // the wheel is claimed only when it changes the zoom, so a horizontal swipe or scrolling at 1x keeps working
@@ -322,14 +329,14 @@ arenaEl.addEventListener("wheel", (e) => {
   if (z === arena.zoom) return;
   e.preventDefault(); setZoom(z);
 }, { passive: false });
-$("zoomBtn").onclick = () => { if (!arena) return; const z = arena.zoom, i = ZOOMS.findIndex((v) => v > z + 1e-6); setZoom(i < 0 ? 1 : ZOOMS[i]); };
-arenaEl.addEventListener("pointerdown", (e) => {
+$("zoomBtn").onclick = () => { if (!arena) return; const z = activeArena().zoom, i = ZOOMS.findIndex((v) => v > z + 1e-6); setZoom(i < 0 ? 1 : ZOOMS[i]); };
+onDish("pointerdown", (e) => {
   if (!arena) return;
   const p = pointerAt(e);
   if (!p.inside) return;
   if (tool === "sugar" || tool === "bitter" || tool === "water") post({ type: "drop", kind: tool, x: p.x, y: p.y });
-  else if (tool === "dust") { arena.puff(p.x, p.y); post({ type: "dust", x: p.x, y: p.y }); }
-  else if (tool === "shock") { arena.shock(); post({ type: "shock" }); }
+  else if (tool === "dust") { activeArena().puff(p.x, p.y); post({ type: "dust", x: p.x, y: p.y }); }
+  else if (tool === "shock") { activeArena().shock(); post({ type: "shock" }); }
   else if (tool === "post") post({ type: "drop", kind: "post", x: p.x, y: p.y });
   else if (L.odours.some((o) => o.id === tool)) {
     const food = odourFood || (e.shiftKey ? "sugar" : e.altKey ? "bitter" : "");
@@ -359,7 +366,7 @@ document.addEventListener("click", (e) => { if (!$("clearMenu").hidden && !e.tar
   window.addEventListener("pointerup", () => { speedDrag = false; windDrag = false; });
 }
 $("seesToggle").onchange = (e) => (sees = e.target.checked);
-function clap() { post({ type: "sound" }); if (arena) arena.clap(); }
+function clap() { post({ type: "sound" }); if (arena) activeArena().clap(); }
 $("clapBtn").onclick = clap;
 // the optomotor drum: stripes on the wall, spinning
 let drumDrag = false;
@@ -379,6 +386,37 @@ function stripesNow() {
   return { count: st.count, phase: lerpAngle(p.phase, st.phase, Math.min(1, (performance.now() - Stime) / Sgap)) };
 }
 $("retinaToggle").onchange = (e) => { retinaOn = e.target.checked; setShown($("retinaBox"), retinaOn); };
+
+// ---------------------------------------------------------------- the 3-D dish (arena3d.js), loaded on the first press
+function show3d(on) {
+  view3dState = on ? "on" : "off";
+  if (on) view3d.show(); else if (view3d) view3d.hide();
+  setShown(arenaEl, !on); setShown($("badge3d"), on);
+  setClass($("view3dBtn"), "on", on); setText($("view3dBtn"), on ? "🧊 2-D" : "🧊 3-D");
+  if (!on) setShown($("msg3d"), false);
+  setZoom(activeArena().zoom);                         // the button shows the dish's own zoom
+}
+async function toggle3d() {
+  if (!L || !arena || view3dState === "loading") return;
+  if (view3dState === "on") { show3d(false); return; }
+  if (view3dState === "unavailable") { toast(view3dReason, 4000); return; }
+  if (!view3d) {
+    view3dState = "loading"; setText($("view3dBtn"), "🧊 loading…"); toast("Loading the 3-D view: three.js and the fly model…", 10000);
+    try {
+      const mod = await import("./arena3d.js");       // nothing of three.js or the model is fetched before this
+      view3d = await mod.Arena3D.create($("arena3d"), $("stage"), L, { msg: $("msg3d") });
+    } catch (e) {
+      view3dState = "unavailable"; view3dReason = `The 3-D view cannot run here: ${e && e.message ? e.message : e}`;
+      console.warn(view3dReason, e);
+      setText($("view3dBtn"), "🧊 3-D"); $("view3dBtn").title = view3dReason; toast(view3dReason, 6000);
+      return;
+    }
+    $("cam3d").onchange = (e) => { view3d.setCamera(e.target.value); setZoom(view3d.zoom); e.target.blur(); };
+  }
+  show3d(true);
+  toastHold = 0; toast("");                            // the loading message goes
+}
+$("view3dBtn").onclick = toggle3d;
 
 // wind dial: a compass showing the direction the wind blows toward
 const dial = $("windDial"), dctx = dial.getContext("2d");
@@ -553,6 +591,7 @@ window.addEventListener("keydown", (e) => {
     case "w": case "W": { const V = S ? viewOf(S) : null; post({ type: "autopilot", on: !(V && V.autopilot) }); break; }
     case "n": case "N": post({ type: "reset" }); break;
     case "h": case "H": if (layout) layout.toggleSidebar(); break;
+    case "d": case "D": toggle3d(); break;
     case "+": case "=": zoomStep(1); break;
     case "-": case "_": zoomStep(-1); break;
     case "Escape": setShown($("neuronPop"), false); for (const b of brains) if (b) b.picked = -1; $("clearMenu").hidden = true; break;
@@ -573,7 +612,9 @@ function frame(now) {
     if (L && arena) {
       if (renderPending && S) { renderPending = false; guard("panels", () => renderState(S)); }
       const poses = S ? posesOf(S) : [], pose = poses[focus] || poses[0] || null, female = S ? scriptedFemalePose() : null;
-      guard("the dish", () => arena.draw(dt, { S, pose, flies: poses, female, pointer, tool, sees, cues: true, handAng: S ? serverHandAngle() : 0, stripes: S ? stripesNow() : null }));
+      const view = { S, pose, flies: poses, female, pointer, tool, sees, cues: true, handAng: S ? serverHandAngle() : 0, stripes: S ? stripesNow() : null };
+      if (view3dState === "on" && view3d) guard("the 3-D dish", () => view3d.draw(dt, view));
+      else guard("the dish", () => arena.draw(dt, view));
       guard("the brain map", () => brain.frame(dt, now / 1000));
       guard("the key-neuron sparklines", () => panels.keys.drawSparks(now));
       setShown($("disc"), lastStateAt > 0 && now - lastStateAt > 3000);
