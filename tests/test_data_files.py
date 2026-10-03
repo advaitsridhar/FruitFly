@@ -3,10 +3,12 @@ messages: a damaged file already in place, and Ctrl+C part-way (no network: urlo
 
 import io
 import os
+import re
 import shutil
 import subprocess
 import sys
 import urllib.error
+import zipfile
 
 import pytest
 
@@ -120,3 +122,78 @@ def test_fly_data_dir_expands_the_home_folder(tmp_path):
     out = subprocess.run([sys.executable, "-c", code], env=env, cwd=tmp_path, capture_output=True, text=True,
                          check=True).stdout.split()
     assert out == [str(tmp_path / "flydata")] * 4 and not (tmp_path / "~").exists()
+
+
+# ------------------------------------------------------------------ packaging of the page's files (docs/TWO_FLIES_PLAN.md 7.1, 7.6)
+VENDORED = ["virtual_fly/web/vendor/three/three.module.js", "virtual_fly/web/vendor/three/three.core.js",
+            "virtual_fly/web/vendor/three/addons/loaders/GLTFLoader.js", "virtual_fly/web/vendor/three/addons/controls/OrbitControls.js",
+            "virtual_fly/web/vendor/three/addons/utils/BufferGeometryUtils.js", "virtual_fly/web/vendor/three/addons/utils/SkeletonUtils.js",
+            "virtual_fly/web/vendor/three/LICENSE", "virtual_fly/web/vendor/three/VERSION.txt",
+            "virtual_fly/web/models/nmf_fly.glb", "virtual_fly/web/models/nmf_gait.json", "virtual_fly/web/models/nmf_gait.bin",
+            "virtual_fly/web/models/LICENSE-NeuroMechFly.txt", "virtual_fly/web/models/NOTICE-NeuroMechFly.txt"]
+
+
+def _listed_packages() -> set:
+    pyproject = (C.PROJECT_DIR / "pyproject.toml").read_text(encoding="utf-8")
+    block = re.search(r"^packages\s*=\s*\[(.*?)\]", pyproject, re.S | re.M).group(1)
+    return set(re.findall(r'"([^"]+)"', block))
+
+
+def test_every_web_folder_that_holds_files_is_a_listed_package():
+    """setuptools sees a folder of files under the package as a package of its own: unlisted, it warns and may one day leave
+    the folder out of the wheel (plan 7.1), so every such folder is named in pyproject.toml's packages list."""
+    listed = _listed_packages()
+    web = C.PACKAGE_DIR / "web"
+    folders = [web] + sorted(p for p in web.rglob("*") if p.is_dir() and p.name != "__pycache__")
+    for folder in folders:
+        if not any(f.is_file() for f in folder.iterdir()):
+            continue
+        name = "virtual_fly." + ".".join(folder.relative_to(C.PACKAGE_DIR).parts)
+        assert name in listed, f"{folder} holds files but {name} is not in pyproject.toml's packages"
+    for f in VENDORED:
+        assert (C.PROJECT_DIR / f).is_file(), f
+
+
+def _can_build_a_wheel_offline() -> bool:
+    try:
+        import setuptools
+    except ImportError:
+        return False
+    v = tuple(int(x) for x in setuptools.__version__.split(".")[:2])
+    if v >= (70, 1):                                       # bdist_wheel is built into setuptools from 70.1
+        return True
+    if v >= (68, 0):
+        try:
+            import wheel                                   # noqa: F401
+            return True
+        except ImportError:
+            return False
+    return False
+
+
+@pytest.mark.skipif(not _can_build_a_wheel_offline(),
+                    reason="setuptools cannot build a wheel without the network (it needs 70.1 or newer, or 68 with the wheel package)")
+def test_a_wheel_carries_the_vendored_library_and_the_fly_model(tmp_path):
+    """A plain `pip install .` must ship three.js, its licence and version record, and the fly model with its licence and
+    notice (plan 7.7), and the build must print no packaging warning: built from a copy, so the checkout gets no build/."""
+    from virtual_fly import parts, vfb
+    src = tmp_path / "src"
+    src.mkdir()
+    for name in ("pyproject.toml", "README.md"):
+        shutil.copy(C.PROJECT_DIR / name, src / name)
+    shutil.copytree(C.PACKAGE_DIR, src / "virtual_fly", ignore=shutil.ignore_patterns("__pycache__"))
+    (src / "data").mkdir()
+    for f in (vfb.MAP_FILE, vfb.TREE_FILE, vfb.RX_FILE, parts.REGION_FILE):
+        shutil.copy(f, src / "data")
+    out = subprocess.run([sys.executable, "-m", "pip", "wheel", "-v", "--no-deps", "--no-build-isolation", "-w", str(tmp_path / "wheel"), str(src)],
+                         capture_output=True, text=True, timeout=900, cwd=tmp_path)
+    log = out.stdout + out.stderr
+    assert out.returncode == 0, log[-3000:]
+    assert "is absent from the `packages` configuration" not in log and "would be ignored" not in log, log[-3000:]
+    wheels = list((tmp_path / "wheel").glob("virtual_fly-*.whl"))
+    assert len(wheels) == 1, wheels
+    names = set(zipfile.ZipFile(wheels[0]).namelist())
+    for f in VENDORED:
+        assert f in names, f"{f} is not in the wheel"
+    for f in ("fbbt_map.json.gz", "fbbt_tree.json.gz", "vfb_receptors.json.gz", "mb_roi_connectivity.json.gz"):
+        assert f"virtual_fly/data/{f}" in names
