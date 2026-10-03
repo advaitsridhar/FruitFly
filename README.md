@@ -105,7 +105,9 @@ Step by step:
 
 On macOS or Linux, use `python3` instead of `py`. To install the package with its console scripts
 and the test tools (in the virtual environment): `py -m pip install -e ".[dev]"` then `fly-game`,
-`fly-brain`, `pytest`. A plain `pip install .` (or `pip install git+https://github.com/advaitsridhar/FruitFly.git`,
+`fly-brain`, `pytest`. The page's own tests in a browser (`tests/test_browser.py`) need one more extra, `py -m pip install -e ".[browser]"`,
+and a one-time browser download, `py -m playwright install chromium` (about 150 MB; on Linux also `py -m playwright install-deps`,
+which asks for sudo); they run only with `VF_BROWSER_TESTS=1` set. A plain `pip install .` (or `pip install git+https://github.com/advaitsridhar/FruitFly.git`,
 without a clone) works too: that copy carries the four small data files inside the package and
 downloads the connectome to `~/.cache/virtual-fly` instead of `data/`. `FLY_DATA_DIR` sets another folder
 for everything the kit downloads or builds, in an installed copy and in a checkout alike (a checkout then
@@ -279,6 +281,13 @@ background re-test run on her too; `docs/SCIENCE.md` section 9.5 compares each w
 `docs/SCIENCE.md` section 9 says why most of those differences are not yet sex differences.
 
 **Two simulated flies.** `py fly_game.py --partner female` puts the male and FlyWire's female in one dish, each brain in its own process (2.7-2.9x real time in two runs on a 16-core laptop, `docs/SCIENCE.md` 10.2; 3.6x with `--backend cupy` on its GPU, section 11.3; `--fast` if yours is slower). Nothing links the two brains but the world: she sees him as a small dark thing, hears his song through her Johnston's organ (at up to 70 Hz on her sound cells, the loudest steady drive that does not startle *him*), tastes him when a foreleg lands, and the two bodies bump. `--social seen,song` keeps only those channels; `--partner male` gives him a male rival; `--female --partner male` gives her a male. A fly menu in the page's header picks which fly the panels, the retina and the brain map follow, and the checklist gains pair items (he saw her, sang, tapped; she heard, saw him, was tapped); the Scenarios card gains "Courtship, two brains", 90 s of both flies with the numbers logged at the end. Her decision neurons (`DNp37`, the vaginal plate opening command; `DNp13`, ovipositor extrusion; `vpoEN`, `pC2l`, `SAG`) are shown as watches, never as a verdict: in this data his song reaches her hearing and her giant fibre but not those neurons (`docs/SCIENCE.md` 10.3). `py fly_brain.py --female --pair-experiments` runs the pair experiments, whose ranges are provisional and measured, not validated.
+
+**The dish in 3-D.** The 🧊 3-D button beside the zoom (or `D`) shows the dish as a three.js scene with both flies as
+NeuroMechFly's meshes; right-drag orbits the camera, the wheel zooms, and the camera menu follows the fly in focus or looks
+from the side. It is an animation, not physics: the legs replay NeuroMechFly's recorded stride at the drawn body's gait phase,
+both flies wear the female body model, and the flies are drawn at about three times real size, as the badge on the canvas
+and "What's real here?" say (`docs/SCIENCE.md` section 12). Nothing of it loads until the button is pressed; without WebGL2
+the page stays in 2-D and says so.
 
 **In code**, start with `my_first_fly.py`: poke, wait, listen, in three lines. Then:
 
@@ -495,4 +504,11 @@ These are the things the critics point at, so it's worth knowing them:
   Atlas, Li H et al., Science 2022; Davie K et al., Cell 2018; and the other data sets named in
   `data/vfb_receptors.json.gz`, all CC BY 4.0) were read once through the VFB connector and shipped
   as the files in `data/`.
+- **The 3-D view:** [three.js](https://threejs.org) 0.186.1 (MIT, copyright 2010-2026 three.js authors), vendored under
+  `virtual_fly/web/vendor/three/` with its licence and the hashes of every file (`VERSION.txt`), loaded only when the 3-D view
+  is switched on. The fly meshes are NeuroMechFly v2's (Wang-Chen S, Stimpfling VA, Lam TKC, Özdil PG, Genoud L, Hurtak F,
+  Ramdya P. *NeuroMechFly v2: simulating embodied sensorimotor control in adult Drosophila.* Nature Methods 21:2353-2362 (2024),
+  [doi:10.1038/s41592-024-02497-y](https://doi.org/10.1038/s41592-024-02497-y); [NeLy-EPFL/flygym](https://github.com/NeLy-EPFL/flygym),
+  Apache-2.0), converted to glTF and decimated for the browser by `tools/build_fly_model.py`, shipped under
+  `virtual_fly/web/models/` with the licence text (`LICENSE-NeuroMechFly.txt`) and a notice of the changes (`NOTICE-NeuroMechFly.txt`).
 - **This kit's code** is yours to use and change however you like.

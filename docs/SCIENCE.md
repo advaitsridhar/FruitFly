@@ -320,7 +320,7 @@ Two things made single verdicts less trustworthy than they looked.
   about 4 s with the after-stimulus test on every seed (parts list on).
 
 The ranges are unchanged. The model's absolute rates are not comparable with recordings
-(section 12), so there is no measured value to move most of them to; the fragile mark says where a
+(section 13), so there is no measured value to move most of them to; the fragile mark says where a
 range edge sits inside the model's own spread instead. The tables elsewhere in this document were
 measured on seed 0 and are left as they were measured.
 
@@ -364,7 +364,7 @@ settled. The split is shown, and the verdict stays on the total (calm below 1,00
 50,000). Counting spikes only would turn all ten of the male's RUNAWAY seed-runs into small loops with
 no change in the dynamics. Over the 13 distinct stimulus conditions (65 seed-runs), the male fly is
 calm in 34, a small loop in 31 and a runaway in none with the parts off; with the parts on, 43 / 12 / 10
-(v2.7's rule: 24 / 2 / 39). Section 12, limitation 3, says what keeps firing.
+(v2.7's rule: 24 / 2 / 39). Section 13, limitation 3, says what keeps firing.
 
 **The game's re-test runs in a separate process (v2.8).** When the parts list is switched or a fly is
 grown, the Genome card re-tests the reflexes while the game keeps running. In a thread of the game's own
@@ -2646,7 +2646,40 @@ draws, the replay loop). Two brains in one process run one after the other; laun
 either would hide one brain's device time behind the other's host replay (a generator-shaped `advance_steps` and a change in
 the brain server). The dense pass could lose a few microseconds with narrower per-neuron arrays. None of these changes a bit.
 
-## 12. Honest limitations
+## 12. The 3-D view (v2.11): animation, not physics
+
+The page can show the dish in 3-D (the "3-D" button beside the zoom): both flies drawn with NeuroMechFly v2's body
+meshes (Wang-Chen et al. 2024; flygym 1.2.1, Apache-2.0, converted to glTF and decimated by `tools/build_fly_model.py`,
+shipped under `virtual_fly/web/models/` with the licence and a notice of the changes) over the same floor, walls, posts,
+food and odours as the 2-D dish, through three.js (MIT, vendored; nothing of it is fetched until the button is pressed).
+
+What is real and what is not, said on the canvas itself ("3-D animation: the legs follow the gait phase; not physics") and
+in "What's real here?":
+
+* **The bodies are the drawn bodies.** In live mode a fly's position, heading, speed, wing gesture, abdomen bend,
+  proboscis and jump come from the same hand-built drawn body the 2-D dish shows (section 7 of this document); the
+  3-D view only draws them. The flies are drawn at the drawn scale, about three times real size, as the 2-D dish and the
+  senses are (decision 19 of docs/TWO_FLIES_PLAN.md); in physics and replay modes (Phase 4) they will be drawn at real size.
+* **The legs replay NeuroMechFly's recorded stride.** A gait atlas (`nmf_gait.bin`, 64 phases of one stride plus a
+  standing pose) holds every body part's pose from MuJoCo's kinematics of the joint targets the kit's own walking
+  controller would command at that phase (the recorded step and the tripod offsets of `physics.py`), computed once by the
+  tool, never at run time. The page picks the frame from the drawn body's gait phase and interpolates. No force, no
+  contact, no physics: a leg can slide where the drawn body's speed and the stride do not agree.
+* **Both flies use the same body model, built from a female fly** (NeuroMechFly's micro-CT model): the male is drawn
+  with it too. Its colours are chosen by hand after a look at the animal (red compound eyes, a tan head and thorax, an
+  abdomen banded tan and dark with a dark tip on the male, clear wings, darker legs and tarsi; the female a shade lighter
+  and greyer): nothing in the data says what colour a part is.
+* **Hand-built, still:** the wing extension, the abdomen bend and the proboscis are rotations of those parts about
+  points chosen by hand (the 1.2.1 model has no joints for them); grooming is a simple foreleg pose or nothing; a jump
+  lifts the body by a hand-built height.
+
+Not modelled: anything the 2-D dish does not model either. Cost: the model files 1.6 MB on disk (the glTF 1.4 MB, 58,293
+triangles for one fly, decimated from 502,781; the atlas 126 kB), three.js 2.3 MB vendored, none of it fetched until the view
+is switched on; the frame rate on the owner's screen (the badge's own count, 2026-10-03, the two-fly game in their own browser on
+this laptop; which GPU the browser used, the window size and whether the brain map was open were not recorded): **about 80 frames
+per second**, against the plan's target of 50; headless Chromium on a software renderer (the page's tests) draws 5-12.
+
+## 13. Honest limitations
 
 The starter kit's list, extended. These are the things a neuroscientist would point at first.
 
@@ -2732,7 +2765,7 @@ The starter kit's list, extended. These are the things a neuroscientist would po
 
 ---
 
-## 13. References
+## 14. References
 
 * Ache JM, Polsky J, Alghailani S, Parekh R, Breads P, Peek MY, Bock DD, von Reyn CR, Card GM
   (2019). Neural basis for looming size and velocity encoding in the *Drosophila* giant fiber

@@ -48,6 +48,12 @@ from . import parts as partslib
 
 from .pathways import relay_ranking, strongest_partners, trace
 
+# module scripts and glTF binaries get their proper types whatever the machine's registry says: a Windows registry can make
+# .js come back as text/plain, and browsers refuse module scripts served that way (docs/TWO_FLIES_PLAN.md 7.1)
+mimetypes.add_type("text/javascript", ".js")
+mimetypes.add_type("text/javascript", ".mjs")
+mimetypes.add_type("model/gltf-binary", ".glb")
+
 WEB_DIR = Path(__file__).resolve().parent / "web"
 
 

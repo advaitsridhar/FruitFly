@@ -463,3 +463,20 @@ def test_play_says_cupy_is_missing_before_loading_the_data(capsys, monkeypatch):
     assert e.value.code == 2
     err = capsys.readouterr().err
     assert "error: --backend cupy: the cupy backend needs an NVIDIA GPU: CUDA reports no device" in err and "Traceback" not in err
+
+
+def test_module_scripts_and_gltf_binaries_are_served_with_their_types(served):
+    """Module scripts under vendor/ and .glb models (plan 7.1): text/javascript and model/gltf-binary whatever the machine's
+    registry says, and files in subfolders of web/ are served while paths outside it are not."""
+    game, base = served
+    (S.WEB_DIR / "vendor" / "three").mkdir(parents=True, exist_ok=True)
+    (S.WEB_DIR / "models").mkdir(exist_ok=True)
+    (S.WEB_DIR / "vendor" / "three" / "three.module.js").write_text("export const x = 1;")
+    (S.WEB_DIR / "vendor" / "three" / "addons.mjs").write_text("export const y = 2;")
+    (S.WEB_DIR / "models" / "fly.glb").write_bytes(b"glTF\x02\x00\x00\x00")
+    for path, ctype in (("/vendor/three/three.module.js", "text/javascript"), ("/vendor/three/addons.mjs", "text/javascript"),
+                        ("/models/fly.glb", "model/gltf-binary"), ("/app.js", "text/javascript")):
+        code, headers, body = get(base, path)
+        assert code == 200 and headers["Content-Type"] == ctype and headers["Cache-Control"] == "no-store", (path, code, headers)
+    assert get(base, "/vendor/../index.html")[0] in (200, 404)             # normalised by the client; never outside web/
+    assert get(base, "/models/missing.glb")[0] == 404

@@ -1,0 +1,18 @@
+three.js 0.186.1 (r186), MIT, vendored on 2026-10-03 (docs/TWO_FLIES_PLAN.md 7.1)
+tarball: https://registry.npmjs.org/three/-/three-0.186.1.tgz (4,648,523 bytes)
+registry dist.integrity: sha512-blFeqb49wRCSGUGj7gtpfnSGHy2lwDk94RhUmS1c/hTby70kvChbWpkJ4Pm1390LqzzvTmzgXKHPEafJwCb8jA==
+registry dist.shasum (SHA-1): 6d50f70c2c437f844179bbb56d6f5b774e1ca38a
+tarball SHA-256: 8cd068708ea44f2c73c944b1cead2ba2f0d5c15c8fc194e5700f4e4f4a033fe7
+(the computed SHA-512 and SHA-1 of the downloaded tarball equalled the registry's before anything was copied)
+
+files copied from the tarball's package/ folder (build/ and examples/jsm/), unchanged, with their SHA-256:
+8b378ebe60e2fe500158cb0ac71cb5e8b7d92953c2abcc63a0eb90499653b5bc  LICENSE
+3d79d07ecb686b4e5d93232eedab255331c1beef711e13164eaa1f68655a5f2b  addons/controls/OrbitControls.js
+131c0f78c01d19368ae495caa65b3adaa10487810a36a05bb5901b769a35ac16  addons/loaders/GLTFLoader.js
+9fb63427ce6641fa14fd0baff9cc4d1b5f9c3d85fd084bf2e90e803c44ec1797  addons/utils/BufferGeometryUtils.js
+b1632a703206c3d830de9fcbe515696770d04b71a15ee6b50afa6d2c3298c86f  addons/utils/SkeletonUtils.js
+9edde002b066a9a05676a6127f67735b62baf399bdea529f2f7e31657da769e6  three.core.js
+9052042d676cb0fdc1ddfefe193053f34b7ac0513a616fdac4535d49987812ea  three.module.js
+
+GLTFLoader.js imports ../utils/BufferGeometryUtils.js and ../utils/SkeletonUtils.js, which is why those two are here.
+Loaded by the page through the import map in index.html only when the 3-D view is switched on.

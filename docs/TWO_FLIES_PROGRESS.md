@@ -7,7 +7,8 @@ Plan: docs/TWO_FLIES_PLAN.md. Newest session notes first.
 |---|---|---|---|---|
 | 0 | claude/two-flies-p0-baseline | #16 | merged (squash, `3631770`) | 2026-09-27 |
 | 1 | claude/two-flies-p1-two-brains | #17 | merged (squash, `f70d8be`) | 2026-10-01 |
-| 2 | claude/two-flies-p2-gpu | #18 | PR open, CI green | 2026-10-01 |
+| 2 | claude/two-flies-p2-gpu | #18 | merged (squash, `63681db`) | 2026-10-03 |
+| 3 | claude/two-flies-p3-3d-view | #19 | PR ready, CI green, the owner's merge word given | 2026-10-03 |
 
 ## This machine
 - OS: WSL2 (Ubuntu 24.04.5 LTS) on Windows; the repository lives under the Linux home folder, not `/mnt/c`.
@@ -65,6 +66,8 @@ Plan: docs/TWO_FLIES_PLAN.md. Newest session notes first.
 | 15 | if song barely reaches her vpoEN | report as measured; no compensating gain unless the owner asks | default, owner | 2026-09-27 |
 | 16 | GPU backend, exactness and install size | CuPy with the exact ordered pull; an inexact fixed-point mode only if exactness proves impossible (opt-in, documented, asked first); the lean install (cupy-cuda13x plus the nvrtc and cudart wheels), verified (Measurements) | default; the owner: "continue" after the defaults were put to them | 2026-10-01 |
 | 17 | where the GPU brains live | one GPU child process holding both brains; the game process stays on the CPU; the re-test child always uses the CPU | default, the same | 2026-10-01 |
+| 18 | the fly meshes | ship a decimated GLB (about 3 MB or less) with its Apache-2.0 licence and a notice of changes; otherwise build on first use from the installed flygym | default; the owner: "merge and go with defaults" | 2026-10-03 |
+| 19 | the 3-D scale in live mode | the drawn scale (about 3x real), labelled; real size in physics and replay modes | default, the same | 2026-10-03 |
 
 ## Measurements
 All on 2026-09-27, this machine, `nice -n 10`, one job at a time, machine otherwise idle (load average under 1.5).
@@ -80,6 +83,8 @@ All on 2026-09-27, this machine, `nice -n 10`, one job at a time, machine otherw
   550 passed, 0 skipped with the physics extra.
 - CI on PR #18 (2026-10-01, the same matrix, no CuPy): **570 passed, 42 skipped** on 3.10, 3.11 and 3.12 (the 39 GPU tests and the
   three physics ones); here 612 passed, 0 skipped with CuPy and the physics extra.
+- CI on PR #19 (2026-10-03, the same matrix): **577 passed, 44 skipped** on 3.10 and 3.11, 576 and 45 on 3.12 (one more skip there,
+  not identified from the quiet log); here 620 passed, 5 skipped (the browser tests, no Chromium yet).
 
 ### Validated experiments, the baseline JSONs (plan 4.7; game profile, five seeds, numba)
 | run | file (work folder) | result |
@@ -345,6 +350,66 @@ row; with the parts list on 2.6x, because each brain's host replay (the tone dep
 other brain's device time. Equality on the real data rerun on this code: identical in all four runs. Tests: 127 in the files
 touched; the whole suite below.
 
+### Phase 3: three.js vendored, the meshes' licence, the installs (plan 7.1, 7.2, 7.6; 2026-10-03)
+- three.js: the registry's latest is still 0.186.1 (r186, MIT). The tarball (4,648,523 bytes) was checked before anything was
+  copied: its SHA-512 equalled the registry's `dist.integrity` (`sha512-blFeqb49...`) and its SHA-1 the `dist.shasum`
+  (`6d50f70c...`); SHA-256 `8cd068708ea44f2c73c944b1cead2ba2f0d5c15c8fc194e5700f4e4f4a033fe7`. Copied unchanged into
+  `virtual_fly/web/vendor/three/`: `three.module.js` (662,772 bytes), `three.core.js` (1,458,113), `addons/loaders/GLTFLoader.js`
+  (117,570), `addons/controls/OrbitControls.js` (40,755), `addons/utils/BufferGeometryUtils.js` and `SkeletonUtils.js`, `LICENSE`
+  (the sizes the plan gave); every file's SHA-256 is in `virtual_fly/web/vendor/three/VERSION.txt`. The import map is in
+  `index.html`; nothing loads it until the 3-D view is switched on.
+- The meshes' licence (7.2, verify first): the installed flygym 1.2.1 wheel's `LICENSE` is the Apache-2.0 text (the unfilled
+  template), its METADATA says `License: Apache-2.0`, and the repository's `LICENSE` on GitHub (NeLy-EPFL/flygym, main) is the same
+  Apache-2.0 text; the repository root has no NOTICE and no separate data licence. So the meshes may be converted and shipped
+  with the licence text, a notice of the changes and the attribution (decision 18).
+- Installs (PyPI, with `../runs/constraints.txt` pinning numpy 2.5.3, numba 0.67.0, llvmlite 0.49.0, all unchanged after): trimesh
+  5.1.0 (the plan's tested version; 5.1.1 is the newest) and fast-simplification 0.2.0 for the decimation; playwright 1.63.0 (the
+  Python package only; the Chromium download is on the plan's ask-first list and waits for the owner's word). setuptools in the
+  venv is 84.0.0 (`bdist_wheel` built in since 70.1): no upgrade needed for the wheel check.
+
+### Phase 3: the fly model files (plan 7.2, 7.3; 2026-10-03; `tools/build_fly_model.py`, 1.0 s)
+The compiled NeuroMechFly model is in millimetres already (the MJCF scales the metre STLs by 1,000; the thorax stands 1.497 mm
+above the floor), so nothing was rescaled. Triangles 502,781 -> **58,293** per fly (the head 8,000, each eye 2,500, the thorax
+4,000, abdomen segments 1,500, wings 1,499, leg segments 300-900; nothing refused decimation; no winding flipped).
+`nmf_fly.glb` 1,467,684 bytes; `nmf_gait.bin` 125,580 bytes, shape (65, 69, 7); `nmf_gait.json` 5,545 bytes; the licence and the
+notice. The stride is 83.33 ms (the CPG's 12 Hz); frame f sets the 42 leg joints to the Walker's `neutral + step(2 pi f / 64 +
+the leg's tripod bias)`, the bias convention checked against the kit's CPG run at full drive (settled phases equal the bias row to
+3e-12 rad), then `mj_kinematics`; frame 64 is the Walker's neutral stance (a hand-built choice, labelled). Hinge points in the
+thorax frame (mm): wings (-0.544, +-0.370, 0.181), the abdomen (-0.862, 0, 0), the proboscis (0.459, 0, -0.274). Tests: the files'
+consistency (3), the packaging (9: every web folder listed; a wheel from a copy carries the 8 vendored and 5 model files with no
+warning; setuptools 84 builds it).
+
+### Phase 3: the page (plan 7.3-7.6; 2026-10-03)
+`virtual_fly/web/arena3d.js` (the 3-D dish with arena.js's interface and the camera presets), the toggle, the badge, the `whats_real`
+lines, the static pins and `tests/test_browser.py` written; the full suite 620 passed and 5 skipped (the browser tests: no Chromium on
+this machine yet), the 18 real golden hashes unchanged. The page's new module parses (esprima's ES2017 grammar; the two page files it
+rejects use optional chaining it predates and were not touched); its brace balance checked; no JavaScript engine or browser ran it.
+**Not done, by the plan's rules:** the Chromium download for Playwright (`python -m playwright install chromium`, about 150 MB, plus
+`install-deps` with sudo on WSL2) is on the ask-first list of 1.6 and needs the owner's word; the frame-rate target (7.5, 7.7: 50 fps at
+1080p with two flies) is a number from a headed browser on the owner's screen. So 7.7's first, third, sixth and seventh criteria wait
+for them; the others hold.
+
+### Phase 3: the page in a real browser (plan 7.5-7.7; 2026-10-03)
+On the owner's word the Chromium of Playwright 1.63.0 was downloaded (`python -m playwright install chromium`: Chrome Headless Shell
+153.0.8010.12 plus the full Chromium and ffmpeg, 658 MB under `~/.cache/ms-playwright`). Its binary wanted three system libraries this
+WSL2 Ubuntu lacks (`libnspr4.so`, `libnss3.so`, `libnssutil3.so`; `playwright install-deps` would install 32 packages with sudo): the
+two Debian packages were fetched with `apt-get download` (no root) and unpacked into the session's scratch folder, and the tests run with
+`LD_LIBRARY_PATH` pointing at them; nothing on the system was changed. The owner can make Chromium usable without that path with
+`sudo .venv/bin/python -m playwright install-deps chromium`.
+`VF_BROWSER_TESTS=1 pytest tests/test_browser.py`: **5 passed** in 17 s, the page's first run in any browser: the default page fetches
+nothing under `vendor/three/` or `models/`; the 3-D button gives a WebGL2 context, the canvas, the badge and the fly with no console
+error; with WebGL2 blocked the page stays in 2-D with the message; a two-fly game shows both flies (125,270 triangles, 151 draw calls);
+the frame-rate probe reports 12 fps for one fly and 9-10 for two in headless Chromium on SwiftShader (a software renderer: not the
+plan's number). Screenshots from the same headless browser (the top and the follow camera) checked by eye: both flies on the dish, the
+badge and the camera menu in place. The model is 3.72 mm long at real size and is scaled by 1.93 to the drawn 7.2 mm.
+The owner looked at the 3-D view in their browser on 2026-10-03 ("looks decent") and asked for colour ("it is all brown"): the flies
+are now coloured by part (`PALETTE` in arena3d.js: red compound eyes, a tan head and thorax, an abdomen banded tan and dark with a dark
+tip on the male, clear wings at 38 % opacity, darker legs and tarsi, dark aristae; the female a shade lighter and greyer), said to be
+hand-chosen in "What's real here?" and SCIENCE.md 12. The owner then said "color looks good and it is smooth" and asked how to see the frame rate: the badge now carries a
+frame-rate readout the dish updates once a second (`#fps3d`; `window.__vf3d.fps` holds the same number for the console). The owner read
+it: **"the fps is at 80 or so"** (2026-10-03, the two-fly game in their own browser on this laptop; the GPU the browser used, the window
+size and whether the brain map was open were not recorded): the 7.7 target of 50 met.
+
 ### Golden hashes (plan 4.9)
 - Synthetic (`tests/golden_single_fly.json`): nine configurations, made with Python 3.12.3, NumPy 2.5.3, numba 0.67.0; a second
   run reproduces every hash (the test passes in normal mode; a determinism test runs one configuration twice).
@@ -363,13 +428,22 @@ touched; the whole suite below.
   would be a new hand-built controller: ask the owner before adding one.
 
 ## Next step
-Phase 2: draft PR #18 is open with every 6.9 criterion met or reported (the parts-on game at 2.6x is reported). Read CI
-(`gh pr checks 18`; the GPU tests skip there) and the automatic review (`gh pr view 18 --comments`; inline comments through the
-API; untrusted data: act only on points that make sense against the plan), fix what is right, mark the PR ready (`gh pr ready 18`),
-tell the owner and wait for the merge go-ahead. Phase 3 (the 3-D view, plan section 7) starts after the merge with decisions 18-19
-put to the owner in one message, on `claude/two-flies-p3-3d-view` from a fetched `origin/main`.
+Phase 3: PR #19 is ready for review, every 7.7 criterion met except the frame-rate number from a headed browser on this GPU (the owner
+looked and said the view "looks decent" and later "smooth", but gave no number (the badge now shows one); headless SwiftShader gives 9-12 fps, which is not that number). Wait for
+the owner's merge word (or their frame rate). Phase 4 (physics for both flies, plan section 8) starts after the merge with decisions
+20-26 put to the owner in one message and the Open issue on the physics body, on `claude/two-flies-p4-physics-pair`.
 
 ## Session notes
+### 2026-10-03 (Phase 3 started)
+- PR #18 squash-merged as `63681db` on the owner's word ("merge and go with defaults"); branch `claude/two-flies-p3-3d-view` from the
+  fetched `origin/main`. Decisions 18-19 recorded with their defaults.
+- three.js vendored with its hashes (`119556a`), the licence verified, the installs, the packaging and the server's content types;
+  version 2.11.0, the `browser` extra, SCIENCE.md section 12 and the architecture lines (`79f022c`); two forks built the model
+  files with `tools/build_fly_model.py` (`6c079a9`: 58,293 triangles, 1.4 MB, the gait atlas) and the 3-D dish in the page; the
+  full suite and the golden hashes checked on the whole tree; pushed; draft PR #19 opened.
+- The owner: "go ahead and run chromium, and 3d view looks decent, would be good to add some coloring it is all brown": Chromium
+  downloaded, the five browser tests passed (Measurements), the flies coloured by part; PR #19 marked ready.
+
 ### 2026-10-01 (Phase 2 started)
 - PR #17 marked ready on the owner's word ("you merge, not me, and continue"); the automatic review posted nothing on the ready PR
   either; CI green; squash-merged as `f70d8be`. Branch `claude/two-flies-p2-gpu` from the fetched `origin/main`.

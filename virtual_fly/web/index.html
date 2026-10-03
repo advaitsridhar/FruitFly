@@ -64,6 +64,7 @@
       </span>
       <button class="btn" id="resetBtn" title="New fly, fresh brain (learned synapses and the checklist are kept)">New fly</button>
       <button class="btn" id="zoomBtn" title="Zoom the dish: the mouse wheel over it, this button, or + and −; above 1× the view follows the fly">🔍 1×</button>
+      <button class="btn" id="view3dBtn" title="Show the dish in 3-D with NeuroMechFly's fly meshes (loads three.js and the model the first time; the legs are an animation, not physics)">🧊 3-D</button>
       <span class="sep"></span>
       <label class="slider" title="Time scale of the simulation">speed <input type="range" id="speed" min="0.25" max="2" step="0.05" value="1"> <b id="speedVal">1.00×</b></label>
       <span class="sep"></span>
@@ -83,6 +84,14 @@
 
     <div class="stage" id="stage">
       <canvas id="arena"></canvas>
+      <canvas id="arena3d" hidden></canvas>
+      <div class="badge3d" id="badge3d" hidden title="What the 3-D view is: an animation of the drawn flies' poses on NeuroMechFly's meshes, not a physics simulation; the wings, the abdomen and the proboscis are hand-built rotations; the flies are drawn at about three times real size, as in the 2-D dish">
+        <span class="tag">hand-built</span>
+        <span>3-D animation: the legs follow the gait phase; not physics. Both flies use NeuroMechFly's body, built from a female fly; the legs replay NeuroMechFly's recorded stride</span>
+        <select id="cam3d" title="The camera: the whole dish from above, behind the fly in focus, or from the side; right-drag orbits it, the wheel zooms"><option value="top">camera: top</option><option value="follow">camera: follow</option><option value="side">camera: side</option></select>
+        <span class="fps" id="fps3d" title="Frames drawn per second by this browser, counted over the last second (the plan's target for two flies at 1080p is 50)">– fps</span>
+      </div>
+      <div class="msg3d" id="msg3d" hidden></div>
       <div class="retina" id="retinaBox">
         <canvas id="retina"></canvas>
         <div class="retlabels"><span>L eye</span><span>R eye</span></div>
@@ -318,6 +327,7 @@
     <tr><td><kbd>W</kbd></td><td>toggle the walking urge</td></tr>
     <tr><td><kbd>N</kbd></td><td>new fly</td></tr>
     <tr><td><kbd>H</kbd></td><td>hide / show the side panels (the Panels menu picks which ones)</td></tr>
+    <tr><td><kbd>D</kbd></td><td>the dish in 3-D (NeuroMechFly's meshes; an animation of the drawn flies, not physics); right-drag orbits the camera, the wheel zooms it</td></tr>
     <tr><td><kbd>+</kbd> / <kbd>−</kbd>, wheel over the dish</td><td>zoom the dish (the view follows the fly)</td></tr>
     <tr><td>drag a panel's title (mouse or finger)</td><td>reorder it in the sidebar, or drag it out of the sidebar to float it over the dish; ▲ ▼ in the Panels menu reorder by keyboard</td></tr>
     <tr><td><kbd>Enter</kbd> in the lab</td><td>zap the typed population</td></tr>
@@ -329,6 +339,7 @@
 <div class="overlay" id="loading"><div><h3>Loading the fly's brain</h3><p>Fetching the map of the fly's neurons and waking the nervous system…</p></div></div>
 <div class="overlay" id="disc" hidden><div><h3>Lost the fly's brain</h3><p>The Python program isn't answering. Is <code>fly_game.py</code> still running in its window? Start it again and this page reconnects by itself.</p></div></div>
 
+<script type="importmap">{"imports": {"three": "./vendor/three/three.module.js", "three/addons/": "./vendor/three/addons/"}}</script>
 <script type="module" src="app.js"></script>
 </body>
 </html>

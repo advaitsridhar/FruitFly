@@ -1320,6 +1320,18 @@ class FlyAgent:
                 "The learning rule's constants (rate, time windows, floor, forgetting).",
                 f"Fixes for runaway loops: mild neuron fatigue and blocking the output of the {self.real_conn.select('class:ALLN').size:,} antennal-lobe local neurons.",
                 "With the parts list on, where APL releases: that its inhibition stays local to the busy part of the mushroom body is the literature (Amin et al. 2020), the rule that turns each lobe's Kenyon-cell activity into APL's release there is the kit's. That dopamine turns APL down through Dop2R is the literature (Zhou et al. 2019).",
+                # the 3-D view (docs/TWO_FLIES_PLAN.md 7.3, decision 19): what it shows is an animation of the drawn body's
+                # poses, said on its badge and here; the four lines hold whatever the body is, the view is part of the page
+                "When the 3-D view is on, the legs are an animation, not physics: the gait phase the drawn body walks with picks "
+                "a pose out of a gait atlas (NeuroMechFly's recorded stride through the kit's own leg controller); the wings, the "
+                "abdomen and the proboscis are hand-built rotations of the meshes about hinges; a jump lifts the body by a hand-built amount.",
+                "When the 3-D view is on, both flies, the male included, wear NeuroMechFly's body, a model built from a female fly "
+                "(micro-CT), decimated for the browser; its colours are chosen by hand (red eyes, a tan body with a banded abdomen, "
+                "clear wings, darker legs; the female a shade lighter): nothing in the data says what colour a part is.",
+                "When the 3-D view is on, the legs replay NeuroMechFly's recorded stride (flygym 1.2.1), never this fly's own leg "
+                "commands: the brain's descending neurons move the drawn body, and the meshes follow it.",
+                "When the 3-D view is on, the flies are drawn at the drawn scale, about three times real size (as the 2-D dish and "
+                "the senses; docs/TWO_FLIES_PLAN.md decision 19); in the physics and replay modes they will be real size.",
             ],
             "not_modelled": [
                 "Real neuron shapes and individual properties, hormones, electrical synapses, most neuromodulation, development.",

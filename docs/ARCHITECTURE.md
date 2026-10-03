@@ -44,7 +44,9 @@ virtual_fly/
   scenarios.py     scripted protocols (conditioning, courtship, plume, escape; with a partner, the two-fly courtship)
   server.py        HTTP + Server-Sent Events API (docs/API.md); every per-fly endpoint takes ?fly=k, actions a "fly" field
   play.py          `python fly_game.py ...`
-  web/             the browser page (no build step, no dependencies); with a partner it shows both flies, a fly menu
+  web/             the browser page (no build step; one vendored library, three.js (MIT), loaded only for the 3-D view); with a partner it shows both flies, a fly menu
+                   arena3d.js is the 3-D dish (three.js; the legs animated from the gait phase, labelled "not physics"),
+                   models/ the NeuroMechFly meshes as glTF and the gait atlas (tools/build_fly_model.py), vendor/three/ the library
                    (`#focusSel`) picks which one the panels, retina and brain map follow, per-fly actions carry that
                    fly's id (`setActionFly` in util.js), and two brain maps stay alive so no WebGL context is rebuilt
 tools/
