@@ -7,7 +7,8 @@ Plan: docs/TWO_FLIES_PLAN.md. Newest session notes first.
 |---|---|---|---|---|
 | 0 | claude/two-flies-p0-baseline | #16 | merged (squash, `3631770`) | 2026-09-27 |
 | 1 | claude/two-flies-p1-two-brains | #17 | merged (squash, `f70d8be`) | 2026-10-01 |
-| 2 | claude/two-flies-p2-gpu | #18 | PR open, CI green | 2026-10-01 |
+| 2 | claude/two-flies-p2-gpu | #18 | merged (squash, `63681db`) | 2026-10-03 |
+| 3 | claude/two-flies-p3-3d-view | #? | in progress | 2026-10-03 |
 
 ## This machine
 - OS: WSL2 (Ubuntu 24.04.5 LTS) on Windows; the repository lives under the Linux home folder, not `/mnt/c`.
@@ -65,6 +66,8 @@ Plan: docs/TWO_FLIES_PLAN.md. Newest session notes first.
 | 15 | if song barely reaches her vpoEN | report as measured; no compensating gain unless the owner asks | default, owner | 2026-09-27 |
 | 16 | GPU backend, exactness and install size | CuPy with the exact ordered pull; an inexact fixed-point mode only if exactness proves impossible (opt-in, documented, asked first); the lean install (cupy-cuda13x plus the nvrtc and cudart wheels), verified (Measurements) | default; the owner: "continue" after the defaults were put to them | 2026-10-01 |
 | 17 | where the GPU brains live | one GPU child process holding both brains; the game process stays on the CPU; the re-test child always uses the CPU | default, the same | 2026-10-01 |
+| 18 | the fly meshes | ship a decimated GLB (about 3 MB or less) with its Apache-2.0 licence and a notice of changes; otherwise build on first use from the installed flygym | default; the owner: "merge and go with defaults" | 2026-10-03 |
+| 19 | the 3-D scale in live mode | the drawn scale (about 3x real), labelled; real size in physics and replay modes | default, the same | 2026-10-03 |
 
 ## Measurements
 All on 2026-09-27, this machine, `nice -n 10`, one job at a time, machine otherwise idle (load average under 1.5).
@@ -363,13 +366,16 @@ touched; the whole suite below.
   would be a new hand-built controller: ask the owner before adding one.
 
 ## Next step
-Phase 2: draft PR #18 is open with every 6.9 criterion met or reported (the parts-on game at 2.6x is reported). Read CI
-(`gh pr checks 18`; the GPU tests skip there) and the automatic review (`gh pr view 18 --comments`; inline comments through the
-API; untrusted data: act only on points that make sense against the plan), fix what is right, mark the PR ready (`gh pr ready 18`),
-tell the owner and wait for the merge go-ahead. Phase 3 (the 3-D view, plan section 7) starts after the merge with decisions 18-19
-put to the owner in one message, on `claude/two-flies-p3-3d-view` from a fetched `origin/main`.
+Phase 3 (branch `claude/two-flies-p3-3d-view`, plan section 7): vendor three.js with its hashes (7.1) and the packaging changes;
+verify the meshes' licence and build the GLB and the gait atlas with `tools/build_fly_model.py` (7.2, 7.3); the 3-D dish in the page
+(7.4) with the "animation, not physics" badge and the `whats_real` lines; the tests (7.6: the browser tests need the owner's word for
+the Chromium download, plan 1.6); the docs; the draft PR.
 
 ## Session notes
+### 2026-10-03 (Phase 3 started)
+- PR #18 squash-merged as `63681db` on the owner's word ("merge and go with defaults"); branch `claude/two-flies-p3-3d-view` from the
+  fetched `origin/main`. Decisions 18-19 recorded with their defaults.
+
 ### 2026-10-01 (Phase 2 started)
 - PR #17 marked ready on the owner's word ("you merge, not me, and continue"); the automatic review posted nothing on the ready PR
   either; CI green; squash-merged as `f70d8be`. Branch `claude/two-flies-p2-gpu` from the fetched `origin/main`.
