@@ -10,7 +10,7 @@ Plan: docs/TWO_FLIES_PLAN.md. Newest session notes first.
 | 2 | claude/two-flies-p2-gpu | #18 | merged (squash, `63681db`) | 2026-10-03 |
 | 3 | claude/two-flies-p3-3d-view | #19 | merged (squash, `157ffa9`) | 2026-10-03 |
 | 4 | claude/two-flies-p4-physics-pair | #20 | merged (squash, `5a27efe`) | 2026-10-04 |
-| 5 | claude/two-flies-p5-banc | – | opened; decisions 28-33 at their defaults unless the owner says otherwise (28: see the note) | 2026-10-04 |
+| 5 | claude/two-flies-p5-banc | #21 | draft PR, built and measured; the gain's rule met by no gain (1.0 kept); awaiting the owner | 2026-10-04 |
 
 ## This machine
 - OS: WSL2 (Ubuntu 24.04.5 LTS) on Windows; the repository lives under the Linux home folder, not `/mnt/c`.
@@ -629,6 +629,18 @@ size and whether the brain map was open were not recorded): the 7.7 target of 50
 - Checked on the file: LgLG1a,LgLG1b 304 (the leg taste cells the male's touch can now reach), prefix:JO-C/L,prefix:JO-E/L 230,
   subclass:wind_gravity 407, nerve:ADMN 959, class:Kenyon_Cell 4,438.
 
+### Phase 5: the gain, the comparisons, the checks (plan 9.7-9.9; 2026-10-04; `../runs/p5-sweep-*.json`, `../runs/p5-pair-banc.json`, `../runs/p5-verify1.log`)
+- The sweep (the rule written first, SCIENCE.md 14.3): no gain passes the classic six (best 3 of 6; every gain above 1.0 brings
+  runaways: 10-11 of 12 experiments in the game profile at 2.0 and above); what fails (sugar → G2N-1/MN9 0 Hz, dust → aDN 0 Hz,
+  looming → giant fibre 120-180 Hz) does not move with the gain; **the default gain stays 1.0** (2 of 6 classic, as FlyWire's
+  female; no runaway). The whole sweep took 2 min (12 runs, three at a time).
+- Comparisons (SCIENCE.md 14.4): classic 2/6 (FlyWire 2/6, male 6/6); the song motor neurons readable at last and 0 Hz (no pIP10);
+  the parts list 7,478 modulatory neurons (FlyWire 2,318: the dopamine over-calling triples the tones); the pair experiments 7 of
+  14 readouts, her giant fibre 99 Hz under the song (FlyWire 7-20): the kit's song level would startle her.
+- `fly_game.py --partner banc`: both brains in processes, Ctrl+C → "Bye!", exit 0, nothing left (`../runs/p5-ctrlc-partner-banc.log`).
+- Verification: **649 passed, 7 skipped** (the browser tests, run apart in Phase 4), the 18 real golden hashes unchanged
+  (`../runs/p5-verify1.log`); draft PR #21 opened (`60cd766` and after).
+
 ### Golden hashes (plan 4.9)
 - Synthetic (`tests/golden_single_fly.json`): nine configurations, made with Python 3.12.3, NumPy 2.5.3, numba 0.67.0; a second
   run reproduces every hash (the test passes in normal mode; a determinism test runs one configuration twice).
@@ -647,13 +659,11 @@ size and whether the brain map was open were not recorded): the 7.7 target of 50
   would be a new hand-built controller: ask the owner before adding one.
 
 ## Next step
-Phase 5 (BANC as the female with a nerve cord, plan section 9) on `claude/two-flies-p5-banc` from the merged `main` (v2.12.0),
-decisions 27-33 as the table says. In hand: `tools/pin_banc.py` (the Dataverse listing read, version 3.0 pinned, the files
-downloading to `data/banc-src`), then `virtual_fly/banc.py` modelled on `flywire.py`, the aliases and `tools/alias_audit.py`, the
-sex-versus-data fixes (9.6), `--fly banc` and `--partner banc`, the gain sweep (9.7), the comparisons and docs (9.8), the tests
-(9.9). Beside it, the owner's complaint that the live physics pair is far too slow: the plan's only route to real time is a
-flygym 2.x spike (decision 20); flygym 2.1.0 is installed in `../venv312` (outside the repository, Python 3.12.3, MuJoCo 3.9.0)
-and its two-fly speed is being measured before any migration is proposed.
+Phase 5 (BANC) is built, measured and documented on `claude/two-flies-p5-banc` as draft PR #21 (v2.13.0): the file, the names, the
+gain sweep (no gain meets the rule; 1.0 kept, put to the owner), the comparisons, the tests, the verification. Open with the
+owner: (1) the gain (keep 1.0, the rule's outcome) and whether to mark PR #21 ready; (2) the real-time physics: flygym 2.1 runs two
+flies at 0.95-0.99x here; a migration is decision 20's spike and needs their word (plan 1.8 item 13); (3) decision 28 (version
+3.0 pinned). The plan has no Phase 6: after the merge the two-flies work is complete, apart from the migration if asked.
 
 ## Session notes
 ### 2026-10-04 (Phase 5 opened)
@@ -662,6 +672,9 @@ and its two-fly speed is being measured before any migration is proposed.
   `claude/two-flies-p5-banc` from `origin/main`; flygym 2.1.0 installed in `../venv312` for the real-time question (plan 8.1,
   decision 20: a spike outside the repository, only if the user asks); the BANC deposit's listing read from Dataverse
   (four published versions; version 3.0 pinned, flagged) and the pinning tool written.
+- The build (17 s), the vote maps, the aliases (an audit fork), the loader plumbing and the data-vs-sex fixes (a fork), the
+  gain sweep (no gain meets the rule), the pair experiments, the parts count, the full verification (649 passed, 18 hashes
+  unchanged); SCIENCE.md 14, README, API, ARCHITECTURE; v2.13.0; draft PR #21.
 
 ### 2026-10-04 (Phase 4, the end)
 - The owner: "Go with the recommendations" on the five questions of 2026-10-03: the gate accepted, `dedupe` the default for every

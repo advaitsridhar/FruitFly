@@ -2928,11 +2928,59 @@ females, as in FlyWire), `gene:fru` and `gene:dsx` (decision 32), `AVLP568` (one
 
 ### 14.3 The gain
 
-<!-- sweep -->
+The male's 0.65 is a calibration taken over from fly-brain-minecraft; the female's 1.0 is the paper's value. BANC has fewer
+detected synapses per cell: the median input onto a central-brain intrinsic neuron is 147 synapses in the shipped file
+(204 with every connected id kept; FlyWire 332; the male 730), so the data's own prior for her gain is 332/147 = **2.26**
+(1.63 with every id kept; 2.15 over all neurons). The rule was written before any result was looked at
+(`../runs/p5-gain-sweep.sh`, decision 33): the default gain is the smallest gain at which the six classic experiments pass on
+the mean with no runaway after the stimulus, calibrated on the classic six only, the extended and genetic experiments held
+out. Six gains, five seeds, the pure and the game profile (parts list off):
 
-### 14.4 What to compare
+| profile | gain | classic passed | held-out passed (cannot run) | runaways / small loops after a stimulus | what fails among the classic six |
+|---|---|---|---|---|---|
+| pure | 1.0 | 2 of 6 | – | 0 / 1 | sugar: G2N-1 0.2 Hz [20-60], MN9 0 [30-90]; bitter: Scapula 81 [100-400]; looming: giant fibre 144 [250-400], TTMn 18 [40-100]; dust: aDN1 0 [100-260] |
+| pure | 1.5 | 3 of 6 | – | 4 / 4 | sugar: G2N-1 0, MN9 0; looming: giant fibre 177; dust: aDN1 0, aDN2 8 |
+| pure | 1.63 | 3 of 6 | – | 4 / 4 | the same, Fudog 46 [10-40] |
+| pure | 2.0 | 3 of 6 | – | 5 / 5 | the same, Kenyon cells 2.5 Hz [0-1] |
+| pure | 2.26 | 2 of 6 | – | 5 / 5 | the same, bitter: Scapula 32 |
+| pure | 2.85 | 2 of 6 | – | 5 / 5 | the same, TTMn 117 [40-100] |
+| game | 1.0 | 2 of 6 | 1 of 6 (4) | 0 / 0 | as pure 1.0 |
+| game | 1.5 | 2 of 6 | 1 of 6 (4) | 1 / 7 | as above |
+| game | 1.63 | 2 of 6 | 1 of 6 (4) | 2 / 7 | as above |
+| game | 2.0 | 3 of 6 | 1 of 6 (4) | 10 / 11 | sugar, looming, dust |
+| game | 2.26 | 2 of 6 | 2 of 6 (4) | 11 / 11 | sugar, bitter, looming, dust |
+| game | 2.85 | 2 of 6 | 0 of 6 (4) | 11 / 11 | the same |
 
-<!-- comparisons -->
+No gain satisfies the rule: the best is 3 of 6 (1.5-2.0 pure, 2.0 game), and every gain above 1.0 brings runaway firing
+after the stimulus (in the game profile 10-11 of 12 experiments at 2.0 and above). What fails does not move with the gain:
+the labellar sugar cells do not reach G2N-1 (CB0616) or MN9 (0 Hz at every gain), dust on the antennae does not reach the
+grooming neurons (the antennal nerves were damaged in the sample), and the looming route drives the giant fibre to
+120-180 Hz against the range's 250-400. The data's prior (2.26) makes things worse (Kenyon cells and Fudog fire, bitter
+weakens, runaways). **The default gain stays 1.0**, the paper's value: at 1.0 she passes 2 of 6 classic experiments in the
+game profile, exactly as FlyWire's female does (section 9.4), with no runaway. `--gain` remains the switch; the sweep's
+files are `../runs/p5-sweep-<profile>-<gain>.json`.
+
+### 14.4 What to compare (a comparison, not a test)
+
+- **Counts.** Neurons 155,704 (FlyWire 139,262; the male 176,422); connections 9.6 M (15.1 M; 6.3 M); synapses 30.0 M (54.5 M;
+  90.3 M); median input synapses per central-brain intrinsic neuron 147 (332; 730).
+- **The 16 experiments at gain 1.0, game profile** (the ranges are the male's and the published FlyWire model's, so this is a
+  comparison): classic 2 of 6 (FlyWire 2 of 6, the male 6 of 6); held out 1 of 6 runnable, 4 cannot run (no pIP10, no `gene:`
+  selectors; FlyWire: 1 of 7, 3 cannot run). Thanks to the cord the song experiments can read the motor neurons they could
+  not on FlyWire (TTMn, ps1, hg, DLMn), and they read **0 Hz** under the courtship command: pIP10, the male's song neuron, is
+  absent in females, so nothing of the kit's song route exists in her, as expected.
+- **Transmitters and the parts list.** BANC's classifier calls 5,762 cells dopaminergic (FlyWire's 2,318 modulatory neurons in
+  all): with the parts list on, 7,478 modulatory neurons act through slow tones on 56,911 targets (FlyWire 2,318 on 76,420;
+  curated transmitters for 4,933 of them, FlyWire 21), so the dopamine over-calling the authors warn about does inflate the
+  tones threefold; 25,422 graded cells (FlyWire 43,630: no lamina in the sample).
+- **The pair experiments (section 10.4's F1-F5 and M1, game profile, five seeds)**: 7 of 14 readouts in FlyWire's provisional
+  ranges, no experiment whole. Her song-tuned cells (vpoEN, pC2l, DNp37, DNp13) read 0 Hz under the song as FlyWire's do, but the
+  song drives **her giant fibre to 99 ± 4 Hz** (FlyWire 7-20): at the kit's song level (70 Hz on the JO-A/B cells, decision 6,
+  calibrated on the male's giant fibre) the song would startle her. pC1 drives DNp37 to 20 Hz (FlyWire 72-86), pC2l drives
+  DNp13 to 58 Hz (105-113), cVA reaches the DA1 projection neurons at 145 Hz (99-102), SAG drives pC1 to 3 Hz (11-33). Her
+  leg taste cells exist (`LgLG1a`, `LgLG1b`: 304 cells), so in a dish she is a wired target for the male's touch channel.
+- The two-fly game with her (`--partner banc`) starts, runs both brains in their own processes and stops cleanly on Ctrl+C
+  (exit code 0, nothing left).
 
 ## 15. Honest limitations
 
