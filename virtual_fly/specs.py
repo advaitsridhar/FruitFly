@@ -55,7 +55,7 @@ def kit_specs() -> dict[str, str]:
             for name, val in vars(mod).items():
                 if name.isupper() and isinstance(val, str) and _looks_like_spec(val):
                     add(f"senses {mod.__name__.rsplit('.', 1)[-1]} {name}", val)
-                if name.isupper() and isinstance(val, dict):
+                if name.isupper() and isinstance(val, dict) and mod is not olfaction:   # olfaction's dicts are keyed by odour
                     for k in val:
                         if isinstance(k, str) and _looks_like_spec(k):
                             add(f"senses {mod.__name__.rsplit('.', 1)[-1]} {name} key", k)
@@ -84,6 +84,16 @@ def _looks_like_spec(text: str) -> bool:
 def terms(spec: str) -> list[str]:
     """A spec's comma-joined terms, as Connectome.terms splits them (a plain type name, prefix:..., body:..., !x, ...)."""
     return [t.strip() for t in spec.split(",") if t.strip()]
+
+
+def kit_alias_candidates() -> list[str]:
+    """The plain type names plus the ``regex:`` terms the kit's specs use: what the BANC builder tries to alias."""
+    found = set(kit_type_names())
+    for spec in kit_specs().values():
+        for t in terms(spec):
+            if t.startswith("regex:"):
+                found.add(t)
+    return sorted(found)
 
 
 def kit_type_names() -> list[str]:

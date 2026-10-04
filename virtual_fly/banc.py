@@ -34,7 +34,7 @@ from . import __version__
 from .connectome import DATA_DIR, data_folder
 
 BANC_FILE = DATA_DIR / "banc-v888.flyb.gz"
-BUILD = 1                             # bump when the builder changes what goes in the file: older files are rebuilt
+BUILD = 2                             # bump when the builder changes what goes in the file: older files are rebuilt
 SOURCE_DIR = DATA_DIR / "banc-src"
 DATASET = "banc:v888"
 MIN_SYNAPSES = 1                      # every connection, as the kit uses the other two files
@@ -91,7 +91,15 @@ ALIASES = {
     "prefix:R1-R6": ("R1-6", "the same, for the parts list's graded cells"),
     "VS": ("regex:^VS[0-9]+$", "the VS cells, typed VS1-VS8 in FAFB-style names"),
     "prefix:KCa'b'": ("prefix:KCa'b',prefix:KCapbp", "the alpha'/beta' Kenyon cells, spelled KCapbp-* in FAFB-style names"),
+    # the audit's findings (tools/alias_audit.py, 2026-10-04): what BANC calls the kit's remaining names
+    "AN19A018": ("prefix:AN19A018", "the brake neuron: BANC splits it into AN19A018_a to _d (12 cells by their MANC name)"),
+    "regex:^DLMn": ("DLM1-4,DLM5", "the dorsal longitudinal flight muscle motor neurons, typed DLM1-4 and DLM5 in BANC"),
+    "regex:^hg": ("iv1,iv2,iv3,iv4", "the hg1-hg4 wing motor neurons of MANC's names, typed iv1-iv4 in BANC"),
+    "subclass:wind_gravity": ("JO-C,JO-E", "the wind and gravity Johnston's-organ cells: BANC's sub classes name the JO groups, "
+                                            "its types JO-C (wind) and JO-E (gravity) carry them"),
 }
+# the other name columns a kit name may hide under, in the order tried, for the data-derived aliases
+NAME_COLUMNS = ("malecns_cell_type", "manc_cell_type", "fafb_cell_type")
 
 
 def _sha256(path: Path) -> str:
@@ -287,15 +295,30 @@ def known_transmitters(rows: list[dict]) -> dict[str, dict]:
 
 
 def data_aliases(rows: list[dict], names) -> dict[str, str]:
-    """For every kit name that is not a BANC cell type, the BANC cells whose ``malecns_cell_type`` is that name, as a
-    ``body:`` population spec (plan 9.5; ``auto:`` proposals are left out and counted by the audit)."""
+    """For every kit name that is not a BANC cell type (a plain name, or ``regex:^...``), the BANC cells whose MaleCNS,
+    MANC or FAFB name (``NAME_COLUMNS``, the union over the three) is that name, as a ``body:`` population spec (plan 9.5;
+    ``auto:`` proposals are left out and counted by the audit). A regex name takes the cells whose other name matches it."""
+    import re
     types = {r.get("cell_type") for r in rows}
-    by_male: dict[str, list[int]] = collections.defaultdict(list)
-    for a in rows:
-        m = a.get("malecns_cell_type")
-        if m and not str(m).startswith("auto:"):
-            by_male[m].append(int(a["root_id"]))
-    return {n: ",".join(f"body:{r}" for r in by_male[n]) for n in names if n not in types and n in by_male}
+    found = {}
+    for n in names:
+        if n in types or n.startswith(("prefix:", "class:", "superclass:", "subclass:", "nt:", "nerve:", "neuromere:", "gene:", "body:")):
+            continue
+        pattern = re.compile(n[len("regex:"):]) if n.startswith("regex:") else None
+        ids = []
+        for col in NAME_COLUMNS:
+            for a in rows:
+                v = a.get(col)
+                if not v or str(v).startswith("auto:"):
+                    continue
+                if pattern is not None:
+                    if any(pattern.match(part.strip()) for part in str(v).split(",")):
+                        ids.append(int(a["root_id"]))
+                elif str(v) == n or n in [part.strip() for part in str(v).split(",")]:
+                    ids.append(int(a["root_id"]))
+        if ids:
+            found[n] = ",".join(f"body:{r}" for r in sorted(set(ids)))
+    return found
 
 
 def build_banc(out: Path | str = BANC_FILE, src_dir: Path | str = SOURCE_DIR, quiet: bool = False,
@@ -350,8 +373,8 @@ def build_banc(out: Path | str = BANC_FILE, src_dir: Path | str = SOURCE_DIR, qu
     names = list(alias_names) if alias_names is not None else []
     if alias_names is None:
         try:
-            from .specs import kit_type_names
-            names = kit_type_names()
+            from .specs import kit_alias_candidates
+            names = kit_alias_candidates()
         except Exception:                           # the audit's collector is a convenience, not a requirement
             names = []
     aliases = {k: v for k, (v, _) in ALIASES.items()}

@@ -619,6 +619,16 @@ size and whether the brain map was open were not recorded): the 7.7 target of 50
   200/93 = 2.15. The sweep (`../runs/p5-gain-sweep.sh`) takes 1.0, 1.5, 1.63, 2.0, 2.26, 2.85 on the shipped file once `--fly
   banc` exists; the rule is written at the top of the script before any result is looked at.
 
+### Phase 5: the kit's names on her cells (plan 9.5; 2026-10-04; **new** `tools/alias_audit.py` by a fork; `../runs/p5-alias-audit.md`)
+- The audit (153 specs from `virtual_fly/specs.py`, each term counted on the three files, candidates for every zero): male 147 of 153
+  specs whole (the empty ones the female readouts), FlyWire 133, BANC 125 at first. Fixed by hand (AN19A018 → prefix:AN19A018,
+  regex:^DLMn → DLM1-4,DLM5, regex:^hg → iv1-iv4, subclass:wind_gravity → JO-C,JO-E) and by the data-derived aliases widened to the
+  MANC and FAFB cross-match names and to regex terms (TTMn 2 cells, AN_SMP_2 1, regex:^ps1 3): **BANC 141 of 153**, the 11 left
+  explained (pIP10, the male's song neuron; gene:fru/dsx, decision 32; AVLP568, not in BANC). The collector's one false positive
+  (olfaction's odour keys) fixed. BUILD 2.
+- Checked on the file: LgLG1a,LgLG1b 304 (the leg taste cells the male's touch can now reach), prefix:JO-C/L,prefix:JO-E/L 230,
+  subclass:wind_gravity 407, nerve:ADMN 959, class:Kenyon_Cell 4,438.
+
 ### Golden hashes (plan 4.9)
 - Synthetic (`tests/golden_single_fly.json`): nine configurations, made with Python 3.12.3, NumPy 2.5.3, numba 0.67.0; a second
   run reproduces every hash (the test passes in normal mode; a determinism test runs one configuration twice).
