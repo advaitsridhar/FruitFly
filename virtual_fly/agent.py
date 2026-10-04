@@ -722,7 +722,7 @@ class FlyAgent:
             if touched is not None:
                 felt["touches_fly"] = touched.id
                 if tap is not None:
-                    felt["tap_force"] = round(tap[1], 1)   # MuJoCo's units (the fly weighs about 9,800)
+                    felt["tap_force"] = round(tap[1], 1)   # MuJoCo's units, micronewtons (the fly weighs about 10)
                 if touched.sex == "female":              # these leg taste cells answer female pheromone (hand-built rule)
                     if self.has_leg_taste:
                         for spec, hz in PHEROMONE_GRNS.items():
@@ -1351,8 +1351,9 @@ class FlyAgent:
                 "How smells, wind, touch and dust become firing rates, and which sensory types they drive.",
                 ("How descending-neuron firing becomes movement: the decoder's weights, what wins when commands compete, and that "
                  "a giant-fibre burst (5 spikes in 50 ms, not one) is the escape command. "
-                 "Speeds and turn rates come from leg physics (NeuroMechFly v2 in MuJoCo; its stepping rhythm, recorded steps and "
-                 "left/right drive are flygym's)." if getattr(self, "body_kind", "drawn") == "physics" else
+                 "Speeds and turn rates come from leg physics (NeuroMechFly v2 in MuJoCo through flygym 2.1; its stepping rhythm, "
+                 "recorded steps, joint and adhesion settings and left/right drive are flygym's); the dish wall's friction is set by "
+                 "hand (0.3) so that the fly slides along it instead of climbing it and falling." if getattr(self, "body_kind", "drawn") == "physics" else
                  "How descending-neuron firing becomes movement: speeds, turn rates, the jump (it needs a giant-fibre burst, "
                  "5 spikes in 50 ms, not one), and what wins when commands compete."),
                 "The walking urge, hunger and thirst, odour-guided steering (innate valence + the learned KC→MBON bias), the female's behaviour.",
@@ -1372,7 +1373,7 @@ class FlyAgent:
                 "When the 3-D view is on, both flies, the male included, wear NeuroMechFly's body, a model built from a female fly "
                 "(micro-CT), decimated for the browser; its colours are chosen by hand (red eyes, a tan body with a banded abdomen, "
                 "clear wings, darker legs; the female a shade lighter): nothing in the data says what colour a part is.",
-                "When the 3-D view is on, the legs replay NeuroMechFly's recorded stride (flygym 1.2.1), never this fly's own leg "
+                "When the 3-D view is on, the legs replay NeuroMechFly's recorded stride (from flygym), never this fly's own leg "
                 "commands: the brain's descending neurons move the drawn body, and the meshes follow it.",
                 "When the 3-D view is on, the flies are drawn at the drawn scale, about three times real size (as the 2-D dish and "
                 "the senses; docs/TWO_FLIES_PLAN.md decision 19); two physics flies in one world are drawn at real size, as replays will be.",
@@ -1383,7 +1384,7 @@ class FlyAgent:
                    "tap that arouses pC1 is MuJoCo's contact force on those parts, not the drawn 3.4 mm rule. The other fly is "
                    "seen at real size (a 0.7 mm cylinder 1.1 mm tall, from the model's measured 2.8 x 1.0 x 1.1 mm), and both "
                    "flies are drawn at real size, about a third of the drawn fly.",
-                   "The male wears NeuroMechFly's body model, built from a female fly (micro-CT): flygym 1.2.1 has no male body, "
+                   "The male wears NeuroMechFly's body model, built from a female fly (micro-CT): flygym has no male body, "
                    "and scaling this one would be hand-built."] if hasattr(self.body, "pair") else []),
             ],
             "not_modelled": [

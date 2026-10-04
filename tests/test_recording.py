@@ -187,7 +187,9 @@ def test_a_physics_pair_replay_reproduces_the_geoms_exactly(conn, rec_dir):
     names = sorted(p.name for p in folder.iterdir())
     assert names == ["frames.jsonl.gz", "header.json", "model", "poses.f32", "qpos.npy", "t.npy"]
     h = recording.read_header(folder)
-    assert h["physics"]["model"] == "two_flies.xml" and h["physics"]["fly_names"] == ["fly0", "fly1"] and h["physics"]["pairs"] == 233
+    assert h["physics"]["model"] == "two_flies.mjb.gz" and h["physics"]["fly_names"] == ["fly0", "fly1"] and h["physics"]["pairs"] == 233
+    assert 5_000_000 < (folder / "model" / "two_flies.mjb.gz").stat().st_size < 40_000_000 and h["physics"]["engine"].startswith("flygym 2.1, MuJoCo 3.9")
+    assert sorted(p.name for p in (folder / "model").iterdir()) == ["two_flies.mjb.gz"]      # the raw .mjb is not left behind
     assert h["poses"]["geoms"] == recording.atlas_geoms() and len(h["poses"]["geoms"]) == 69 and h.get("poses_error") is None
     q = np.load(folder / "qpos.npy", allow_pickle=False)
     t = np.load(folder / "t.npy", allow_pickle=False)

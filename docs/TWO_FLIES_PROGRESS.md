@@ -10,7 +10,8 @@ Plan: docs/TWO_FLIES_PLAN.md. Newest session notes first.
 | 2 | claude/two-flies-p2-gpu | #18 | merged (squash, `63681db`) | 2026-10-03 |
 | 3 | claude/two-flies-p3-3d-view | #19 | merged (squash, `157ffa9`) | 2026-10-03 |
 | 4 | claude/two-flies-p4-physics-pair | #20 | merged (squash, `5a27efe`) | 2026-10-04 |
-| 5 | claude/two-flies-p5-banc | #21 | ready, the owner's answers in (gain 1.0, version 3.0); merging on the owner's word | 2026-10-04 |
+| 5 | claude/two-flies-p5-banc | #21 | merged (squash, `ff16d8c`) | 2026-10-04 |
+| real time | claude/flygym2-realtime | draft | the flygym 2.1 migration, v3.0.0: built, measured, a draft PR; the owner's word needed on the physics golden hashes | 2026-10-04 |
 
 ## This machine
 - OS: WSL2 (Ubuntu 24.04.5 LTS) on Windows; the repository lives under the Linux home folder, not `/mnt/c`.
@@ -29,6 +30,9 @@ Plan: docs/TWO_FLIES_PLAN.md. Newest session notes first.
   Phase 2 (2026-10-01, the lean set of plan 6.2): cupy-cuda13x 14.2.0, nvidia-cuda-runtime 13.4.92, nvidia-cuda-nvrtc 13.4.92,
   cuda-toolkit 13.4.2 (the meta-package), cuda-pathfinder 1.8.2; no cuBLAS, cuRAND, cuSOLVER, cuFFT or nvJitLink wheels.
   Not installed yet: playwright (Phase 3), trimesh (Phase 3).
+- The migration (2026-10-04): flygym 1.2.1 uninstalled, `flygym==2.1.0` installed with its dependencies (mujoco 3.9.0, jaxtyping,
+  loguru, mediapy with ipython, tabulate; numba 0.67 and scipy 1.18 already there); dm_control, dm_tree and gymnasium are still in
+  the venv but no longer used or listed. `physics.available()` is true on 2.1.
 
 ## Fresh-clone findings
 (the same text is under "Known state of main" in docs/TWO_FLIES_PLAN.md)
@@ -653,6 +657,18 @@ size and whether the brain map was open were not recorded): the 7.7 target of 50
   `--compare ../runs/p0-golden-real.json` at the end of every phase.
 
 ## Open issues
+- **The two-fly physics game is at half real time, not real time** (v3.0, 2026-10-04): one physics fly runs at 1.04x, the pair at
+  0.49 (0.62 in the live game of the Ctrl+C check; 0.69 with `--physics-levers dt2`). MuJoCo and the controller are 69 % of the
+  pair's tick; the other 16 ms are the game's own two-fly work (senses, brain traffic, the state), which no body setting touches.
+  The route left: let the brains compute while the bodies step (one tick of sensorimotor latency, a game-loop change; real flies
+  have 20-40 ms visuomotor latencies), which is the owner's call, or a multithreaded solver MuJoCo's Python bindings do not expose.
+- **The physics golden hashes changed** (by nature: a new engine and body): `tests/test_golden_single_fly.py[physics_body]` fails
+  locally and `tools/golden_hashes.py --compare ../runs/p0-golden-real.json` reports the two physics configurations changed (16
+  unchanged). Re-save on the owner's word: `VF_UPDATE_GOLDEN=1 .venv/bin/python -m pytest -q tests/test_golden_single_fly.py` and
+  `.venv/bin/python tools/golden_hashes.py --save ../runs/p0-golden-real.json` (the synthetic file is committed, the real one not).
+- **The turn rate at full steering is 129 deg/s, not 165** (SCIENCE.md 6.7.1): the 1.2.1 body itself gives 136 under MuJoCo 3.9 with
+  the kit's controller, so this is the engine's solver, not the port; speeds match to 1 %. The lure is faced on 9 of 10 runs (10 of 10
+  before; the published 1.2.1 table said 8 of 10).
 - **The owner's view of the physics body (2026-09-27, after looking at the three games):** the drawn-body games look fine; the
   physics body "is less realistic than the other one and barely moves and jumps properly". The owner wants both bodies to stay
   selectable (the physics body enabled or disabled) and hopes the physics mode performs better by the end. For Phase 4: keep the
@@ -662,13 +678,62 @@ size and whether the brain map was open were not recorded): the 7.7 target of 50
   would be a new hand-built controller: ask the owner before adding one.
 
 ## Next step
-Phase 5 (BANC) is built, measured and documented on `claude/two-flies-p5-banc` as draft PR #21 (v2.13.0): the file, the names, the
-gain sweep (no gain meets the rule; 1.0 kept, put to the owner), the comparisons, the tests, the verification. Open with the
-owner: (1) the gain (keep 1.0, the rule's outcome) and whether to mark PR #21 ready; (2) the real-time physics: flygym 2.1 runs two
-flies at 0.95-0.99x here; a migration is decision 20's spike and needs their word (plan 1.8 item 13); (3) decision 28 (version
-3.0 pinned). The plan has no Phase 6: after the merge the two-flies work is complete, apart from the migration if asked.
+The owner reads the draft PR of the migration (the numbers in SCIENCE.md 6.7.1 and below) and says: whether v3.0.0 is the version
+they meant ("version 3.0"), whether the physics golden hashes may be re-saved (Open issues), whether `dt2` stays a switch, and
+whether the pair's remaining half (the game loop's own work) is worth a latency-for-speed change of the game loop. Then: re-save
+the hashes, mark the PR ready, merge on their word. The MuJoCo Warp question (plan 8.10) stays closed as before.
 
 ## Session notes
+### 2026-10-04 (the flygym 2.1 migration: v3.0.0, a draft PR)
+- **Why the first fit walked at 2 mm/s sideways:** the 3-D view's gait atlas is a whole-body tripod cycle (frame k = leg LF at
+  phase k, the legs RF, LM and RH half a cycle on), and the first refit read it as a per-leg table. Found by rebuilding each
+  leg's foot path from the fitted angles (three legs moved forwards in "stance"); fixed by rolling the second tripod's frames by
+  32 (`tools/refit_stride.py`, the shipped `web/models/nmf_stride.npz`, 37 KB: the angles, the swing windows, every atlas geom's
+  fixed offset on the 2.1 bodies, the 1.2.1 inputs the next run reads back; `--check` rebuilds the atlas to 0.003 mm and 0.4 deg).
+- **Why flygym 2.1's own joints were not kept:** stiffness 10 and damping 0.5 fight kp 45 (tracking error 9 deg, 10.3 mm/s);
+  with 1.2.1's `Fly` defaults (0.05/0.06, tarsi 7.5/0.01, kp 45, ±65, adhesion 40) the body walks at 14.3 mm/s, straight. flygym
+  2.1's `MjsJoint.stiffness` is a 3-vector in the bindings (set `[k, 0, 0]`). Its `Fly` alias warns; `NeuroMechFly` is used.
+- **Units:** flygym 2.1's masses are grams, forces micronewtons (the fly weighs 10.05 µN); 1.2.1's exported model has the same
+  mass (1.03 mg) and the same split (0.9 in the thorax group, 0.1 in the legs), so no gain was rescaled: the (wrong) ÷1000
+  guess collapsed the fly (measured, discarded).
+- **Written:** `virtual_fly/physics.py` on flygym 2.1 (`build_fly`, `add_wall`, `add_wall_pairs`, `FlyRig`, `CPG`, `Stride`,
+  `Walker`, `PhysicsBody` unchanged in interface; the levers' 2.1 semantics; `DEFAULT_LEVERS = ()`), `physics_pair.py` on it
+  (the part names stay 1.2.1's, `physics.part_geom` maps them; two flies with `add_ground_contact_sensors=False`), `recording.py`
+  (the model as a gzipped `.mjb`, `load_model` reads it and the old MJCF export; `PoseMapper` places the 1.2.1 geoms on the 2.1
+  bodies), `tools/render_replay.py` (the thorax by either name), `tools/refit_stride.py` (new), `tools/build_fly_model.py`
+  (the build needs 1.2.1: says so; `--check` works), the tests (`test_physics.py`, `test_physics_pair.py`, `test_recording.py`,
+  `test_fly_model.py`: the stride check), the physics extra (`flygym==2.1.0`, `opencv-python-headless`), version 3.0.0 (the
+  engine, the recordings' model and the install all change: a major bump; the owner's "version 3.0" was read as the BANC
+  deposit's version, so this is flagged in the PR), README, SCIENCE 6.7 and the new 6.7.1, 13.1, 13.4, 13.5, 15, API,
+  ARCHITECTURE, the NeuroMechFly NOTICE, the page's and the launcher's pace texts, "What's real here?".
+- **Decided alone, flagged:** the wall's sliding friction 0.3 (at flygym's 1.0 the body climbs the 3 mm wall and falls on its side,
+  at 0 the solver blows up; four approaches measured); the controller every 0.5 ms instead of every 0.1 ms step (speed, turn and
+  wobble within 1 %; the pair 23 % faster); `dt2` left a switch (within tolerance on speeds and turns, the lure faced on 7 of 10
+  against 9: outside decision 25); the version number.
+- **Measured** (SCIENCE.md 6.7.1; `../runs/p6-table-k5.json`, `p6-table-dt2.json`, `p6-bench-k5.json`, `p6-bench-dt2.json`):
+  speeds 4.0 / 8.7 / 14.5 mm/s (baseline 4.0 / 8.7 / 14.3), turns 45 / 86 / 129 deg/s (32 / 85 / 165), the lure faced 9 of 10
+  (10 of 10), MDN 21.6 mm (20.0), quiet-arena HS 6-39 Hz (14-25), the one-fly game at 1.04x real time (0.14-0.19), the pair at 0.49
+  (0.085; `full` 0.46, `none` 0.52; `dt2` 0.69), the live game 1.00 and 0.62 (the Ctrl+C checks, both exit 0 with nothing left),
+  peak memory 1.07-1.14 GB (1.57). An 8 s pair recording (`recordings/20261004-203235`, 47 MB with the gzipped model) renders to
+  a 720p MP4 at 23 frames per second (6-7 before). The wobble question settled by running the 1.2.1 body from the sample
+  recording's exported model under MuJoCo 3.9 with the kit's controller: 260 against 256 deg/s, 136 against 130 deg/s turning,
+  15.5 against 14.3 mm/s: the two bodies agree; the baseline's 165 was MuJoCo 3.2.7. Ruled out with measurements: 1.2.1's
+  contacts, noslip 100 with the Newton solver at 1,000 and 1e-12, the elliptic cone, the mass split, self-collisions (none
+  changes the wobble), MuJoCo threads and islands (not in these bindings), the wall as bitmask collisions (5 %).
+- **Verified:** `../runs/p1-verify.sh`: 649 passed, 1 failed (the physics golden hash, expected), 7 browser tests skipped there and
+  run separately (7 passed, the physics replay in the 3-D view included); the golden compare 16 unchanged, 2 changed (both
+  physics); `tools/refit_stride.py --check` ok; `tools/build_fly_model.py --check` ok.
+- Helper scripts in `../runs/`: `p6_walk_check.py`, `p6_walk_diag.py` (the kinematic stroke check that found the tripod
+  mix-up), `p6_contact_check.py`, `p6_calib_check.py`, `p6_wobble.py`, `p6_wobble2.py`, `p6_old_body.py`, `p6_old_body2.py`
+  (the 1.2.1 body under MuJoCo 3.9), `p6_mass.py`, `p6_selfcoll.py`, `p6_speed.py`, `p6_speed2.py`, `p6_dt2.py`,
+  `p6_wallcost.py`; the exports `nmf_step_flygym121.npz`, `nmf_geoms_flygym121.npz`, `cpg_controller_121.py`, the refits
+  `nmf_stride_v2.npz` (atlas order) and `v3` (per leg); the flygym 1.2.1 wheel unpacked in the session scratchpad for reading.
+
+### 2026-10-04 (Phase 5 merged, the migration opened)
+- The owner: "sure gain 1, mark pr and merge, route to real time, version 3.0" → PR #21 marked ready and squash-merged as
+  `ff16d8c` (v2.13.0 on `main`). Branch `claude/flygym2-realtime` from `origin/main`; flygym 1.2.1's stepping data, CPG source and
+  geom offsets exported from the kit's venv before the engine is replaced.
+
 ### 2026-10-04 (Phase 5 opened)
 - The owner: "merge" → PR #20 squash-merged as `5a27efe` (v2.12.0 on `main`). Then, after seeing the live physics pair at 0.16x
   real time: "bruh its so fckin slow... do phase 5 and make sure it moves in real time". The game stopped; branch

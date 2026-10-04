@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Render a saved physics recording to an MP4 with MuJoCo's own renderer (the two-flies work, docs/TWO_FLIES_PLAN.md 8.9).
 A hand-run tool. The recording is a folder made by the game's "capture" action (virtual_fly/recording.py): its exported
-MuJoCo model and `qpos.npy` are replayed through MuJoCo's kinematics at the video's frame rate, however slowly the run
-itself went (a physics pair runs at about a tenth of real time), so the video plays at real speed.
+MuJoCo model and `qpos.npy` are replayed through MuJoCo's kinematics at the video's frame rate, however fast or slowly the
+run itself went, so the video plays at real speed.
 
     python tools/render_replay.py recordings/20261003-210246                       # overhead, 1080p, 30 fps, 1x
     python tools/render_replay.py recordings/20261003-210246 --camera follow --follow 0 --out /tmp/male.mp4
@@ -36,7 +36,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from virtual_fly import recording                 # noqa: E402
+from virtual_fly import physics, recording        # noqa: E402
 
 CAMERAS = ("overhead", "follow", "side")
 SMOOTH_S = 0.25                                   # the camera's aim follows the flies with this time constant (recording s)
@@ -52,6 +52,16 @@ def _resolve(folder: str) -> Path:
         raise SystemExit(f"{folder}: not a recording folder (no header.json), and no recording of that id under "
                          f"{recording.recordings_dir()}")
     return found
+
+
+def _thorax_id(m, fly: str) -> int:
+    """The fly's thorax body: flygym 2.1's name (c_thorax), or 1.2.1's (Thorax) in a recording made before v3.0."""
+    for name in (physics.THORAX, "Thorax"):
+        try:
+            return m.body(f"{fly}/{name}").id
+        except KeyError:
+            continue
+    raise SystemExit(f"{fly}: no thorax body in the recording's model")
 
 
 def _free_joints(m) -> list[int]:
@@ -135,7 +145,7 @@ def render(folder: Path, out: Path | None = None, fps: float = 30.0, width: int 
     if len(t) == 0:
         raise SystemExit(f"{folder}: an empty recording")
     fly_names = header["physics"]["fly_names"]
-    thorax = [m.body(f"{fly}/Thorax").id for fly in fly_names]
+    thorax = [_thorax_id(m, fly) for fly in fly_names]
     free_adrs = _free_joints(m)
     arena_r = 50.0
     if tint:

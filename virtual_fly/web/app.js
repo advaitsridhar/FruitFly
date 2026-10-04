@@ -241,8 +241,8 @@ function syncControls(s) {
   if (w && !windDrag && !held("wind")) { wind.angle = w.angle; wind.speed = w.speed; const ws = $("windSpeed"); if (Math.abs(parseFloat(ws.value) - w.speed) > 0.5) ws.value = w.speed; drawWindDial(); setText($("windVal"), w.speed > 0 ? `${Math.round(w.speed)} mm/s` : "off"); }
 }
 let slowSince = 0, bodyNoted = false;
-const PHYSICS_PACE = "The physics body (NeuroMechFly's legs in MuJoCo) runs at about a tenth of real time, so the fly's world is in slow motion: that is the body's pace, not your computer's.";
-const PAIR_PACE = "Both flies are physics bodies (NeuroMechFly in one MuJoCo world, drawn at real size), which runs well under real time, about a tenth with two flies: that is the bodies' pace, not your computer's.";
+const PHYSICS_PACE = "The physics body (NeuroMechFly's legs in MuJoCo) runs at about real time on a laptop; slower here means your computer is behind, and the fly's world slows down to keep up.";
+const PAIR_PACE = "Both flies are physics bodies (NeuroMechFly in one MuJoCo world, drawn at real size), which runs at about half real time on a laptop: that is the bodies' pace, not your computer's.";
 function slowHint(s) {
   if (s.paused || s.rtf >= 0.6) { slowSince = 0; if ($("hint").__slow) { $("hint").__slow = false; setText($("hint"), HINTS[tool] || ""); } return; }
   if (!slowSince) slowSince = performance.now();
@@ -268,8 +268,7 @@ function toast(msg, holdMs = 0) {
 
 // ---------------------------------------------------------------- replays (docs/TWO_FLIES_PLAN.md 8.7-8.8)
 // A recording played back from disk: its ticks go through the same onState() the live stream feeds, at the run's own clock
-// (header.tick_ms per frame) times the speed control, so a physics pair that ran at a tenth of real time plays at real
-// speed. The live ticks keep arriving and are kept (liveS) but not shown until Leave. A recording of physics bodies carries
+// (header.tick_ms per frame) times the speed control, so a run plays at real speed however fast or slowly it was simulated. The live ticks keep arriving and are kept (liveS) but not shown until Leave. A recording of physics bodies carries
 // every geom's pose per tick (poses.f32): the 3-D view then moves the legs as MuJoCo did, not by the gait animation.
 const replay = { active: false, id: null, header: null, frames: null, poses: null, pos: 0, shown: -1, playing: false, speed: 1, total: 0, loading: false };
 let liveS = null, badge3dText = null;

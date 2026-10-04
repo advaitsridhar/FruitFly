@@ -118,6 +118,10 @@ class FlyModel:
         import mujoco
         from virtual_fly import physics
         self.mujoco = mujoco
+        if not hasattr(physics, "_tripod_phase_biases"):  # the kit moved to flygym 2.1 (v3.0); the meshes and the atlas came from 1.2.1
+            raise SystemExit("build_fly_model.py builds the 3-D model from flygym 1.2.1's meshes, which the kit no longer installs: "
+                             "the shipped files were built on 2026-10-03; --check still verifies them, and tools/refit_stride.py "
+                             "fits the stride onto flygym 2.1")
         self.walker = physics.Walker(seed=0)              # flygym's FlatTerrain, the kit's CPG and recorded step tables
         self.m, self.d = self.walker._m, self.walker._d
         prefix = f"{self.walker.fly.name}/"

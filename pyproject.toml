@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "virtual-fly"
-version = "2.13.0"
+version = "3.0.0"
 description = "A whole fruit-fly nervous system (MaleCNS v1.0 connectome) as a leaky integrate-and-fire simulator, plus a browser game driven by it"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -22,11 +22,9 @@ fast = ["numba>=0.59"]                 # compiled integrator: about twice as fas
 female = ["pyarrow>=12"]               # to build the female fly (FlyWire 783) from its connectivity table
 dev = ["pytest>=7", "numba>=0.59"]
 browser = ["playwright==1.63.0"]      # the page's browser tests (tests/test_browser.py); then: python -m playwright install chromium
-# the physics body (virtual_fly/physics.py; Python 3.10-3.12 only, as flygym 1.2.1 is): these, then
-# `pip install --no-deps flygym==1.2.1` (flygym's own requirements pin numba 0.60 and pull in Jupyter; it imports
-# numba, so numba is here)
-physics = ["mujoco==3.2.7", "dm_control==1.0.27", "dm_tree==0.1.8", "gymnasium", "scipy", "opencv-python-headless>=4",
-           "imageio", "matplotlib", "pyyaml", "tqdm", "networkx", "numba>=0.59"]
+# the physics body (virtual_fly/physics.py; Python 3.12-3.14, as flygym 2.1 is): flygym brings MuJoCo 3.9, scipy and numba;
+# opencv writes tools/render_replay.py's MP4
+physics = ["flygym==2.1.0", "opencv-python-headless>=4"]
 
 [project.scripts]
 fly-brain = "virtual_fly.cli:main"
