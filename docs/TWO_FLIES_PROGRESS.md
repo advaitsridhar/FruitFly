@@ -11,7 +11,7 @@ Plan: docs/TWO_FLIES_PLAN.md. Newest session notes first.
 | 3 | claude/two-flies-p3-3d-view | #19 | merged (squash, `157ffa9`) | 2026-10-03 |
 | 4 | claude/two-flies-p4-physics-pair | #20 | merged (squash, `5a27efe`) | 2026-10-04 |
 | 5 | claude/two-flies-p5-banc | #21 | merged (squash, `ff16d8c`) | 2026-10-04 |
-| real time | claude/flygym2-realtime | #22 (draft) | the flygym 2.1 migration, v3.0.0: built, measured, `0459fe1`; the owner's word needed on the physics golden hashes | 2026-10-04 |
+| real time | claude/flygym2-realtime | #22 | the flygym 2.1 migration, v3.0.0: built, measured, the physics golden hashes re-saved on the owner's word; marked ready and squash-merged on it | 2026-10-04 |
 
 ## This machine
 - OS: WSL2 (Ubuntu 24.04.5 LTS) on Windows; the repository lives under the Linux home folder, not `/mnt/c`.
@@ -685,6 +685,10 @@ the hashes, mark the PR ready, merge on their word. The MuJoCo Warp question (pl
 
 ## Session notes
 ### 2026-10-04 (the flygym 2.1 migration: v3.0.0, a draft PR)
+- The owner: "Resave mark ready merge" → the physics golden hashes re-saved (the committed synthetic file: one line, `physics_body`;
+  the real-data file `../runs/p0-golden-real.json`: 18 hashes, `--compare` 18 unchanged; the golden test passes), PR #22 marked
+  ready and squash-merged on that word; v3.0.0 on `main`. The pair's other half (the game loop) and the latency question stay in
+  Open issues for the owner.
 - **Why the first fit walked at 2 mm/s sideways:** the 3-D view's gait atlas is a whole-body tripod cycle (frame k = leg LF at
   phase k, the legs RF, LM and RH half a cycle on), and the first refit read it as a per-leg table. Found by rebuilding each
   leg's foot path from the fitted angles (three legs moved forwards in "stance"); fixed by rolling the second tripod's frames by
