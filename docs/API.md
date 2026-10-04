@@ -31,7 +31,8 @@ Returned once at start-up (gzip-compressed if the client accepts it; ~2.4 MB raw
 | `presets[]` | `{spec, hz, label}` zap presets for the neuron lab |
 | `types[]` | cell type names (most numerous first) for autocomplete |
 | `edges`, `synapses` | connection and synapse counts |
-| `dataset`, `sex` | which connectome: `male-cns:v1.0` / `male`, or `flywire:v783` / `female` (`fly_game.py --female`, or fly 1 of `--partner female`) |
+| `dataset`, `sex` | which connectome: `male-cns:v1.0` / `male`, `flywire:v783` / `female` (`fly_game.py --female` or `--fly flywire`, or fly 1 of `--partner female`), or `banc:v888` / `female` (`--fly banc`, or fly 1 of `--partner banc`: BANC, a female with a nerve cord, `docs/SCIENCE.md` section 14) |
+| `axis_hint` | which soma axis the brain map's vertical is (`z` for the MaleCNS and FlyWire, `y` for BANC, from the file's meta) |
 | `readouts[]` | `{key, spec, label, group, max, colour}`: the key-neuron bars, in display order, grouped by `group` (only those whose cells exist in this connectome: the female fly has no `pIP10` or `TTMn`); a female fly in a game with a partner also has the group `Her decisions` (`vpoEN`, `pC2l`, `DNp37`, `DNp13`, `DNp55`, `oviDN`, `SAG`: watches, never a verdict) |
 | `checks[]` | `{id, text}`: the experiments checklist (the female's leaves out `groom`, `sound`, `wall`, `court` and `genetics`; with a female partner the male's `court` and `genetics` items name her instead of "add a female"). With a simulated partner each fly's list ends with its pair checks, ids prefixed `pair:` (a male with a female in the dish: `pair:seen`, `pair:sang`, `pair:tapped`; a female with a male: `pair:heard`, `pair:seen_him`, `pair:touched`), each ticked into that fly's `done` and kept across New fly like the others |
 | `odours[]` | `{id, name, glomeruli[], innate, colour, note}` |

@@ -49,7 +49,10 @@ export class BrainView {
     this.path = null; this.picked = -1; this.onPick = null;
     this.dpr = window.devicePixelRatio || 1;
     this.nowSec = 0;
-    this.hasCord = L.region.includes(L.regions.indexOf("nerve cord"));   // the female fly is a brain without one
+    this.hasCord = L.region.includes(L.regions.indexOf("nerve cord"));   // FlyWire's female is a brain without one; the male and BANC have it
+    // L.axis_hint ("z" for the MaleCNS and FlyWire, "y" for BANC): which soma axis the server laid out as the map's vertical
+    // (head at the top, the cord below); the page draws the layout as given and only records the hint for the eye
+    this.axisHint = L.axis_hint || "z";
     this._buildArrays();
     this.gl = null;
     this.lost = false; this.glDead = false; this.lostAt = 0; this.losses = [];

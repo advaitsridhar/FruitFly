@@ -117,6 +117,11 @@ downloads into that folder rather than using `data/`).
 more package, `py -m pip install pyarrow`, and the first run with either flag downloads about 130 MB (FlyWire's
 connectivity table and annotations) and builds a 45 MB file: in `data/` in a checkout, in `~/.cache/virtual-fly` in an installed copy, or in `FLY_DATA_DIR` when that is set.
 
+**A female with a nerve cord** (`--fly banc`, and `--partner banc` in the two-fly game) is BANC, one adult female's brain and
+ventral nerve cord (Bates et al. 2026, Nature; the data deposit on Harvard Dataverse, doi:10.7910/DVN/7WTH1N, CC BY 4.0),
+fetched once (0.44 GB, pinned by checksum) and built in under a minute (`docs/SCIENCE.md` section 14). FlyWire stays the
+default female.
+
 **The physics body** (`--body physics`, optional) needs Python 3.10-3.12 (flygym 1.2.1 does not install
 on 3.13 or newer) and about 680 MB of packages; in a virtual environment made with such a Python:
 `py -m pip install -e ".[physics]"`, then `py -m pip install --no-deps flygym==1.2.1`
@@ -313,6 +318,7 @@ the default, `dedupe`, changes no number and runs 1.3x faster; `none` switches i
 | `py fly_brain.py --stim "prefix:JO-B:100" --record spikes.npz` | Every spike, with neuPrint IDs |
 | `py fly_game.py --partner female` | Two simulated brains in one dish (the male and FlyWire's female) |
 | `py fly_game.py --partner female --body physics` | The same pair as two NeuroMechFly bodies in one MuJoCo world, able to touch (about 0.1x real time) |
+| `py fly_brain.py --fly banc` | A third connectome: BANC, a female with a whole ventral nerve cord (built on first use from its public deposit, `docs/SCIENCE.md` section 14) |
 | `py tools/render_replay.py recordings/<id> --camera follow` | A saved physics replay as a 1080p MP4 at real speed, rendered by MuJoCo (overhead, follow or side camera) |
 | `py fly_brain.py --female --pair-experiments` | Her song, pC1, pC2l, cVA and SAG routes, measured (provisional ranges) |
 | `py fly_game.py --pure` | The paper's model, seizures and all |

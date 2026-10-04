@@ -146,8 +146,10 @@ class FlyBrain:
         self.backend = "cupy" if backend == "cupy" else \
             "numba" if (backend == "numba" or (backend == "auto" and fastbrain.available())) else "numpy"
         self.dt = float(dt)
-        if gain is None:
-            gain = DEFAULT_GAIN.get(getattr(conn, "sex", "male"), DEFAULT_GAIN["male"])
+        if gain is None:                                          # a file that names its own default (BANC: default_gain,
+            meta = getattr(conn, "meta", None)                    # docs/TWO_FLIES_PLAN.md 9.7) wins; else by sex as before
+            meta_gain = meta.get("default_gain") if isinstance(meta, dict) else None
+            gain = meta_gain if meta_gain is not None else DEFAULT_GAIN.get(getattr(conn, "sex", "male"), DEFAULT_GAIN["male"])
         self.gain, self.kenyon_gain = float(gain), float(kenyon_gain)
         self.fatigue_mv, self.fatigue_ms = float(fatigue_mv), float(fatigue_ms)
         self.decay_f = float(np.exp(-dt / fatigue_ms))

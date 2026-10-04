@@ -285,12 +285,22 @@ def aliases(roots) -> dict[str, str]:
     return {k: cells.get(v, v) for k, (v, _) in ALIASES.items()}
 
 
-def write_flyb(path: Path | str, rows: list[dict], pre_root, post_root, n_syn, meta: dict) -> Path:
-    """Write neurons and connections in the kit's FLYB layout (see :class:`virtual_fly.connectome.Connectome`)."""
+def write_flyb(path: Path | str, rows: list[dict], pre_root, post_root, n_syn, meta: dict, dataset: str = DATASET,
+               nt_sign: dict | None = None) -> Path:
+    """Write neurons and connections in the kit's FLYB layout (see :class:`virtual_fly.connectome.Connectome`).
+    ``dataset`` and ``nt_sign`` default to FlyWire's (banc.py passes its own; the FlyWire file is byte for byte what it
+    was: checked when the parameters were added, docs/TWO_FLIES_PROGRESS.md)."""
     n = len(rows)
-    pos = {r["root"]: i for i, r in enumerate(rows)}
-    pre = np.fromiter((pos[int(x)] for x in pre_root), dtype=np.int64, count=len(pre_root))
-    post = np.fromiter((pos[int(x)] for x in post_root), dtype=np.int64, count=len(post_root))
+    nt_sign = NT_SIGN if nt_sign is None else nt_sign
+    roots = np.asarray([r["root"] for r in rows], dtype=np.int64)       # the edges' root ids -> row numbers, by searchsorted
+    order_r = np.argsort(roots, kind="stable")                          # (a Python dictionary per edge took most of the build)
+    sorted_roots = roots[order_r]
+    pre_root = np.asarray(pre_root, dtype=np.int64)
+    post_root = np.asarray(post_root, dtype=np.int64)
+    pre = order_r[np.searchsorted(sorted_roots, pre_root)]
+    post = order_r[np.searchsorted(sorted_roots, post_root)]
+    if not (np.array_equal(roots[pre], pre_root) and np.array_equal(roots[post], post_root)):
+        raise ValueError("an edge names a neuron that is not among the rows")
     order = np.lexsort((post, pre))
     pre, post, syn = pre[order], post[order], np.minimum(np.asarray(n_syn)[order], 65535).astype("<u2")
     row_ptr = np.zeros(n + 1, dtype="<i4")
@@ -315,10 +325,10 @@ def write_flyb(path: Path | str, rows: list[dict], pre_root, post_root, n_syn, m
         return struct.pack("<H", len(b)) + b
 
     body = json.dumps(meta).encode()
-    parts = [b"FLYB", struct.pack("<IIII", 1, n, len(post), 0), s16(DATASET), struct.pack("<I", len(body)) + body]
+    parts = [b"FLYB", struct.pack("<IIII", 1, n, len(post), 0), s16(dataset), struct.pack("<I", len(body)) + body]
     for key in ("type", "superclass", "cls", "subclass", "nt", "side", "dimorphism", "frudsx", "neuromere", "nerve"):
         parts.append(struct.pack("<H", len(tables[key])) + b"".join(s16(t) for t in tables[key]))
-    sign = np.asarray([NT_SIGN.get(r.get("sign_nt", r["nt"]), 1) for r in rows], dtype="i1")
+    sign = np.asarray([nt_sign.get(r.get("sign_nt", r["nt"]), 1) for r in rows], dtype="i1")
     arrays = [np.asarray([r["root"] for r in rows], dtype="<i8"), col("type", "<i4"), col("superclass", "u1"),
               col("cls", "u1"), col("subclass", "<u2"), col("nt", "u1"), sign, col("side", "u1"),
               np.full(n, -1, dtype="i1"), np.full(n, -1, dtype="i1"),          # no medulla column coordinates

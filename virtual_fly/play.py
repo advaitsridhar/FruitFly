@@ -15,6 +15,7 @@ Start the game: ``python fly_game.py`` or ``python -m virtual_fly.play``.
     --parts              start with the genes as each neuron's parts list (the Genome card toggles it)
     --body physics       walk with NeuroMechFly v2 legs in MuJoCo instead of the drawn body (needs flygym;
                          runs at about a tenth of real time)
+    --fly banc           BANC's female with a nerve cord instead (--fly flywire is --female; --partner banc for the partner)
     --partner female     a second simulated fly in the dish, with a brain of its own (FlyWire's female, or
                          `male` for a second MaleCNS brain); each brain then runs in its own process
     --social LIST        which of the hand-built channels between the two flies are on (default
@@ -83,6 +84,9 @@ def _main(argv=None):
     ap.add_argument("--female", action="store_true",
                     help="play with the female fly: FlyWire's whole-brain connectome (release 783), built on first use "
                          "(needs pyarrow); no nerve cord and no computed column-by-column motion vision")
+    ap.add_argument("--fly", choices=("male", "flywire", "banc"), default=None,
+                    help="which fly to play with: male (the MaleCNS, the default), flywire (the same as --female) or banc "
+                         "(BANC: a female with a nerve cord, built on first use from the Dataverse deposit, 0.4 GB; needs pyarrow)")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--body", choices=("drawn", "physics"), default="drawn",
                     help="drawn: the kinematic body (default); physics: NeuroMechFly v2 legs in MuJoCo (optional, needs flygym)")
@@ -93,10 +97,11 @@ def _main(argv=None):
                     help="where the brain runs: auto (in this process for one fly; one process per brain with a partner; one "
                          "process for every brain with --backend cupy), on (its own process even for one fly), off (always in "
                          "this process), server (one brain process for every fly)")
-    ap.add_argument("--partner", choices=("none", "female", "male"), default="none",
+    ap.add_argument("--partner", choices=("none", "female", "male", "banc"), default="none",
                     help="a second simulated fly in the dish, sensing the first only through the world: female = FlyWire's "
-                         "whole brain (release 783, built on first use, needs pyarrow); male = a second MaleCNS brain; "
-                         "with --female the protagonist is the female and --partner male gives her a male partner")
+                         "whole brain (release 783, built on first use, needs pyarrow); male = a second MaleCNS brain; banc = "
+                         "BANC's female with a nerve cord; with --female or --fly banc the protagonist is a female and "
+                         "--partner male gives her a male partner")
     ap.add_argument("--social", metavar="LIST", default=None,
                     help=f"with --partner: the channels between the flies that are on, a comma list (default {DEFAULT_CHANNELS}; "
                          f"the channels are {', '.join(CHANNELS)}, mating as mating:virgin or mating:mated)")
@@ -109,6 +114,10 @@ def _main(argv=None):
                     help="with --partner: the partner's body; it is the protagonist's (--body): physics puts both flies in one "
                          "MuJoCo world, so --partner-body physics needs --body physics, and --partner-body drawn the drawn body")
     args = ap.parse_args(argv)
+    if args.female and args.fly not in (None, "flywire"):
+        ap.error(f"--female means --fly flywire; it cannot go with --fly {args.fly}")
+    args.fly = args.fly or ("flywire" if args.female else "male")
+    args.female = args.fly == "flywire"
     # the partner's flags are checked before anything is loaded (and before the physics body's own check, which
     # stops with an install hint wherever flygym is missing)
     partner = None if args.partner == "none" else args.partner
@@ -173,7 +182,7 @@ def _main(argv=None):
     if args.parts:
         overrides["parts"] = parts_list
     print("Loading the fly's nervous system...", file=sys.stderr)
-    conn = load_connectome(female=args.female)
+    conn = load_connectome(dataset=args.fly)
     # with a GPU brain in the brain process (6.5) the copy built here only feeds the process its settings and the parts
     # counts line below: it is built on the CPU, so this process opens no CUDA context of its own
     gpu_here = args.backend == "cupy" and args.brain_procs == "off"
@@ -207,7 +216,7 @@ def _main(argv=None):
     partner_spec = None
     if partner is not None:
         print("Loading the partner's nervous system...", file=sys.stderr)
-        pconn = load_connectome(female=(partner == "female"))
+        pconn = load_connectome(dataset={"female": "flywire", "male": "male", "banc": "banc"}[partner])
         partner_spec = {"conn": pconn, "brain_kwargs": {k: v for k, v in overrides.items() if k != "parts"},
                         "parts": parts_list if args.parts else False, "autopilot": not args.no_autopilot}
     game = Game(brain, autopilot=not args.no_autopilot, seed=args.seed, columnar=not args.no_columnar,

@@ -320,7 +320,7 @@ Two things made single verdicts less trustworthy than they looked.
   about 4 s with the after-stimulus test on every seed (parts list on).
 
 The ranges are unchanged. The model's absolute rates are not comparable with recordings
-(section 14), so there is no measured value to move most of them to; the fragile mark says where a
+(section 15), so there is no measured value to move most of them to; the fragile mark says where a
 range edge sits inside the model's own spread instead. The tables elsewhere in this document were
 measured on seed 0 and are left as they were measured.
 
@@ -2862,7 +2862,127 @@ stays a switch. `simple` and `dt2` fall outside the tolerance (turn rates off by
 fastest world by far (the pair at 0.141-0.155, the contacts halved), which is where a flygym 2.x spike would start if the owner
 ever wanted one (decision 20). The research's "2 flies, defaults 0.037" on a loaded 4-core machine is this laptop's 0.087.
 
-## 14. Honest limitations
+## 14. The female fly with a nerve cord: BANC (v2.13)
+
+`python fly_brain.py --fly banc` and `python fly_game.py --fly banc` (and `--partner banc` in the two-fly game) run a third
+connectome: BANC, one adult female's brain, neck connective and whole ventral nerve cord (Bates, Phelps, Kim, Yang et al.
+2026, Nature, doi:10.1038/s41586-026-10735-w; the data deposit on Harvard Dataverse, doi:10.7910/DVN/7WTH1N, CC BY 4.0).
+FlyWire (section 9) stays the default female; the male and FlyWire files and everything measured on them are untouched
+(the golden hashes). What she has that FlyWire's female lacks: a nerve cord, so leg taste cells (`LgLG1a`, `LgLG1b`: 304 cells,
+the target the male's touch never had in FlyWire), leg motor neurons, the abdominal ganglion, the wing and haltere motor
+neurons the song experiments read. What she lacks (Bates et al. 2026): the lamina and ocelli are not in the sample (no
+R1-R6, as in the MaleCNS), both antennal nerves were damaged (hearing under-represented), no fruitless or doublesex columns,
+no medulla column coordinates (columnar vision stays off), and fewer synaptic links with an identified neuron on both sides
+(18 % against FlyWire's 42 %), so fewer synapses per cell, which section 14.3 is about.
+
+### 14.1 The file (`virtual_fly/banc.py`, `tools/pin_banc.py`)
+
+The deposit has four published versions (1.0 of 2026-05-27 to 3.0 of 2026-07-01, the "Publication version"). The kit pins
+version 3.0 by Dataverse file id, size, MD5 and SHA-256 (`tools/pin_banc.py` read the listing and measured the hashes on
+2026-10-04): `banc_888_meta.feather` (57.6 MB, 188,508 rows, 81 columns), `banc_888_edgelist_simple_v3.feather` (359 MB,
+13,620,865 edges, string root ids, synapse counts) and the transmitter table; the v3 edge list and the transmitter table are
+byte-identical in every version, only the metadata table was revised. The files are fetched once (0.44 GB, about five
+minutes) into the data folder, checked, and never committed; the FLYB file is built on first use in 17 s with 2.4 GB of
+memory.
+
+Neurons (decision 30): proofread or roughly proofread rows, no glia, trachea or non-neurons, one row per root id: 155,704
+neurons from 188,508 rows (13,064 glia and non-neurons, 19,595 unproofread rows and 145 duplicates dropped). Edges: those
+between kept neurons, 9,599,814 of 13,620,865, carrying 30,011,413 synapses; the 4,021,051 dropped (12.3 M synapses, 29 %
+of all) mostly join one of 15,917 ids that are in the edge list but not in the metadata table at all, unproofread
+segments. FlyWire's source table carried only the published model's proofread neurons (its build kept 14 unannotated ids),
+so this default matches FlyWire's effective rule; "keep every connected id" is the builder's switch (`keep_connected`),
+and its effect on the inputs is measured in 14.3. Every count is in the file's meta.
+
+The vocabulary (plan 9.4): the super classes by a fixed table (BANC's `sensory`, `motor` and `visceral_circulatory`
+split by its `region` column into the kit's optic-lobe, central-brain and nerve-cord classes; the rule is in the meta);
+11,889 kept neurons have no super class in BANC (10,777 optic lobe, 963 nerve cord, 78 central brain) and keep none. The
+class, subclass and nerve maps are built **from the data**: for every BANC value, the kit's value its `malecns_match` neurons
+carry in the male file, by majority vote over the 23,608 neurons BANC itself matches to the male, with the share and the
+number of votes stored in the meta: `kenyon_cell` → `Kenyon_Cell` (0.995 of 388 votes), `antennal_lobe_local_neuron` → `ALLN`
+(0.96), `mushroom_body_dopaminergic_neuron` → `DAN` (1.0), `mushroom_body_output_neuron` → `MBON` (0.89),
+`olfactory_receptor_neuron` → `olfactory` (0.996), `bristle_neuron` → `mechanosensory_tactile` (0.455), chordotonal and
+campaniform neurons → `mechanosensory_proprioceptive`; BANC's long nerve names to the kit's abbreviations (the antennal
+nerves → `AN` at 0.99, the anterior dorsal mesothoracic → `ADMN` at 0.93, the leg nerves → `ProLN`, `MesoLN`, `MetaLN` at
+0.75-0.89); a value that names several nerves maps to nothing. Transmitters: the prediction's label when its score is 0.5 or
+more, else "unclear", the sign the prediction's (79,041 acetylcholine, 20,541 glutamate, 19,406 GABA, 5,927 histamine, 5,762
+dopamine, 737 octopamine, 769 serotonin, 23,394 unclear); **tyramine**, which the other two files never met, keeps its label on
+127 cells with the sign +1 as a modelling choice (`TYRAMINE_SIGN`, a switch: +1, 0 or -1, recorded in the meta; decision 31),
+and the parts list treats it as a fast transmitter. `known_nt` comes from BANC's `neurotransmitter_verified` column by the
+same half-of-the-type rule FlyWire's file uses. Dimorphism: BANC's `dimorphic` becomes "sexually dimorphic", `female-specific`
+and `male-specific` are kept (8 male-specific cells, flagged in the counts). Genetics: `frudsx` is empty, so `gene:fru`,
+`gene:dsx` and `gene:both` select nothing, and the Genetics card says why; the male's labels are not copied across
+(decision 32). Somas: BANC's `root_position_nm`; the brain spans y 39-600 k nm and the cord reaches y 1,107 k, so the long
+axis is y (`layout_axis_hint` in the meta, read by the brain map).
+
+### 14.2 The kit's names on her cells (`tools/alias_audit.py`)
+
+The audit counts every population spec the kit's code names (153, collected by `virtual_fly/specs.py`), for the whole spec
+and each of its terms, on the three files. On BANC, 141 of 153 specs resolve on every term. BANC spells most of the kit's
+names as the MaleCNS does (`MN9`, `DNp01`, `pC1a-e`, the Kenyon-cell types, `JO-A/B/C/E`, `LgLG1a/1b`, `DLM1-4`, `DLM5`); the rest
+are aliases stored in the file: by hand, `GNG232` → `CB0616`, `GNG087` → `CB0219`, `prefix:pC1_` → `prefix:pC1`, `AN19A018` →
+`prefix:AN19A018` (BANC splits the brake neuron into `_a` to `_d`), `regex:^DLMn` → `DLM1-4,DLM5`, `regex:^hg` → `iv1,iv2,iv3,iv4`
+(MANC's hg1-4 wing motor neurons), `subclass:wind_gravity` → `JO-C,JO-E` (BANC's sub classes name the Johnston's-organ
+groups, its types carry them: 407 cells); from the data, the cells whose MaleCNS, MANC or FAFB cross-match name is the kit's
+name (`TTMn` 2 cells, `AN_SMP_2` 1, `regex:^ps1` 3). Empty on her, each explained: `pIP10` (the male's song neuron, absent in
+females, as in FlyWire), `gene:fru` and `gene:dsx` (decision 32), `AVLP568` (one of the seven pC2l types, not in BANC).
+
+### 14.3 The gain
+
+The male's 0.65 is a calibration taken over from fly-brain-minecraft; the female's 1.0 is the paper's value. BANC has fewer
+detected synapses per cell: the median input onto a central-brain intrinsic neuron is 147 synapses in the shipped file
+(204 with every connected id kept; FlyWire 332; the male 730), so the data's own prior for her gain is 332/147 = **2.26**
+(1.63 with every id kept; 2.15 over all neurons). The rule was written before any result was looked at
+(`../runs/p5-gain-sweep.sh`, decision 33): the default gain is the smallest gain at which the six classic experiments pass on
+the mean with no runaway after the stimulus, calibrated on the classic six only, the extended and genetic experiments held
+out. Six gains, five seeds, the pure and the game profile (parts list off):
+
+| profile | gain | classic passed | held-out passed (cannot run) | runaways / small loops after a stimulus | what fails among the classic six |
+|---|---|---|---|---|---|
+| pure | 1.0 | 2 of 6 | – | 0 / 1 | sugar: G2N-1 0.2 Hz [20-60], MN9 0 [30-90]; bitter: Scapula 81 [100-400]; looming: giant fibre 144 [250-400], TTMn 18 [40-100]; dust: aDN1 0 [100-260] |
+| pure | 1.5 | 3 of 6 | – | 4 / 4 | sugar: G2N-1 0, MN9 0; looming: giant fibre 177; dust: aDN1 0, aDN2 8 |
+| pure | 1.63 | 3 of 6 | – | 4 / 4 | the same, Fudog 46 [10-40] |
+| pure | 2.0 | 3 of 6 | – | 5 / 5 | the same, Kenyon cells 2.5 Hz [0-1] |
+| pure | 2.26 | 2 of 6 | – | 5 / 5 | the same, bitter: Scapula 32 |
+| pure | 2.85 | 2 of 6 | – | 5 / 5 | the same, TTMn 117 [40-100] |
+| game | 1.0 | 2 of 6 | 1 of 6 (4) | 0 / 0 | as pure 1.0 |
+| game | 1.5 | 2 of 6 | 1 of 6 (4) | 1 / 7 | as above |
+| game | 1.63 | 2 of 6 | 1 of 6 (4) | 2 / 7 | as above |
+| game | 2.0 | 3 of 6 | 1 of 6 (4) | 10 / 11 | sugar, looming, dust |
+| game | 2.26 | 2 of 6 | 2 of 6 (4) | 11 / 11 | sugar, bitter, looming, dust |
+| game | 2.85 | 2 of 6 | 0 of 6 (4) | 11 / 11 | the same |
+
+No gain satisfies the rule: the best is 3 of 6 (1.5-2.0 pure, 2.0 game), and every gain above 1.0 brings runaway firing
+after the stimulus (in the game profile 10-11 of 12 experiments at 2.0 and above). What fails does not move with the gain:
+the labellar sugar cells do not reach G2N-1 (CB0616) or MN9 (0 Hz at every gain), dust on the antennae does not reach the
+grooming neurons (the antennal nerves were damaged in the sample), and the looming route drives the giant fibre to
+120-180 Hz against the range's 250-400. The data's prior (2.26) makes things worse (Kenyon cells and Fudog fire, bitter
+weakens, runaways). **The default gain stays 1.0**, the paper's value: at 1.0 she passes 2 of 6 classic experiments in the
+game profile, exactly as FlyWire's female does (section 9.4), with no runaway. `--gain` remains the switch; the sweep's
+files are `../runs/p5-sweep-<profile>-<gain>.json`.
+
+### 14.4 What to compare (a comparison, not a test)
+
+- **Counts.** Neurons 155,704 (FlyWire 139,262; the male 176,422); connections 9.6 M (15.1 M; 6.3 M); synapses 30.0 M (54.5 M;
+  90.3 M); median input synapses per central-brain intrinsic neuron 147 (332; 730).
+- **The 16 experiments at gain 1.0, game profile** (the ranges are the male's and the published FlyWire model's, so this is a
+  comparison): classic 2 of 6 (FlyWire 2 of 6, the male 6 of 6); held out 1 of 6 runnable, 4 cannot run (no pIP10, no `gene:`
+  selectors; FlyWire: 1 of 7, 3 cannot run). Thanks to the cord the song experiments can read the motor neurons they could
+  not on FlyWire (TTMn, ps1, hg, DLMn), and they read **0 Hz** under the courtship command: pIP10, the male's song neuron, is
+  absent in females, so nothing of the kit's song route exists in her, as expected.
+- **Transmitters and the parts list.** BANC's classifier calls 5,762 cells dopaminergic (FlyWire's 2,318 modulatory neurons in
+  all): with the parts list on, 7,478 modulatory neurons act through slow tones on 56,911 targets (FlyWire 2,318 on 76,420;
+  curated transmitters for 4,933 of them, FlyWire 21), so the dopamine over-calling the authors warn about does inflate the
+  tones threefold; 25,422 graded cells (FlyWire 43,630: no lamina in the sample).
+- **The pair experiments (section 10.4's F1-F5 and M1, game profile, five seeds)**: 7 of 14 readouts in FlyWire's provisional
+  ranges, no experiment whole. Her song-tuned cells (vpoEN, pC2l, DNp37, DNp13) read 0 Hz under the song as FlyWire's do, but the
+  song drives **her giant fibre to 99 ± 4 Hz** (FlyWire 7-20): at the kit's song level (70 Hz on the JO-A/B cells, decision 6,
+  calibrated on the male's giant fibre) the song would startle her. pC1 drives DNp37 to 20 Hz (FlyWire 72-86), pC2l drives
+  DNp13 to 58 Hz (105-113), cVA reaches the DA1 projection neurons at 145 Hz (99-102), SAG drives pC1 to 3 Hz (11-33). Her
+  leg taste cells exist (`LgLG1a`, `LgLG1b`: 304 cells), so in a dish she is a wired target for the male's touch channel.
+- The two-fly game with her (`--partner banc`) starts, runs both brains in their own processes and stops cleanly on Ctrl+C
+  (exit code 0, nothing left).
+
+## 15. Honest limitations
 
 The starter kit's list, extended. These are the things a neuroscientist would point at first.
 
@@ -2948,7 +3068,7 @@ The starter kit's list, extended. These are the things a neuroscientist would po
 
 ---
 
-## 15. References
+## 16. References
 
 * Ache JM, Polsky J, Alghailani S, Parekh R, Breads P, Peek MY, Bock DD, von Reyn CR, Card GM
   (2019). Neural basis for looming size and velocity encoding in the *Drosophila* giant fiber

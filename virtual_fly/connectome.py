@@ -737,7 +737,10 @@ class TypeGraph:
 DAMAGED = (EOFError, gzip.BadGzipFile, zlib.error, struct.error, ValueError)
 
 
-def _damaged(path: Path, e: Exception, female: bool = False) -> str:
+DATASETS = ("male", "flywire", "banc")       # what load_connectome(dataset=...) takes: the MaleCNS, FlyWire's female, BANC
+
+
+def _damaged(path: Path, e: Exception, female: bool = False, dataset: str | None = None) -> str:
     """One line for a connectome file that cannot be read: which file, what is wrong with it, and what to do."""
     text = str(e)
     why = ("it is cut short" if isinstance(e, (EOFError, struct.error)) or "buffer" in text
@@ -745,6 +748,10 @@ def _damaged(path: Path, e: Exception, female: bool = False) -> str:
            else "its compressed data is corrupt" if isinstance(e, (zlib.error, gzip.BadGzipFile))
            else "it is not a FLYB connectome file" if "not a FLYB" in text
            else e.strerror if isinstance(e, OSError) and e.strerror else text)
+    if dataset == "banc":
+        from .banc import SOURCE_DIR as BANC_SOURCE_DIR
+        return (f"The BANC fly's file {path} is damaged ({why}). Delete it and run again: it is rebuilt from "
+                f"the deposit's files in {BANC_SOURCE_DIR} (downloaded again if they are gone).")
     if female:
         from .flywire import SOURCE_DIR
         return (f"The female fly's file {path} is damaged ({why}). Delete it and run again: it is rebuilt from "
@@ -757,12 +764,22 @@ def _damaged(path: Path, e: Exception, female: bool = False) -> str:
     return f"The connectome file {path} can't be read ({why}): give an intact .flyb.gz file."
 
 
-def load_connectome(path: Path | str | None = None, quiet: bool = False, female: bool = False) -> Connectome:
+def load_connectome(path: Path | str | None = None, quiet: bool = False, female: bool = False,
+                    dataset: str | None = None) -> Connectome:
     """Download (first time only) and load the MaleCNS v1.0 connectome, or with ``female=True`` the female
-    fly's FlyWire 783 connectome (built on first use, see :mod:`virtual_fly.flywire`).
+    fly's FlyWire 783 connectome (built on first use, see :mod:`virtual_fly.flywire`). ``dataset`` names the file
+    instead: "male", "flywire" (what ``female=True`` means) or "banc", the female fly with a nerve cord (built on first
+    use, see :mod:`virtual_fly.banc`).
 
     Only the default male file is downloaded and checksummed; a path given explicitly or through the
     ``FLY_DATA_FILE`` environment variable is loaded as it is."""
+    if dataset is None:
+        dataset = "flywire" if female else "male"
+    elif dataset not in DATASETS:
+        raise ValueError(f"load_connectome(): dataset must be one of {', '.join(DATASETS)}, not {dataset!r}")
+    elif female and dataset != "flywire":
+        raise ValueError("load_connectome(): female=True means dataset='flywire'; give one or the other")
+    female = dataset == "flywire"
     if female:
         if path is not None:
             raise ValueError("load_connectome(): give a path or female=True, not both")
@@ -776,6 +793,19 @@ def load_connectome(path: Path | str | None = None, quiet: bool = False, female:
             path = ensure_female(quiet=quiet)
         except KeyboardInterrupt:                          # Ctrl+C while its sources download or it is built
             raise SystemExit("\nStopped before the female fly was built. Run the same command again to finish it.")
+    elif dataset == "banc":
+        if path is not None:
+            raise ValueError("load_connectome(): give a path or a dataset, not both")
+        from .banc import BANC_FILE, built_with as banc_built_with, ensure_banc
+        try:
+            if BANC_FILE.exists():
+                banc_built_with(BANC_FILE)                 # a header that cannot be read: say so, rebuild nothing
+        except DAMAGED as e:
+            raise SystemExit(_damaged(BANC_FILE, e, dataset="banc")) from None
+        try:
+            path = ensure_banc(quiet=quiet)
+        except KeyboardInterrupt:                          # Ctrl+C while its sources download or it is built
+            raise SystemExit("\nStopped before the BANC fly was built. Run the same command again to finish it.")
     path = Path(DATA_FILE if path is None else path)
     if path == DEFAULT_DATA_FILE:
         download_connectome(path, quiet=quiet)
@@ -786,7 +816,7 @@ def load_connectome(path: Path | str | None = None, quiet: bool = False, female:
         raise SystemExit(f"There is no connectome file at {path}"
                          + (" (FLY_DATA_FILE names it)." if path == DATA_FILE and "FLY_DATA_FILE" in os.environ else ".")) from None
     except (OSError, *DAMAGED) as e:                       # cut short, not gzipped, not a FLYB file, not readable ...
-        raise SystemExit(_damaged(path, e, female=female)) from None
+        raise SystemExit(_damaged(path, e, female=female, dataset=dataset)) from None
     if not quiet:
         print(f"Loaded {conn.dataset} ({conn.sex}): {conn.n:,} neurons, {conn.n_edges:,} connections "
               f"({int(conn.n_syn.sum()):,} synapses) in {time.time() - t0:.1f}s", file=sys.stderr)
