@@ -9,7 +9,8 @@ Plan: docs/TWO_FLIES_PLAN.md. Newest session notes first.
 | 1 | claude/two-flies-p1-two-brains | #17 | merged (squash, `f70d8be`) | 2026-10-01 |
 | 2 | claude/two-flies-p2-gpu | #18 | merged (squash, `63681db`) | 2026-10-03 |
 | 3 | claude/two-flies-p3-3d-view | #19 | merged (squash, `157ffa9`) | 2026-10-03 |
-| 4 | claude/two-flies-p4-physics-pair | – | in progress: 8.2 done (the gate's reproduction put to the owner), 8.3-8.5 built (the pair world, v2.12.0) | 2026-10-03 |
+| 4 | claude/two-flies-p4-physics-pair | #20 | merged (squash, `5a27efe`) | 2026-10-04 |
+| 5 | claude/two-flies-p5-banc | – | opened; decisions 28-33 at their defaults unless the owner says otherwise (28: see the note) | 2026-10-04 |
 
 ## This machine
 - OS: WSL2 (Ubuntu 24.04.5 LTS) on Windows; the repository lives under the Linux home folder, not `/mnt/c`.
@@ -83,6 +84,13 @@ Plan: docs/TWO_FLIES_PLAN.md. Newest session notes first.
 | 25 (applied) | `dedupe` for the single fly too | yes: the default for every physics body (`physics.DEFAULT_LEVERS`), bit-identical frames, 1.27x; `--physics-levers none` switches it off | the same | 2026-10-04 |
 | – (a faster preset) | `dedupe,solver100,noslip5` for the pair | no: keep `dedupe` alone (HS in the quiet arena would rise from 19 to 27 Hz); the preset stays a switch | the same | 2026-10-04 |
 | – (head-on) | two flies walking head-on slide past each other | accepted for now; a wider contact set costs speed and did not change it | the same | 2026-10-04 |
+| 27 | do Phase 5 at all | yes: the owner, "do phase 5" | the owner | 2026-10-04 |
+| 28 | which copy of the BANC deposit to pin | the plan's default was Dataverse V1.0; the deposit now has four published versions (1.0 of 2026-05-27 to 3.0 of 2026-07-01, titled "Publication version"); the v3 edge list and the transmitter table are byte-identical in all of them, only the metadata table differs (V1.0 MD5 `8c8babff…`, 3.0 `6275eda4…`; the GCS mirror's current one matches neither). Pinned: **version 3.0**, the publication version, as fixed and citable as V1.0; put to the owner | Claude's choice, flagged | 2026-10-04 |
+| 29 | edge list | v3 (the deposit's recommended default) | default | 2026-10-04 |
+| 30 | which neurons | proofread and roughly proofread, no glia, trachea or fragments; duplicates removed; every count dropped recorded | default | 2026-10-04 |
+| 31 | tyramine | keep the data's label, sign +1 as a documented modelling choice, the sign switchable (+1, 0, -1) | default | 2026-10-04 |
+| 32 | fru/dsx labels copied from the male | no | default | 2026-10-04 |
+| 33 | the gain rule | sweep including the data-derived prior; the smallest gain at which the classic experiments pass on the mean without a runaway, stated before the sweep; calibrated on the classic six only, the extended and genetic ones held out | default | 2026-10-04 |
 
 ## Measurements
 All on 2026-09-27, this machine, `nice -n 10`, one job at a time, machine otherwise idle (load average under 1.5).
@@ -563,6 +571,54 @@ size and whether the brain map was open were not recorded): the 7.7 target of 50
   retina sees it); solver100 buys the pair nothing (0.084); noself 1.76x single, pair 0.126; the fastest in-tolerance set,
   dedupe+solver100+noslip5: single 1.86x, pair 0.112. Put to the owner with the table.
 
+### Phase 5 opened: the real-time question answered by a flygym 2.x probe (plan 8.1, decision 20; 2026-10-04; `../venv312`, `../runs/p5_flygym2_probe.py`)
+- The owner, after watching the live physics pair at 0.16x: "make sure it moves in real time". No lever reaches it (13.5; the best
+  in-tolerance pair set 0.112). flygym 2.1.0 (PyPI, with MuJoCo 3.9.0) installed in a Python 3.12 venv outside the repository
+  (`../venv312`, 2026-10-04): one NeuroMechFly on flat ground with position actuators on the leg joints and adhesion, as the kit
+  drives its 1.2.1 body. **Measured, 1,000 steps after 300 settling: one fly standing rtf 1.91 (0.052 ms per 0.1 ms step), two flies
+  standing 0.95 (0.105 ms per step), two flies churning their legs (a crude 12 Hz stepping pattern, contact-heavy) 0.99, one fly
+  churning 1.91.** Against 1.2.1 here: one fly 0.22, two 0.087 (walking, in the game). Why: 2.1's model has 72 dofs and 70 geoms per
+  fly with simplified meshes (2,000 faces at most), 55 contact pairs per fly (1.2.1: 2,220), and ships with the solver at 100
+  iterations, 1e-8 tolerance and 5 noslip iterations (the settings my levers tried) at the same 0.1 ms step; adding a second fly
+  needs `add_ground_contact_sensors=False` (the sensor names clash, as the research found).
+- What a migration would mean (not started: plan 1.8 item 13, ask first): the physics extra moves to flygym 2.1 and MuJoCo 3.9
+  (Python 3.12 or newer; 3.10 and 3.11 lose the physics body), a new walker on the 2.x API (no CPG or recorded-step helpers in 2.x:
+  the kit carries its own stride, already in the gait atlas), the pair world, the contact pairs, the tap and the recording's export
+  ported, and the whole 6.7 table measured again on the new body (the gate), since its gait is not 1.2.1's. With the brains in their
+  own processes the two-fly game should land near 0.9-1.0x real time on this laptop; a real gait costs more than churning, so that
+  is an estimate until measured.
+
+### Phase 5: the BANC file built (plan 9.2-9.4; 2026-10-04; **new** `tools/pin_banc.py`, `virtual_fly/banc.py`, `virtual_fly/specs.py`; `flywire.write_flyb` parametrised)
+- The deposit's listing read from Dataverse (no key, a User-Agent): four published versions; version 3.0 ("Publication version",
+  2026-07-01) pinned by id, size, MD5 and SHA-256 (decision 28, flagged: the v3 edge list and the transmitter table are
+  byte-identical in every version, only the metadata table was revised). Downloaded in 5 min (0.44 GB) to `data/banc-src`.
+- The build: **155,704 neurons, 9,599,814 connections, 30,011,413 synapses, 17 s, 2.4 GB peak** (the plan's estimates: a minute,
+  1.9-2.6 GB). Dropped, every count in the meta: 13,064 glia/trachea/non-neurons, 19,595 unproofread rows, 145 duplicate ids;
+  4,021,051 edges (12.3 M synapses, 29 % of all) whose end is a dropped id, 3,856,620 of them to one of **15,917 ids absent from
+  the metadata table** (unproofread segments the v3 edge list keeps; FlyWire's source table carried only the published model's
+  proofread neurons, so its build kept just 14 unannotated ids: the default of decision 30 therefore matches FlyWire's effective
+  rule, and "keep every connected id" stays the switch). 11,889 kept neurons have no super class in BANC (10,777 optic lobe, 963
+  nerve cord, 78 central brain): left blank, counted. The class, subclass and nerve maps by majority vote over the 23,608 neurons
+  BANC matches to the male file: kenyon_cell → Kenyon_Cell (0.995 of 388 votes), antennal_lobe_local_neuron → ALLN (0.96),
+  mushroom_body_dopaminergic_neuron → DAN (1.0), mushroom_body_output_neuron → MBON (0.89), olfactory_receptor_neuron → olfactory
+  (0.996), bristle_neuron → mechanosensory_tactile (0.455), chordotonal and campaniform → mechanosensory_proprioceptive; the
+  nerves to the kit's abbreviations (left/right_antennal_nerve → AN at 0.99, anterior_dorsal_mesothoracic → ADMN at 0.93, the leg
+  nerves → ProLN/MesoLN/MetaLN at 0.75-0.89, ...); multi-nerve values blank. On the file: `class:Kenyon_Cell` 4,438, `class:ALLN`
+  427, `class:DAN` 299, `class:MBON` 104, `class:olfactory` 2,832, `nerve:ADMN` 959, `subclass:grooming` 217, `subclass:wind_gravity`
+  0 (the audit will say what carries it). Transmitters: 79k acetylcholine, 20.5k glutamate, 19.4k GABA, 5.9k histamine, 5.8k
+  dopamine, 737 octopamine, 769 serotonin, **127 tyramine** (sign +1, decision 31), 23.4k unclear. The kit's names BANC spells the
+  same: MN9, DNp01, pC1a-e, KC types, JO-A/B/C/E, LgLG1a/1b (the leg taste cells), DLM1-4/DLM5; by hand: GNG232 → CB0616,
+  GNG087 → CB0219, pC1_ → pC1, VS, KCa'b'; absent (for the audit): TTMn, ps1, hg, AN19A018, AN_SMP_2, AVLP568. The `malecns_cell_type`
+  column names none of the kit's missing names, so no data-derived alias came out.
+- Somas: `root_position_nm`; the brain at y 39-600 k nm, the cord down to y 1,107 k: the long axis is y (`layout_axis_hint: "y"`).
+- The FlyWire writer gained `dataset` and `nt_sign` parameters and `np.searchsorted` for the edges' rows: the female rebuilt in
+  14 s and compared with the kit's file: every byte after the meta block identical (97,453,277 bytes), the tables and the meta
+  identical but the build time (`../runs/p5_flywire_identity.py`).
+- **The gain prior (9.7)**: median input synapses per neuron, cb_intrinsic: male 730, FlyWire 332, BANC 147 as shipped (204 with
+  every connected id kept; the research's 208). Priors: 332/147 = **2.26** (shipped), 332/204 = 1.63 (every id); all neurons
+  200/93 = 2.15. The sweep (`../runs/p5-gain-sweep.sh`) takes 1.0, 1.5, 1.63, 2.0, 2.26, 2.85 on the shipped file once `--fly
+  banc` exists; the rule is written at the top of the script before any result is looked at.
+
 ### Golden hashes (plan 4.9)
 - Synthetic (`tests/golden_single_fly.json`): nine configurations, made with Python 3.12.3, NumPy 2.5.3, numba 0.67.0; a second
   run reproduces every hash (the test passes in normal mode; a determinism test runs one configuration twice).
@@ -581,12 +637,22 @@ size and whether the brain map was open were not recorded): the 7.7 target of 50
   would be a new hand-built controller: ask the owner before adding one.
 
 ## Next step
-Phase 4 on `claude/two-flies-p4-physics-pair` (v2.12.0), PR #20: 8.2-8.9 built, measured and documented (SCIENCE.md 13); the
-owner's five answers of 2026-10-04 applied (Decisions) and the PR marked ready. Wait for the owner's merge word. Then the plan asks
-whether to do Phase 5 at all (BANC, the female's nerve cord; decision 27); Phase 5 would open on `claude/two-flies-p5-banc` from
-the merged `main`.
+Phase 5 (BANC as the female with a nerve cord, plan section 9) on `claude/two-flies-p5-banc` from the merged `main` (v2.12.0),
+decisions 27-33 as the table says. In hand: `tools/pin_banc.py` (the Dataverse listing read, version 3.0 pinned, the files
+downloading to `data/banc-src`), then `virtual_fly/banc.py` modelled on `flywire.py`, the aliases and `tools/alias_audit.py`, the
+sex-versus-data fixes (9.6), `--fly banc` and `--partner banc`, the gain sweep (9.7), the comparisons and docs (9.8), the tests
+(9.9). Beside it, the owner's complaint that the live physics pair is far too slow: the plan's only route to real time is a
+flygym 2.x spike (decision 20); flygym 2.1.0 is installed in `../venv312` (outside the repository, Python 3.12.3, MuJoCo 3.9.0)
+and its two-fly speed is being measured before any migration is proposed.
 
 ## Session notes
+### 2026-10-04 (Phase 5 opened)
+- The owner: "merge" → PR #20 squash-merged as `5a27efe` (v2.12.0 on `main`). Then, after seeing the live physics pair at 0.16x
+  real time: "bruh its so fckin slow... do phase 5 and make sure it moves in real time". The game stopped; branch
+  `claude/two-flies-p5-banc` from `origin/main`; flygym 2.1.0 installed in `../venv312` for the real-time question (plan 8.1,
+  decision 20: a spike outside the repository, only if the user asks); the BANC deposit's listing read from Dataverse
+  (four published versions; version 3.0 pinned, flagged) and the pinning tool written.
+
 ### 2026-10-04 (Phase 4, the end)
 - The owner: "Go with the recommendations" on the five questions of 2026-10-03: the gate accepted, `dedupe` the default for every
   physics body (bit-identical golden frames), the faster preset declined, the head-on sliding accepted, Chromium's libraries left
