@@ -10,7 +10,7 @@ Plan: docs/TWO_FLIES_PLAN.md. Newest session notes first.
 | 2 | claude/two-flies-p2-gpu | #18 | merged (squash, `63681db`) | 2026-10-03 |
 | 3 | claude/two-flies-p3-3d-view | #19 | merged (squash, `157ffa9`) | 2026-10-03 |
 | 4 | claude/two-flies-p4-physics-pair | #20 | merged (squash, `5a27efe`) | 2026-10-04 |
-| 5 | claude/two-flies-p5-banc | #21 | draft PR, built and measured; the gain's rule met by no gain (1.0 kept); awaiting the owner | 2026-10-04 |
+| 5 | claude/two-flies-p5-banc | #21 | ready, the owner's answers in (gain 1.0, version 3.0); merging on the owner's word | 2026-10-04 |
 
 ## This machine
 - OS: WSL2 (Ubuntu 24.04.5 LTS) on Windows; the repository lives under the Linux home folder, not `/mnt/c`.
@@ -91,6 +91,9 @@ Plan: docs/TWO_FLIES_PLAN.md. Newest session notes first.
 | 31 | tyramine | keep the data's label, sign +1 as a documented modelling choice, the sign switchable (+1, 0, -1) | default | 2026-10-04 |
 | 32 | fru/dsx labels copied from the male | no | default | 2026-10-04 |
 | 33 | the gain rule | sweep including the data-derived prior; the smallest gain at which the classic experiments pass on the mean without a runaway, stated before the sweep; calibrated on the classic six only, the extended and genetic ones held out | default | 2026-10-04 |
+| 33 (applied) | the default gain | no gain met the rule; **1.0** shipped (the paper's value, no runaway, 2 of 6 classic as FlyWire's female) | the owner: "sure gain 1" | 2026-10-04 |
+| 28 (confirmed) | version 3.0 of the deposit | confirmed | the owner: "version 3.0" | 2026-10-04 |
+| 20 (applied) | the flygym 2.x migration as the route to real-time physics | go: a time-boxed spike after Phase 5's merge, on its own branch; the physics extra moves to flygym 2.1 and MuJoCo 3.9 (Python 3.12 or newer), the body re-validated against the gate; the physics golden hashes will change and are re-saved once the owner has seen the numbers | the owner: "route to real time" | 2026-10-04 |
 
 ## Measurements
 All on 2026-09-27, this machine, `nice -n 10`, one job at a time, machine otherwise idle (load average under 1.5).
