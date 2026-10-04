@@ -103,8 +103,8 @@ def _main(argv=None):
     ap.add_argument("--physics-levers", metavar="LIST", default=None,
                     help="physics body: speed levers to switch on, a comma list of " + ", ".join(
                         f"{k} ({v})" for k, v in __import__("virtual_fly.physics", fromlist=["LEVERS"]).LEVERS.items())
-                    + "; each changes the physics and is measured before it is adopted (docs/SCIENCE.md 13.5); the pair's default "
-                      "is dedupe, and 'none' switches every lever off")
+                    + "; each changes the physics and is measured before it is adopted (docs/SCIENCE.md 13.5); the default is "
+                      "dedupe, which changes no number, and 'none' switches every lever off")
     ap.add_argument("--partner-body", choices=("drawn", "physics"), default=None,
                     help="with --partner: the partner's body; it is the protagonist's (--body): physics puts both flies in one "
                          "MuJoCo world, so --partner-body physics needs --body physics, and --partner-body drawn the drawn body")
@@ -194,10 +194,10 @@ def _main(argv=None):
               f"their fast synapses; {c['graded_neurons']:,} graded cells).", file=sys.stderr)
     if args.body == "physics" and levers:
         print("Physics levers on (each changes the physics; docs/SCIENCE.md 13.5): " + ", ".join(levers) + ".", file=sys.stderr)
-    elif args.body == "physics" and partner is not None:
-        from .physics import PAIR_DEFAULT_LEVERS
-        print("Physics levers on for the pair, its adopted default (docs/SCIENCE.md 13.5): " + ", ".join(PAIR_DEFAULT_LEVERS)
-              + " (--physics-levers none switches it off).", file=sys.stderr)
+    elif args.body == "physics" and levers is None:
+        from .physics import DEFAULT_LEVERS
+        print("Physics levers on, the adopted default (docs/SCIENCE.md 13.5): " + ", ".join(DEFAULT_LEVERS)
+              + " (it changes no number; --physics-levers none switches it off).", file=sys.stderr)
     if args.body == "physics" and partner is not None:
         print("Body: physics for both flies (NeuroMechFly v2 in one MuJoCo world, each with its own brain, able to touch; "
               "slower than real time, about a tenth with two flies; both drawn at real size).", file=sys.stderr)

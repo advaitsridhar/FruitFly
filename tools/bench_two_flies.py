@@ -137,7 +137,7 @@ def pair_rtf(parts: bool, seconds: float, backend: str = "auto") -> list[dict]:
     return sorted(rows, key=lambda r: r["fly"] != "male")      # male first, whichever finished first
 
 
-def game_rtf(body: str, ticks: int, female: bool = False, parts: bool = False, backend: str = "auto", levers: tuple = ()) -> dict:
+def game_rtf(body: str, ticks: int, female: bool = False, parts: bool = False, backend: str = "auto", levers=None) -> dict:
     from virtual_fly import load_connectome
     from virtual_fly.game import TICK_MS, Game
     from virtual_fly.settings import build_brain
@@ -157,7 +157,7 @@ def game_rtf(body: str, ticks: int, female: bool = False, parts: bool = False, b
         per_tick.append(time.perf_counter() - t1)
     wall = sum(per_tick)
     q = statistics.quantiles(per_tick, n=100)
-    return {"fly": "female" if female else "male", "body": body, "parts": parts, "ticks": ticks, "levers": list(levers),
+    return {"fly": "female" if female else "male", "body": body, "parts": parts, "ticks": ticks, "levers": list(game.physics_levers),
             "rtf": round(ticks * TICK_MS / 1000.0 / wall, 3),
             "tick_ms_p50": round(q[49] * 1000, 2), "tick_ms_p99": round(q[98] * 1000, 2),
             "setup_s": round(setup_s, 1), "peak_rss_mb": peak_rss_mb()}
@@ -211,7 +211,7 @@ class _GpuSampler:
 
 
 def pair_game_rtf(parts: bool, dt: float, ticks: int, backend: str = "auto", body: str = "drawn", contact_set: str = "forelegs",
-                  levers: tuple = ()) -> dict:
+                  levers=None) -> dict:
     """The two-fly game: the male with a simulated FlyWire female, each brain in its own process (or, with the cupy
     backend, both in the brain server's process on the GPU), lockstepped."""
     import contextlib
@@ -234,7 +234,7 @@ def pair_game_rtf(parts: bool, dt: float, ticks: int, backend: str = "auto", bod
         from virtual_fly.agent import HOME, PARTNER_HOME
         from virtual_fly.physics_pair import PairWorld
         game.pair_world.close()
-        game.pair_world = PairWorld([HOME, PARTNER_HOME], seed=0, world=game.world, contact_set=contact_set, levers=levers)
+        game.pair_world = PairWorld([HOME, PARTNER_HOME], seed=0, world=game.world, contact_set=contact_set, levers=game.physics_levers)
         for f, b in zip(game.flies, game.pair_world.bodies):
             b.world, b.rng, f.body = f.world, f.rng, b
         game.reset_world()
@@ -273,7 +273,7 @@ def pair_game_rtf(parts: bool, dt: float, ticks: int, backend: str = "auto", bod
                 seen.add(proc.pid)
                 children["brain_server" if server is not None else f"fly{a.id}_{a.sex}"] = _vmhwm_mb(proc.pid)
         return {"fly": "male+female", "body": body, "parts": parts, "dt": dt, "ticks": ticks, "flies": len(game.flies),
-                "physics": physics_row, "levers": list(levers),
+                "physics": physics_row, "levers": list(game.physics_levers),
                 "backend": game.flies[0].io.settings().get("backend"),
                 "channels": sorted(game.social.names()) if hasattr(game.social, "names") else None,
                 "rtf": round(ticks * TICK_MS / 1000.0 / wall, 3),
@@ -321,14 +321,15 @@ def main():
     ap.add_argument("--json", metavar="FILE")
     ap.add_argument("--contact-sets", default="forelegs", help="pair-physics: the fly-to-fly contact sets to measure, a comma list "
                                                                "of forelegs, full, none (physics_pair.CONTACT_SETS)")
-    ap.add_argument("--levers", default="", help="physics and pair-physics: speed levers to switch on (physics.LEVERS), a comma list")
+    ap.add_argument("--levers", default=None, help="physics and pair-physics: speed levers to switch on (physics.LEVERS), a comma "
+                                                  "list; unset: the game's default (dedupe); 'none': no lever")
     ap.add_argument("--backend", choices=("auto", "numpy", "numba", "cupy"), default="auto",
                     help="the brains' integrator for every row (cupy: the GPU, Phase 2; checked before anything loads)")
     args = ap.parse_args()
     # refuse bad values before anything is loaded (the kit's rule for every option: one line, exit code 2)
     from virtual_fly.physics import parse_levers
     try:
-        levers = parse_levers(args.levers)
+        levers = None if args.levers is None else parse_levers(args.levers)      # None: the game's default
     except ValueError as e:
         ap.error(str(e))
     want = {s.strip() for s in args.only.split(",") if s.strip()}

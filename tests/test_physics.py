@@ -73,6 +73,8 @@ def test_game_ticks_with_physics_body(conn):
     from virtual_fly.game import Game
     from virtual_fly.settings import build_brain
     g = Game(build_brain(conn, "game", seed=0), autopilot=True, seed=1, body="physics")
+    assert g.physics_levers == ("dedupe",) and g.body.levers == ("dedupe",)     # the adopted default, the owner's word
+    assert Game(build_brain(conn, "game", seed=0), seed=1).physics_levers == ()  # the drawn body has none
     for _ in range(4):
         g.tick()
     assert g.body.kind == "physics" and "physics" in g.state_dict["fly"]
@@ -84,7 +86,7 @@ def test_levers_are_named_checked_and_off_by_default():
     assert physics.parse_levers(None) == () and physics.parse_levers("") == () and physics.parse_levers(()) == ()
     assert physics.parse_levers("solver100, dedupe") == ("dedupe", "solver100")     # LEVERS order, whatever the input's
     assert physics.parse_levers(["dt2"]) == ("dt2",) and physics.parse_levers("none") == ()
-    assert physics.PAIR_DEFAULT_LEVERS == ("dedupe",)
+    assert physics.DEFAULT_LEVERS == ("dedupe",)
     with pytest.raises(ValueError, match="unknown physics lever nope"):
         physics.parse_levers("dedupe,nope")
     with pytest.raises(ValueError, match="exclude each other"):

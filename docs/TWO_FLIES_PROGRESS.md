@@ -79,6 +79,10 @@ Plan: docs/TWO_FLIES_PLAN.md. Newest session notes first.
 | – (Phase 4 order) | which of Phase 4's parts first | the reproduction gate (8.2), the pair world (8.3-8.5), record-and-replay and the video (8.7-8.9), the speed levers (8.6) last, so that the owner sees the pair played back at 1x and a video before the slow lever validations | Claude's proposal; the owner: "Defaults" | 2026-10-03 |
 | – (Phase 4 jump) | a hand-built jump for the physics body | none: a giant-fibre burst stays an "escape command" with the legs standing, as v2.8.1 | Claude's proposal; the owner: "Defaults" | 2026-10-03 |
 | 25 (applied) | which levers the pair adopts | `dedupe` as the pair's default: every measured number identical, the single fly's golden frames bit-identical, 1.15-1.27x faster; the rest put to the owner (SCIENCE.md 13.5) | Claude, within decision 25's rule | 2026-10-03 |
+| – (the gate) | may the tool's own run on the unchanged body be the levers' baseline | yes: `../runs/p4-table.json` on this machine, SCIENCE.md 13.5 reads the levers against it | Claude's recommendation; the owner: "Go with the recommendations" | 2026-10-04 |
+| 25 (applied) | `dedupe` for the single fly too | yes: the default for every physics body (`physics.DEFAULT_LEVERS`), bit-identical frames, 1.27x; `--physics-levers none` switches it off | the same | 2026-10-04 |
+| – (a faster preset) | `dedupe,solver100,noslip5` for the pair | no: keep `dedupe` alone (HS in the quiet arena would rise from 19 to 27 Hz); the preset stays a switch | the same | 2026-10-04 |
+| – (head-on) | two flies walking head-on slide past each other | accepted for now; a wider contact set costs speed and did not change it | the same | 2026-10-04 |
 
 ## Measurements
 All on 2026-09-27, this machine, `nice -n 10`, one job at a time, machine otherwise idle (load average under 1.5).
@@ -552,8 +556,9 @@ size and whether the brain map was open were not recorded): the 7.7 target of 50
   noslip0, noself, dedupe+solver100, dedupe+solver100+noslip5; outside: dt2 (speed +17 %, turn +25 % at drive 0.3), simple and
   simple+dedupe+solver100+noslip0 (turn -18 to -19 % at full drive).
 - **dedupe is free**: every number the baseline's, the single physics fly's golden hash bit-identical with it on (checked directly:
-  `b48a56e59f1b` both ways), the single fly 1.27x faster, the pair 0.087 → 0.100. Adopted as the pair's default
-  (`physics.PAIR_DEFAULT_LEVERS`, `--physics-levers none` to switch it off); off for the single fly until the owner says otherwise.
+  `b48a56e59f1b` both ways), the single fly 1.27x faster, the pair 0.087 → 0.100. Adopted as the pair's default on 2026-10-03 and,
+  on the owner's word of 2026-10-04, as every physics body's (`physics.DEFAULT_LEVERS`, `--physics-levers none` to switch it off);
+  the 18 real golden hashes checked again with it as the default (`../runs/p4-verify3.log`).
 - The noslip levers keep the speeds and turns but raise HS in the quiet arena from 18.9 to 34-37 Hz (the body's wobble as the
   retina sees it); solver100 buys the pair nothing (0.084); noself 1.76x single, pair 0.126; the fastest in-tolerance set,
   dedupe+solver100+noslip5: single 1.86x, pair 0.112. Put to the owner with the table.
@@ -576,16 +581,17 @@ size and whether the brain map was open were not recorded): the 7.7 target of 50
   would be a new hand-built controller: ask the owner before adding one.
 
 ## Next step
-Phase 4 on `claude/two-flies-p4-physics-pair` (v2.12.0), draft PR #20: 8.2-8.9 built, measured and documented (SCIENCE.md 13);
-the full verification with the levers' code (`../runs/p4-verify2.log`) and the single physics game's Ctrl+C check
-(`../runs/p4-ctrlc-single.log`) are the last entries of this session. Open with the owner: (1) the gate (may the tool's own run be
-the levers' baseline: SCIENCE.md 13.5 already reads the levers against it); (2) `dedupe` for the single fly too (bit-identical
-frames, 1.27x); (3) the faster in-tolerance preset for the pair (`dedupe,solver100,noslip5`: 0.112 against 0.100, HS in the quiet
-arena up from 19 to 27 Hz); (4) two flies walking head-on slide past each other (SCIENCE.md 13.2): acceptable, or try a wider
-contact set; (5) a look at the replay in the page and the video, then the word to mark PR #20 ready and merge. Phase 5 (BANC,
-decision 27) is asked about after Phase 4.
+Phase 4 on `claude/two-flies-p4-physics-pair` (v2.12.0), PR #20: 8.2-8.9 built, measured and documented (SCIENCE.md 13); the
+owner's five answers of 2026-10-04 applied (Decisions) and the PR marked ready. Wait for the owner's merge word. Then the plan asks
+whether to do Phase 5 at all (BANC, the female's nerve cord; decision 27); Phase 5 would open on `claude/two-flies-p5-banc` from
+the merged `main`.
 
 ## Session notes
+### 2026-10-04 (Phase 4, the end)
+- The owner: "Go with the recommendations" on the five questions of 2026-10-03: the gate accepted, `dedupe` the default for every
+  physics body (bit-identical golden frames), the faster preset declined, the head-on sliding accepted, Chromium's libraries left
+  to them. The default applied to the game, the CLI, the tools and the tests; the full verification with it; PR #20 marked ready.
+
 ### 2026-10-03 (Phase 4 opened)
 - The owner read the 3-D badge: "ok yeah the fps is at 80 or so, quite good. go ahead and merge". The number recorded (SCIENCE.md 12,
   Measurements, the PR body; `ca8723b`); PR #19 squash-merged as `157ffa9` on that word (v2.11.0 on `main`); the demo game on port 8765

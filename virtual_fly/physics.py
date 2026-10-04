@@ -123,7 +123,8 @@ LEVERS = {
 }
 
 
-PAIR_DEFAULT_LEVERS = ("dedupe",)   # adopted for the physics pair (docs/SCIENCE.md 13.5): every measured number identical, 1.3x faster
+DEFAULT_LEVERS = ("dedupe",)   # adopted for every physics body (docs/SCIENCE.md 13.5, the owner's word 2026-10-04): every measured
+#                                 number identical, the golden frames bit for bit the same, 1.3x faster; --physics-levers none switches it off
 
 
 def parse_levers(levers) -> tuple[str, ...]:

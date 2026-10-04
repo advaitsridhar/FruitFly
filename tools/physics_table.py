@@ -129,11 +129,13 @@ def variant_of(row: dict) -> str:
 
 
 # ---------------------------------------------------------------------------------------------- the jobs (child processes)
-def body_job(kind: str, seed: int, seconds: float, levers: tuple = ()) -> dict:
+def body_job(kind: str, seed: int, seconds: float, levers=None) -> dict:
     """The body alone, no brain: the speed at the three forward drives and the turn rate at full steering."""
     import random
     from virtual_fly.physics import make_body
     from virtual_fly.world import World, wrap
+    from virtual_fly.physics import DEFAULT_LEVERS
+    levers = DEFAULT_LEVERS if (levers is None and kind == "physics") else tuple(levers or ())   # None: the game's default
     out = {"job": "body", "body": kind, "stride_average": False, "seed": seed, "seconds": seconds, "levers": list(levers),
            "speed": {}, "path_speed": {}, "turn": {}, "turn_net_mm": {}, "rtf": {}}
     n = int(round(seconds / TICK_S))
@@ -166,7 +168,7 @@ def body_job(kind: str, seed: int, seconds: float, levers: tuple = ()) -> dict:
 
 
 def game_job(kind: str, stride_average: bool, seed: int, scenario: str, seconds: float,
-             wiggle: tuple = (WIGGLE_MM, WIGGLE_HZ), levers: tuple = ()) -> dict:
+             wiggle: tuple = (WIGGLE_MM, WIGGLE_HZ), levers=None) -> dict:
     """One scenario on a fresh game: the fly and its brain from the seed, the parts list on, the dish empty."""
     from virtual_fly import load_connectome
     from virtual_fly.game import GF_BURST, Game
@@ -261,7 +263,7 @@ def game_job(kind: str, stride_average: bool, seed: int, scenario: str, seconds:
         p = f.body.pose
         dx, dy = p.x - x0, p.y - y0
         row = {"job": "game", "body": kind, "stride_average": stride_average, "seed": seed, "scenario": scenario,
-               "seconds": seconds, "autopilot": scenario != "lure_still", "levers": list(levers),
+               "seconds": seconds, "autopilot": scenario != "lure_still", "levers": list(game.physics_levers),
                "heading_change_deg": round(math.degrees(h_acc), 1), "net_mm": round(math.hypot(dx, dy), 2),
                "backward_mm": round(-(dx * math.cos(h0) + dy * math.sin(h0)), 2),
                "faced_at_s": faced_at,
@@ -535,12 +537,13 @@ def main(argv=None) -> int:
     ap.add_argument("--compare", type=Path, help="print the report from a saved --json file and exit")
     ap.add_argument("--baseline", type=Path, help="read the numbers against this saved run (the tool's own run on the unchanged "
                                                   "body: the levers' gate) instead of the published table")
-    ap.add_argument("--levers", default="", help="physics speed levers to switch on, a comma list of " + ", ".join(
-        __import__("virtual_fly.physics", fromlist=["LEVERS"]).LEVERS))
+    ap.add_argument("--levers", default=None, help="physics speed levers to switch on, a comma list of " + ", ".join(
+        __import__("virtual_fly.physics", fromlist=["LEVERS"]).LEVERS) + "; unset: the game's default (dedupe, which changes no "
+        "number); 'none': the body with no lever")
     args = ap.parse_args(argv)
     from virtual_fly.physics import parse_levers
     try:
-        levers = parse_levers(args.levers)
+        levers = None if args.levers is None else parse_levers(args.levers)     # None: the game's default
     except ValueError as e:
         ap.error(str(e))
     target, label = None, "published"
@@ -568,7 +571,7 @@ def main(argv=None) -> int:
         return f"{v} seed {kw['seed']} {kw.get('scenario', 'body')}"
 
     print(f"{len(jobs)} runs, {args.jobs} at a time; load now {os.getloadavg()[0]:.1f}"
-          + (f"; levers {', '.join(levers)}" if levers else ""), flush=True)
+          + (f"; levers {', '.join(levers)}" if levers else "; the game's default levers" if levers is None else "; no lever"), flush=True)
     t0 = time.monotonic()
     rows = run_jobs(jobs, max(1, args.jobs), describe)
     lines = report(rows, target, label)

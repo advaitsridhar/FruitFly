@@ -2849,14 +2849,16 @@ The two-fly physics game with the same sets (parts on, the brains in their own p
 | solver100 | 0.084 | 233 / 1062 | 1.14 | 23.9 |
 
 What the table says. **`dedupe` changes nothing at all**: every measured number is the baseline's, and the single fly's golden
-frames are bit for bit the same with it on (the physics configuration's hash in `tools/golden_hashes.py` is unchanged), while the
-single fly runs 1.3x faster and the pair 1.15x; it is the pair's default (`physics.PAIR_DEFAULT_LEVERS`; `--physics-levers none`
-switches it off) and stays off for the single fly until the owner approves a new default. `solver100` is within 1 % on everything
+frames are bit for bit the same with it on (every physics configuration's hash in `tools/golden_hashes.py` is unchanged with it
+as the default), while the single fly runs 1.3x faster and the pair 1.15x. It is the default for every physics body
+(`physics.DEFAULT_LEVERS`, the owner's word of 2026-10-04; `--physics-levers none` switches it off). The baseline the levers are
+read against is the tool's own run on the unchanged body on this machine, also by the owner's word, since the published numbers
+come from another machine and a lost lure protocol (docs/TWO_FLIES_PROGRESS.md, the gate). `solver100` is within 1 % on everything
 measured but buys the pair nothing (its cost is the contacts between the flies). `noslip5`, `noslip0` and `noself` stay within the
 tolerance on speeds, turn rates and the lure, but they change what the retina sees of the body's wobble: HS in the quiet arena
-rises from 18.9 Hz to 34-37 Hz with the noslip levers (and the brain's events/s with it), so they are not adopted without the
-owner's word; `dedupe, solver100, noslip5` would make the pair 1.3x faster than with `dedupe` alone (0.112 against 0.100) and the
-single fly 1.9x. `simple` and `dt2` fall outside the tolerance (turn rates off by 18-25 %) and are not adopted; `simple` is the
+rises from 18.9 Hz to 34-37 Hz with the noslip levers (and the brain's events/s with it); the owner chose to keep `dedupe` alone
+rather than the faster in-tolerance preset `dedupe, solver100, noslip5` (the pair at 0.112 against 0.100, the single fly 1.9x), which
+stays a switch. `simple` and `dt2` fall outside the tolerance (turn rates off by 18-25 %) and are not adopted; `simple` is the
 fastest world by far (the pair at 0.141-0.155, the contacts halved), which is where a flygym 2.x spike would start if the owner
 ever wanted one (decision 20). The research's "2 flies, defaults 0.037" on a loaded 4-core machine is this laptop's 0.087.
 

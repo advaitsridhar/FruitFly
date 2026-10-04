@@ -152,7 +152,7 @@ def test_a_game_runs_two_physics_flies_in_one_world(conn):
              partner={"conn": conn, "brain_kwargs": {"seed": 1000}, "parts": False})
     try:
         assert g.pair_world is not None and [f.body_kind for f in g.flies] == ["physics", "physics"]
-        assert g.physics_levers == ("dedupe",) and g.pair_world.levers == ("dedupe",)    # the pair's adopted default
+        assert g.physics_levers == ("dedupe",) and g.pair_world.levers == ("dedupe",)    # the adopted default (SCIENCE.md 13.5)
         assert g.flies[0].body is g.pair_world.bodies[0] and g.flies[1].body is g.pair_world.bodies[1]
         for _ in range(4):
             g.tick()
