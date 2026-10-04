@@ -8,7 +8,8 @@ Plan: docs/TWO_FLIES_PLAN.md. Newest session notes first.
 | 0 | claude/two-flies-p0-baseline | #16 | merged (squash, `3631770`) | 2026-09-27 |
 | 1 | claude/two-flies-p1-two-brains | #17 | merged (squash, `f70d8be`) | 2026-10-01 |
 | 2 | claude/two-flies-p2-gpu | #18 | merged (squash, `63681db`) | 2026-10-03 |
-| 3 | claude/two-flies-p3-3d-view | #19 | PR ready, CI green, the owner's merge word given | 2026-10-03 |
+| 3 | claude/two-flies-p3-3d-view | #19 | merged (squash, `157ffa9`) | 2026-10-03 |
+| 4 | claude/two-flies-p4-physics-pair | – | in progress: 8.2 done (the gate's reproduction put to the owner), 8.3-8.5 built (the pair world, v2.12.0) | 2026-10-03 |
 
 ## This machine
 - OS: WSL2 (Ubuntu 24.04.5 LTS) on Windows; the repository lives under the Linux home folder, not `/mnt/c`.
@@ -68,6 +69,20 @@ Plan: docs/TWO_FLIES_PLAN.md. Newest session notes first.
 | 17 | where the GPU brains live | one GPU child process holding both brains; the game process stays on the CPU; the re-test child always uses the CPU | default, the same | 2026-10-01 |
 | 18 | the fly meshes | ship a decimated GLB (about 3 MB or less) with its Apache-2.0 licence and a notice of changes; otherwise build on first use from the installed flygym | default; the owner: "merge and go with defaults" | 2026-10-03 |
 | 19 | the 3-D scale in live mode | the drawn scale (about 3x real), labelled; real size in physics and replay modes | default, the same | 2026-10-03 |
+| 20 | flygym version | stay on 1.2.1; a flygym 2.x spike (a Python 3.12 venv outside the repository) only on request or if 1.2.1 cannot reach 0.1x real time with two flies | default; the owner: "Defaults" | 2026-10-03 |
+| 21 | topology | both flies in one MuJoCo world; "ghost" partners in separate worlds only as a labelled fallback | default, the same | 2026-10-03 |
+| 22 | contact pairs between the flies | each fly's forelegs (Tibia, Tarsus1-4) and head against the partner's body, plus body to body; never `Tarsus5` | default, the same | 2026-10-03 |
+| 23 | social geometry with physics bodies | real size (the physical tap replaces the 3.4 mm rule; the partner seen at real size), labelled; the single-fly physics body keeps today's drawn-scale senses | default, the same | 2026-10-03 |
+| 24 | the male's body model | the same NeuroMechFly body (built from a female fly), labelled, in physics and in the 3-D view | default, the same | 2026-10-03 |
+| 25 | accepting a speed lever | only if the 6.7 table stays within ±10 % for speeds and turn rates and the lure count within 1, over seeds 0-4; always switchable | default, the same | 2026-10-03 |
+| 26 | MuJoCo Warp batches | no, unless the owner wants offline batch runs | default, the same | 2026-10-03 |
+| – (Phase 4 order) | which of Phase 4's parts first | the reproduction gate (8.2), the pair world (8.3-8.5), record-and-replay and the video (8.7-8.9), the speed levers (8.6) last, so that the owner sees the pair played back at 1x and a video before the slow lever validations | Claude's proposal; the owner: "Defaults" | 2026-10-03 |
+| – (Phase 4 jump) | a hand-built jump for the physics body | none: a giant-fibre burst stays an "escape command" with the legs standing, as v2.8.1 | Claude's proposal; the owner: "Defaults" | 2026-10-03 |
+| 25 (applied) | which levers the pair adopts | `dedupe` as the pair's default: every measured number identical, the single fly's golden frames bit-identical, 1.15-1.27x faster; the rest put to the owner (SCIENCE.md 13.5) | Claude, within decision 25's rule | 2026-10-03 |
+| – (the gate) | may the tool's own run on the unchanged body be the levers' baseline | yes: `../runs/p4-table.json` on this machine, SCIENCE.md 13.5 reads the levers against it | Claude's recommendation; the owner: "Go with the recommendations" | 2026-10-04 |
+| 25 (applied) | `dedupe` for the single fly too | yes: the default for every physics body (`physics.DEFAULT_LEVERS`), bit-identical frames, 1.27x; `--physics-levers none` switches it off | the same | 2026-10-04 |
+| – (a faster preset) | `dedupe,solver100,noslip5` for the pair | no: keep `dedupe` alone (HS in the quiet arena would rise from 19 to 27 Hz); the preset stays a switch | the same | 2026-10-04 |
+| – (head-on) | two flies walking head-on slide past each other | accepted for now; a wider contact set costs speed and did not change it | the same | 2026-10-04 |
 
 ## Measurements
 All on 2026-09-27, this machine, `nice -n 10`, one job at a time, machine otherwise idle (load average under 1.5).
@@ -410,6 +425,144 @@ frame-rate readout the dish updates once a second (`#fps3d`; `window.__vf3d.fps`
 it: **"the fps is at 80 or so"** (2026-10-03, the two-fly game in their own browser on this laptop; the GPU the browser used, the window
 size and whether the brain map was open were not recorded): the 7.7 target of 50 met.
 
+### Phase 4: the reproduction gate (plan 8.2; 2026-10-03; **new** `tools/physics_table.py`; `../runs/p4-table.json` and `.log`; the first run with a still lure in `../runs/p4-table-still-lure.*`)
+- The protocol, reconstructed: PR #11's text and the v2.8.0 docs commit (`6a8603a`) hold no script, only the table's own row
+  labels, so the tool's docstring states what it does: the body alone for the speed and turn rows (the net thorax displacement
+  and the heading change over 3 s); the lure placed before the first tick at 20 mm and 70 deg (15 mm with the urge off); MDN zapped
+  at 60 Hz for the full 3 s; 10 s quiet; every run a fresh game in its own process (brain seed = game seed, parts on, dt 0.5).
+  **The lure wiggles** 1.5 mm across its bearing at 3 Hz: with a still lure the drawn fly with the walking urge off did not turn
+  at all (0.0 deg on every seed; published 62-73), because a standing fly sees a still lure stand still (LC10a answers motion on
+  the retina) and the page's own check says "wiggle the decoy"; 1.5 mm at 3 Hz gives 60-81 deg in place, facing at 0.60-0.75 s
+  (published 62-73 deg, 0.48-0.8 s) and, with the urge on, facing times of 0.93-1.25 s (published 0.95-1.33); 3 mm at 3 Hz faces too
+  early (0.70-0.85 s) though it reproduces seed 2's jump-and-circle (255 vs 253 deg); 1.5 mm at 6 Hz sets off escapes on three seeds.
+- The run: 85 fresh games, 6 at a time, 6.7 min (1-minute load 1-12; each physics run 1.57 GB). Against the published table:
+  - **drawn**: speed 4.1 / 8.1 / 13.6 mm/s (chosen 4.2 / 8.4 / 13.9: the net displacement carries the velocity ramp); turn 259 / 224 /
+    177 deg/s (264 / 228 / 180); lure left 103, 105, 79, 90, -60 deg (97, 79, 253, 94, 257: seeds 2 and 4 circled after a jump under
+    the v2.8.0 rule; under the burst rule seed 4 still escapes on both sides, 1 event of 7 ticks, and circles the other way; seed 2
+    does not); right -95, -101, -118, -104, +68 (-94, -102, -89, -100, +82); faces the lure 10 of 10 at 0.93-1.25 s (10 of 10,
+    0.95-1.33); urge off: 60-81 deg in place (62-73), facing at 0.60-0.75 s; MDN 17.5-18.9 mm (17.9-19.7), HS 0.1 Hz and 25-28k
+    events/s while backing (0-0.6 Hz, 26-30k); quiet arena HS 5.5, 10.1, 7.9, 76.5, 108.9 Hz (5.5, 10.1, 7.9, 72.6, 108.2: seeds 0-2
+    **to the decimal**, 3-4 apart by the jump rule), brain 26.0, 30.6, 25.0, 94.9, 111.1k (25.9, 30.4, 24.9, 78.0, 72.3k), high
+    states on seeds 3 and 4 from 3.8 and 5.15 s with no escape (3.9 and 6.2 s with 7 and 21 escape ticks); 868-874 MB (876). Its
+    real-time factor 1.3-1.9 is the raw tick speed (the tool does not sleep to real time; the published 0.90-1.23 is the live loop's).
+  - **physics (raw pose)**: speed 4.0 / 8.7 / 14.3 (4.1 / 8.9 / 14.9); turn 32 / 85 / 165 (28 / 86 / 174: +14 % at drive 0.3, within
+    5 % above it); lure left 83, 103, 95, 101, 121 (102, 103, 105, 94, 94), right -101, -93, -97, -99, -120 (-87, -106, -100, -90,
+    -125); faces 10 of 10 at 1.23-1.98 s (8 of 10 at 1.65-2.55); urge off: 0.2 deg, the lure still 70-71 deg off (0.4 deg, 69-71);
+    MDN 19.0-21.4 mm, mean 20.0 (19.5-21.6, 20.4), heading drift 0-10 deg (3-10), HS 47-83 Hz and 98-123k events/s while backing
+    (57-84 Hz, 68-103k); quiet HS 24.8, 17.7, 14.4, 18.4, 19.0 (24.8, 13.7, 14.4, 18.5, 19.0: four of five seeds), brain 73.4, 59.2,
+    51.4, 48.2, 74.5k (56.2, 46.7, 43.1, 40.5, 58.8k), high states on seeds 0, 1, 2, 4 from 4.05, 7.9, 8.9, 7.35 s (seeds 0 and 2
+    from 8.9 s); contacts per step 10-19; 1,570 MB (1.32-1.35 GB); real-time factor 0.137-0.187 under load 7-10 (MuJoCo alone
+    0.149-0.212), 0.22 solo (Phase 0's bench: 0.216; published 0.086-0.113 on the machine the table was measured on).
+  - **stride average**: lure left 100-103 (99, 90, 113, 101, 126), right -73 to -100 (-62 to -118); faces 9 of 10 at 1.68-2.10 s
+    (6 of 10 at 1.83-2.83); urge off 0.4 deg (0.3); MDN 19.8-21.2 (19.2-21.4), HS while backing 0.0-24 Hz and 30-91k (0-0.4 Hz,
+    27-31k); quiet HS 60.6, 9.7, 8.6, 6.8, 11.0 (57.7, 11.6, 8.8, 6.9, 9.0); high states on seeds 0, 1, 3, 4 (0 and 3).
+- Decision 25's verdicts against the published numbers: drawn all within tolerance; physics speed within, turn outside at drive 0.3
+  (+14 %), faces 10 against 8 (outside by 2); stride average faces 9 against 6. What the differences say: where nothing moves in the
+  dish the runs **are** the published runs (the quiet arena to the decimal on 3 of 5 drawn seeds and 4 of 5 physics seeds); with a
+  lure the exact protocol is lost (the wiggle is a reconstruction) and a spiking brain amplifies small differences, so the per-seed
+  numbers scatter around the published ones with the same picture; the physics columns' events/s run a quarter higher than
+  published at the same HS rates (the tool now records the spikes/graded split, so the next run can say whether the published
+  number counted spikes alone); the stride-average column no longer removes HS while backing (0-24 Hz against 0-0.4). No code in
+  `physics.py` or `vision.py` changed around the stride average since v2.8.0 (git diff), so the published stride-average runs
+  differed in protocol too. **The gate for the levers is therefore this run** (same machine, same code), with decision 25's
+  tolerances applied to it: put to the owner (Next step).
+- Where a physics tick's time goes (`../runs/p4_profile_physics.py`, `../runs/p4-profile.log`; one fly, seed 0, parts on, 3 s after
+  20 ticks, solo): real-time factor **0.220**; MuJoCo (Walker.advance: the CPG, the control writes and mj_step) 12.7 of 13.6 s =
+  **93 %** of the wall time; **0.359 ms per mj_step** (89.8 ms per 250-step tick), the Python around it 0.027 ms per step (3.1 ms per
+  tick of CPG and writes: 7 % of the step); the brain 11.6 ms per tick; senses 0.6 ms; contacts per step 10-20 while walking. So
+  the levers must act on mj_step (the solver, the contacts, flygym's duplicated self pairs); vectorising the Python buys at most 7 %.
+
+### Phase 4: the pair world (plan 8.3-8.5; 2026-10-03; **new** `virtual_fly/physics_pair.py`, `tests/test_physics_pair.py`; SCIENCE.md 13)
+- Built as the design in the session scratchpad says (`p4-design.md`): flygym's multi-fly `Simulation` on the kit's walled floor
+  centred at the origin; each fly spawned at its kit pose and then moved by its root free joint so that the thorax lands on the pose
+  exactly (the 0.496 mm thorax offset measured on the built model); `place()` moves a fly without a rebuild; one CPG per fly
+  (seed + 1000 k); one `mj_step` per 0.1 ms for both; the game sets both drives, the world steps once per tick, each body reads its
+  thorax, its own wall contact and its tap. Decision 22's contact set: 233 distinct pairs, never Tarsus5. `physics.py` untouched.
+- Checked by hand and by the seven tests: placement to 1e-6 mm; contact within 0.25 s from 3 mm (0.4 s from 6 mm) head-on; the tap
+  with a force (2-18 units); backing away separates at once; each fly feels only its own wall; deterministic bit for bit; a two-fly
+  physics game ticks, reports `physics.pair`, `physics.tap` and `scale` 0.389, and closes; the install hint without flygym.
+- **Flies walking head-on slide past each other**, deflected by their rounded heads (the first contact's normal points mostly sideways;
+  fly 0 veers 0.9 mm and 9 deg and passes along the other's flank). Found while chasing what looked like pass-through: a static probe
+  with the thoraxes overlapping finds the thorax-thorax contact (penetration 0.49-0.94 mm), so the collider is sound; the dynamic
+  configuration was simply beside, not inside. Tried against it, not adopted: stiffer pair `solref` (no change), convex hulls (a
+  contype bit: +8 % walking speed, 1.3x faster: a lever for 8.6), MuJoCo's native CCD (no change). Options kept on `PairWorld` for 8.6.
+- Speed (`tools/bench_two_flies.py --only pair-physics --contact-sets forelegs,full,none`, parts on, brains in processes, 80 ticks;
+  `../runs/p4-bench-pair-physics.json`, load 0.8): forelegs **rtf 0.085** (tick p50 234 ms, p99 1,113 ms: the ticks in contact, where
+  flygym's Newton solver at 1,000 iterations and 1e-12 converges slowly), MuJoCo 95 %, 1.11 ms per step for both flies, 24 contacts per
+  step; full (1,521 pairs) 0.055, p99 1,792 ms, 1.74 ms per step; none 0.110, p99 292 ms, 0.85 ms per step. One fly alone: 0.22
+  (0.359 ms per step). The game process 2.6 GB, the brain children 0.5 and 0.7 GB. The research's two-fly default was 0.037 on a
+  loaded 4-core machine.
+- `Ctrl+C` on `fly_game.py --partner female --body physics` (the 1.7 recipe, `../runs/p4-ctrlc-pair.log`): both flies in the state
+  (0.7 s simulated in 6 s wall: 0.12x with the brains in their own processes), "Bye!", **exit code 0**, nothing left (8.11).
+- The game: `Game(partner=..., body="physics")` builds the shared world and hands each fly its body; `--stride-average` with a
+  partner is refused (the pair's senses see each body as it is); `--partner-body` must agree with `--body` (mixed bodies are not
+  this phase's). The senses: the tap from MuJoCo replaces the drawn 3.4 mm rule (channel 3), a physics other is seen as a 0.7 mm
+  cylinder 1.1 mm tall (`vision.SEEN_FLY`), both flies drawn at real size in 2-D and 3-D (`fly.scale`), the page's pace line says
+  so, `whats_real` carries the pair lines (one world, the physical tap, real size, the male in the female body model).
+
+### Phase 4: record-and-replay on disk (plan 8.7-8.8; 2026-10-03; **new** `virtual_fly/recording.py`, `tests/test_recording.py`; SCIENCE.md 13.4)
+- The format as the plan says it (`recordings/<stamp>/`: header.json, frames.jsonl.gz, qpos.npy, t.npy, model/ with the exported
+  MuJoCo model and its assets, poses.f32 at the stop); the `capture` action (refused with the reason: one at a time, an unwritable
+  folder, the 2 GB cap; a recording in progress stops at the cap or when a single fly's world is rebuilt); `state.capture`; the
+  replay endpoints (`/api/replays`, `/api/replay/<id>/header|frames|poses`) without the wildcard CORS header, the id a plain
+  folder name; the capture action taken only from the server's own page (foreign Origin or Host: 403); `allow_pickle=False`.
+- Checked (six tests): a drawn run saved and listed; the cap and an unwritable folder refuse with the folder named; no CORS header
+  on the replay endpoints while the live ones keep theirs; foreign Origin and Host refused, the own page's three spellings
+  accepted, a non-writing action not origin-checked; a physics-pair recording reloads its exported model and reproduces every
+  geom's position **exactly** (0.0 mm; the live world's kinematics refreshed first, since after a step MuJoCo's positions are one
+  step stale), and its poses agree with the 3-D view's gait atlas convention (the standing thorax entry within 1e-3 mm).
+- Rendering under WSL2 (plan 8.9's **verify first**): `MUJOCO_GL=egl`, `osmesa` and `glfw` all render here (a 640 x 480 frame in
+  6 ms each; libEGL, libOSMesa and WSLg's display are present); `egl` is the choice for the video tool.
+- Gotcha: a script that builds a game with brain processes must guard its entry point (`if __name__ == "__main__"`): the spawned
+  children import the script, and an unguarded one builds a game inside each child (the first sample run died that way).
+
+### Phase 4: the speed levers as switches (plan 8.6; 2026-10-03; code only, the measurements come last by the owner's order)
+- `physics.LEVERS`: dedupe (flygym's duplicated self pairs: 1,086 of 2,172 dropped per fly, exactly), solver100 (iterations 1,000 →
+  100, tolerance 1e-12 → 1e-8), noslip5, noslip0, noself, simple (seqik_simple with tarsi-only floor contacts), dt2 (0.2 ms). Each is
+  off unless asked for: `fly_game.py --physics-levers LIST`, `Game(physics_levers=...)`, `PairWorld(levers=...)`, `make_body(levers=)`,
+  `tools/physics_table.py --levers LIST --baseline ../runs/p4-table.json` (the comparison against the tool's own run, decision 25's
+  verdicts relative to it) and `tools/bench_two_flies.py --levers LIST`. With no lever nothing changes (the 18 real golden hashes
+  checked again with the code in place: `../runs/p4-golden2.log`).
+- First numbers, one body alone at full drive for 3 s (not the table yet): `simple` walks 15.4 mm/s (14.2 without) at rtf 0.32
+  (0.22); `simple,dedupe,solver100,noslip0` 15.3 mm/s at rtf 0.55. The script for the whole measurement is
+  `../runs/p4-levers.sh` (ten lever sets through the table against the baseline, then the pair bench per set; about 45 min idle).
+
+### Phase 4: the replay player and the video (plan 8.8, 8.9; 2026-10-03; two forks on the sample recording `recordings/20261003-210246`)
+- The page (`index.html`, `style.css`, `app.js`, `panels.js`, `arena3d.js`): a "Save replay" switch and the saved-replays list in the
+  Recording card; a player bar in the stage (play/pause, 0.1-4x, scrub, the time, Leave) fed from the page's own animation loop at
+  the recording's tick times the speed (smooth at 1x whatever the run's own pace); the live ticks kept behind the replay and shown
+  again on Leave (the reload guard untouched); `?replay=<id>`; the badge "replay of a recorded run" over both views; the 3-D view
+  moves every leg joint from the recorded poses (fly index = fly id) with the hand-built wing, abdomen and proboscis rotations on
+  top, and says so on its badge. Limits accepted: a frame has no internal state, learning, lab lists, events or retina images (those
+  panels show neutral values); frames are held whole in memory (an hour is about 150k lines); the pointer still acts on the live
+  game. Tests: `test_web.py` 17, `test_browser.py` 7 (a drawn replay played, scrubbed and left; a physics-pair replay driving the
+  legs from the recording) = 24 passed in 27 s locally (the LD_LIBRARY_PATH workaround for Chromium).
+- The video (`tools/render_replay.py`, `tests/test_render_replay.py`): the recording's model and qpos replayed through MuJoCo's
+  kinematics at the video's frame rate (joints interpolated, root quaternions normalised), cameras overhead / follow / side with
+  the aim smoothed over 0.25 s, the second fly tinted lighter, a label; MP4 by OpenCV (mp4v). **Measured**: the 8 s sample at
+  1920 x 1080, 30 fps: 241 frames in 40 s overhead (3.1 MB) and 36 s follow (3.6 MB), 6-7 frames rendered per second, about 130 ms
+  per frame at any size (the exported model's 1,005,562 mesh triangles, not the pixels); `MUJOCO_GL=egl` is the default and works
+  under WSL2 (osmesa and glfw too). 8.11's criterion met. The render test needs `MUJOCO_GL=egl` exported before pytest (physics.py
+  alone sets disable): `../runs/p1-verify.sh` exports it now.
+- A look at both: the headless screenshots in the session scratchpad (`shot-replay-2d.png`, `shot-replay-3d.png`) and the check
+  frames (`p4-check*/check-middle.png`): the 3-D replay and the video show both flies with NeuroMechFly's meshes at real size, the
+  female lighter, the legs as MuJoCo moved them.
+- Found on the way: the new `capture` state key changed every golden frame's bytes (the hashes cover the whole state), so the key
+  is sent only while a replay is being saved; the 18 real hashes are unchanged again (`../runs/p4-golden3.log`).
+
+### Phase 4: the speed levers measured (plan 8.6; 2026-10-03; `../runs/p4-levers.sh`, `../runs/p4-table-<set>.json`, `../runs/p4-bench-pair-<set>.json`; SCIENCE.md 13.5 holds the two tables)
+- Ten lever sets through `tools/physics_table.py --bodies physics --levers SET --baseline ../runs/p4-table.json` (30 runs each, four
+  at a time, 3-5 min each, load 3-6) and the pair bench per set. Within decision 25's tolerance: dedupe, solver100, noslip5,
+  noslip0, noself, dedupe+solver100, dedupe+solver100+noslip5; outside: dt2 (speed +17 %, turn +25 % at drive 0.3), simple and
+  simple+dedupe+solver100+noslip0 (turn -18 to -19 % at full drive).
+- **dedupe is free**: every number the baseline's, the single physics fly's golden hash bit-identical with it on (checked directly:
+  `b48a56e59f1b` both ways), the single fly 1.27x faster, the pair 0.087 → 0.100. Adopted as the pair's default on 2026-10-03 and,
+  on the owner's word of 2026-10-04, as every physics body's (`physics.DEFAULT_LEVERS`, `--physics-levers none` to switch it off);
+  the 18 real golden hashes checked again with it as the default (`../runs/p4-verify3.log`).
+- The noslip levers keep the speeds and turns but raise HS in the quiet arena from 18.9 to 34-37 Hz (the body's wobble as the
+  retina sees it); solver100 buys the pair nothing (0.084); noself 1.76x single, pair 0.126; the fastest in-tolerance set,
+  dedupe+solver100+noslip5: single 1.86x, pair 0.112. Put to the owner with the table.
+
 ### Golden hashes (plan 4.9)
 - Synthetic (`tests/golden_single_fly.json`): nine configurations, made with Python 3.12.3, NumPy 2.5.3, numba 0.67.0; a second
   run reproduces every hash (the test passes in normal mode; a determinism test runs one configuration twice).
@@ -428,12 +581,36 @@ size and whether the brain map was open were not recorded): the 7.7 target of 50
   would be a new hand-built controller: ask the owner before adding one.
 
 ## Next step
-Phase 3: PR #19 is ready for review, every 7.7 criterion met except the frame-rate number from a headed browser on this GPU (the owner
-looked and said the view "looks decent" and later "smooth", but gave no number (the badge now shows one); headless SwiftShader gives 9-12 fps, which is not that number). Wait for
-the owner's merge word (or their frame rate). Phase 4 (physics for both flies, plan section 8) starts after the merge with decisions
-20-26 put to the owner in one message and the Open issue on the physics body, on `claude/two-flies-p4-physics-pair`.
+Phase 4 on `claude/two-flies-p4-physics-pair` (v2.12.0), PR #20: 8.2-8.9 built, measured and documented (SCIENCE.md 13); the
+owner's five answers of 2026-10-04 applied (Decisions) and the PR marked ready. Wait for the owner's merge word. Then the plan asks
+whether to do Phase 5 at all (BANC, the female's nerve cord; decision 27); Phase 5 would open on `claude/two-flies-p5-banc` from
+the merged `main`.
 
 ## Session notes
+### 2026-10-04 (Phase 4, the end)
+- The owner: "Go with the recommendations" on the five questions of 2026-10-03: the gate accepted, `dedupe` the default for every
+  physics body (bit-identical golden frames), the faster preset declined, the head-on sliding accepted, Chromium's libraries left
+  to them. The default applied to the game, the CLI, the tools and the tests; the full verification with it; PR #20 marked ready.
+
+### 2026-10-03 (Phase 4 opened)
+- The owner read the 3-D badge: "ok yeah the fps is at 80 or so, quite good. go ahead and merge". The number recorded (SCIENCE.md 12,
+  Measurements, the PR body; `ca8723b`); PR #19 squash-merged as `157ffa9` on that word (v2.11.0 on `main`); the demo game on port 8765
+  stopped with the 1.7 stop block (nothing left in its session).
+- Branch `claude/two-flies-p4-physics-pair` from the fetched `origin/main`; decisions 20-26 put to the owner with the defaults, the
+  physics-body issue and the ordering question. The owner: "Defaults" (all seven at the plan's defaults, the levers last, no
+  hand-built jump); recorded in Decisions. 8.2 started.
+- 8.2: `tools/physics_table.py` written, smoke-tested, run twice (a still lure, then the wiggling lure that recovers the
+  published turn-in-place); the profile; the results and the gate question recorded (Measurements; `84b1f05`).
+- 8.3-8.5: `physics_pair.py` designed (`p4-design.md` in the session scratchpad) and built; flies walking head-on slide past each
+  other, which cost an hour of probes before the static overlap test showed the collider sound; the game integration, the
+  senses at real size, the page scale and pace line, the CLI, seven tests, the pair-physics bench kind, SCIENCE.md 13, README,
+  ARCHITECTURE, API; version 2.12.0; the Ctrl+C check (exit 0).
+- Pushed; draft PR #20 opened. 8.7-8.8: `recording.py`, the capture action, the replay endpoints, six tests (`002aea3`);
+  SCIENCE.md 13.4. The page's player and the video tool (8.9) as two forks on a sample recording.
+- The forks' work in (`1948c77` the video, `c52bac0` the player); the `capture` state key made conditional after it changed every
+  golden frame; the lever switches (`34be6d2`) and their measurement (ten sets, 50 min); dedupe adopted for the pair; SCIENCE.md
+  13.5; the full verification and the single physics game's Ctrl+C check; PR #20's body refreshed.
+
 ### 2026-10-03 (Phase 3 started)
 - PR #18 squash-merged as `63681db` on the owner's word ("merge and go with defaults"); branch `claude/two-flies-p3-3d-view` from the
   fetched `origin/main`. Decisions 18-19 recorded with their defaults.

@@ -73,7 +73,49 @@ def test_game_ticks_with_physics_body(conn):
     from virtual_fly.game import Game
     from virtual_fly.settings import build_brain
     g = Game(build_brain(conn, "game", seed=0), autopilot=True, seed=1, body="physics")
+    assert g.physics_levers == ("dedupe",) and g.body.levers == ("dedupe",)     # the adopted default, the owner's word
+    assert Game(build_brain(conn, "game", seed=0), seed=1).physics_levers == ()  # the drawn body has none
     for _ in range(4):
         g.tick()
     assert g.body.kind == "physics" and "physics" in g.state_dict["fly"]
     assert any("leg physics" in s for s in g.whats_real()["hand_built"])
+
+
+# ---------------------------------------------------------------------------------------------- speed levers (plan 8.6)
+def test_levers_are_named_checked_and_off_by_default():
+    assert physics.parse_levers(None) == () and physics.parse_levers("") == () and physics.parse_levers(()) == ()
+    assert physics.parse_levers("solver100, dedupe") == ("dedupe", "solver100")     # LEVERS order, whatever the input's
+    assert physics.parse_levers(["dt2"]) == ("dt2",) and physics.parse_levers("none") == ()
+    assert physics.DEFAULT_LEVERS == ("dedupe",)
+    with pytest.raises(ValueError, match="unknown physics lever nope"):
+        physics.parse_levers("dedupe,nope")
+    with pytest.raises(ValueError, match="exclude each other"):
+        physics.parse_levers("noslip5,noslip0")
+    assert physics.lever_fly_kwargs(()) == {} and physics.lever_fly_kwargs(("noself",)) == {"self_collisions": "none"}
+    assert physics.lever_fly_kwargs(("simple",)) == {"xml_variant": "seqik_simple", "floor_collisions": "tarsi"}
+    assert physics.lever_timestep(()) == physics.TIMESTEP and physics.lever_timestep(("dt2",)) == 2e-4
+    assert set(physics.LEVERS) == {"dedupe", "solver100", "noslip5", "noslip0", "noself", "simple", "dt2"}
+
+
+@needs_flygym
+def test_levers_change_the_model_as_they_say():
+    from virtual_fly.physics import PhysicsBody, Walker
+    from virtual_fly.world import World
+    plain = Walker()
+    m0 = plain.sim.physics.model.ptr
+    assert plain.levers == () and plain.pairs_dropped == 0
+    assert (m0.opt.iterations, m0.opt.noslip_iterations, m0.opt.timestep) == (1000, 100, pytest.approx(1e-4))
+    deduped = Walker(levers="dedupe")
+    assert deduped.pairs_dropped == 1086 and deduped.sim.physics.model.ptr.npair == m0.npair - 1086
+    fast = Walker(levers="solver100,noslip0")
+    m = fast.sim.physics.model.ptr
+    assert m.opt.iterations == 100 and m.opt.tolerance == pytest.approx(1e-8) and m.opt.noslip_iterations == 0
+    assert Walker(levers="noslip5").sim.physics.model.ptr.opt.noslip_iterations == 5
+    assert Walker(levers="noself").sim.physics.model.ptr.npair == m0.npair - 2172
+    body = PhysicsBody(World(seed=1), random.Random(0), levers="dt2")
+    assert body.timestep == 2e-4 and body.walker.sim.physics.model.ptr.opt.timestep == pytest.approx(2e-4)
+    y0 = body.pose.y
+    for _ in range(12):                                   # 0.3 s of forward drive at the coarser step: it still walks
+        body.move(0.025, "walk", drive(forward=1.0))
+    assert body.pose.y - y0 > 1.5
+    assert body.to_dict()["physics"]["z"] > 0.3

@@ -107,6 +107,79 @@ def descending_drive(mode: str, drive: dict, wander_yaw: float = 0.0) -> tuple[f
 WALL_TOUCHERS = ("Head", "Thorax") + tuple(f"{leg}{seg}" for leg in ("LF", "LM", "LH", "RF", "RM", "RH")
                                            for seg in ("Tibia", "Tarsus1"))
 
+# ---------------------------------------------------------------------------------------------- speed levers
+# Each lever changes the physics, so each is a switch that is OFF unless asked for (fly_game.py --physics-levers, or
+# tools/physics_table.py --levers): measured against docs/SCIENCE.md 6.7's table with tools/physics_table.py before it
+# is ever adopted, and adopted only within the agreed tolerance (docs/TWO_FLIES_PLAN.md 8.6, decision 25). With no lever
+# nothing here runs, and the single fly is the golden-hashed body it was.
+LEVERS = {
+    "dedupe": "keep one of each self-collision pair (flygym 1.2.1 adds every pair twice, as (a, b) and (b, a))",
+    "solver100": "the Newton solver's iterations 1,000 -> 100 and its tolerance 1e-12 -> 1e-8",
+    "noslip5": "noslip iterations 100 -> 5 (adhesion and leg slip depend on them)",
+    "noslip0": "noslip iterations 100 -> 0",
+    "noself": "no self-collision pairs at all (legs may pass through each other)",
+    "simple": "flygym's seqik_simple model (capsule tarsi) with floor contacts on the tarsi only",
+    "dt2": "a 0.2 ms time step instead of 0.1 ms (contacts were unstable at 0.5 ms; 0.2 was untested)",
+}
+
+
+DEFAULT_LEVERS = ("dedupe",)   # adopted for every physics body (docs/SCIENCE.md 13.5, the owner's word 2026-10-04): every measured
+#                                 number identical, the golden frames bit for bit the same, 1.3x faster; --physics-levers none switches it off
+
+
+def parse_levers(levers) -> tuple[str, ...]:
+    """A comma list (or any sequence) of lever names -> a tuple in LEVERS order, each name checked; nothing, or the word
+    "none", -> ()."""
+    if not levers:
+        return ()
+    names = [s.strip() for s in (levers.split(",") if isinstance(levers, str) else levers) if s and str(s).strip()]
+    if names == ["none"]:
+        return ()
+    bad = [n for n in names if n not in LEVERS]
+    if bad:
+        raise ValueError(f"unknown physics lever{'s' if len(bad) > 1 else ''} {', '.join(bad)}: choose from {', '.join(LEVERS)}")
+    if "noslip5" in names and "noslip0" in names:
+        raise ValueError("noslip5 and noslip0 exclude each other")
+    return tuple(n for n in LEVERS if n in names)
+
+
+def lever_timestep(levers, timestep: float = TIMESTEP) -> float:
+    return 2e-4 if "dt2" in levers else timestep
+
+
+def lever_fly_kwargs(levers) -> dict:
+    """What a lever changes in flygym's Fly(...) call."""
+    kw = {}
+    if "noself" in levers:
+        kw["self_collisions"] = "none"
+    if "simple" in levers:
+        kw.update(xml_variant="seqik_simple", floor_collisions="tarsi")
+    return kw
+
+
+def dedupe_self_pairs(fly) -> int:
+    """Drop flygym's duplicate self-collision pairs from a fly's MJCF before the model is compiled: the number dropped."""
+    seen, dropped = set(), 0
+    for pair in list(fly.model.contact.pair):
+        g1, g2 = (getattr(g, "name", None) or str(g) for g in (pair.geom1, pair.geom2))
+        key = frozenset((g1, g2))
+        if key in seen:
+            pair.remove()
+            dropped += 1
+        else:
+            seen.add(key)
+    return dropped
+
+
+def apply_levers(model, levers) -> None:
+    """The levers that act on the compiled model's options (model: a mujoco.MjModel)."""
+    if "solver100" in levers:
+        model.opt.iterations, model.opt.tolerance = 100, 1e-8
+    if "noslip5" in levers:
+        model.opt.noslip_iterations = 5
+    if "noslip0" in levers:
+        model.opt.noslip_iterations = 0
+
 if _IMPORT_ERROR is None:
     class _WalledFloor(FlatTerrain):
         """flygym's flat floor plus the kit's round arena wall (n box segments, 3 mm high)."""
@@ -147,13 +220,16 @@ class Walker:
     rules (these act on rough terrain and need a full observation every 0.1 ms, 3.5x slower). Turn rates
     then match the controller's (about 180 deg/s at the steering limit)."""
 
-    def __init__(self, timestep: float = TIMESTEP, seed: int = 0, wall_center=None):
+    def __init__(self, timestep: float = TIMESTEP, seed: int = 0, wall_center=None, levers=()):
         if _IMPORT_ERROR is not None:
             raise RuntimeError(unavailable_reason()) from _IMPORT_ERROR
+        self.levers = levers = parse_levers(levers)
         arena = _WalledFloor(center=wall_center) if wall_center is not None else FlatTerrain()
         self.fly = (_Fly if wall_center is not None else Fly)(enable_adhesion=True, draw_adhesion=False,
-                                                                  spawn_pos=(0.0, 0.0, 0.2))
+                                                                  spawn_pos=(0.0, 0.0, 0.2), **lever_fly_kwargs(levers))
+        self.pairs_dropped = dedupe_self_pairs(self.fly) if "dedupe" in levers else 0
         self.sim = SingleFlySimulation(fly=self.fly, cameras=[], timestep=timestep, arena=arena)
+        apply_levers(self.sim.physics.model.ptr, levers)
         self.timestep, self.seed = timestep, seed
         steps = PreprogrammedSteps()
         self.cpg = CPGNetwork(timestep=timestep, intrinsic_freqs=np.ones(6) * 12, intrinsic_amps=np.zeros(6),
@@ -222,8 +298,10 @@ class PhysicsBody:
     kind = "physics"
 
     def __init__(self, world, rng, timestep: float = TIMESTEP, seed: int = 0, wall: bool = True,
-                 stride_average: bool = False):
+                 stride_average: bool = False, levers=()):
         self.world, self.rng = world, rng
+        self.levers = parse_levers(levers)             # speed levers (LEVERS): none unless asked for
+        timestep = lever_timestep(self.levers, timestep)
         # stride_average (off by default): the senses see the thorax pose averaged over the last stride (1/12 s,
         # the CPG's period) instead of the stride-by-stride body yaw wobble; a hand-built stand-in for gaze
         # stabilisation during walking (Cruz et al. 2021, doi:10.1016/j.cub.2021.08.041). On one seed it removed
@@ -241,23 +319,23 @@ class PhysicsBody:
         self.wall_s = 0.0                          # wall-clock seconds spent in MuJoCo
         self.reset()
 
-    _spawn = None          # the thorax's spawn pose in MuJoCo (x, y, heading): the same in every arena, measured once
+    _spawn = {}            # the thorax's spawn pose in MuJoCo (x, y, heading) per lever set: the same in every arena, measured once
 
     def reset(self, x=0.0, y=-12.0, h=math.pi / 2):
         # the physics world is built around the fly's start: the arena centre is where the kit says it is. The
         # thorax spawns a little off MuJoCo's origin (about 0.5 mm with flygym 1.2.1), so the wall is placed from
         # the measured spawn pose: kit = start + R(h - spawn heading) (p - spawn position), solved for kit = (0, 0).
-        if PhysicsBody._spawn is None:
-            first = Walker(self.timestep, self._seed, wall_center=None)
+        if self.levers not in PhysicsBody._spawn:
+            first = Walker(self.timestep, self._seed, wall_center=None, levers=self.levers)
             pos, hd = first.thorax()
-            PhysicsBody._spawn = (float(pos[0]), float(pos[1]), float(hd))
+            PhysicsBody._spawn[self.levers] = (float(pos[0]), float(pos[1]), float(hd))
             if not self._wall:
                 self.walker = first
-        sx, sy, sh = PhysicsBody._spawn
+        sx, sy, sh = PhysicsBody._spawn[self.levers]
         r = -(h - sh)
         c = (round(sx - x * math.cos(r) + y * math.sin(r), 9), round(sy - x * math.sin(r) - y * math.cos(r), 9))
         if self.walker is None or (self._wall and getattr(self, "_center", None) != c):
-            self.walker = Walker(self.timestep, self._seed, wall_center=c if self._wall else None)
+            self.walker = Walker(self.timestep, self._seed, wall_center=c if self._wall else None, levers=self.levers)
             self._center = c
         else:
             self.walker.reset()
@@ -320,12 +398,13 @@ class PhysicsBody:
         return d
 
 
-def make_body(kind: str, world, rng, seed: int = 0, stride_average: bool = False):
-    """``drawn`` (the default kinematic body) or ``physics`` (this module; needs flygym)."""
+def make_body(kind: str, world, rng, seed: int = 0, stride_average: bool = False, levers=()):
+    """``drawn`` (the default kinematic body) or ``physics`` (this module; needs flygym). ``levers``: speed levers (LEVERS),
+    none unless asked for."""
     if kind == "drawn":
         return FlyBody(world, rng)
     if kind == "physics":
         if not available():
             raise RuntimeError(unavailable_reason()) from _IMPORT_ERROR
-        return PhysicsBody(world, rng, seed=seed, stride_average=stride_average)
+        return PhysicsBody(world, rng, seed=seed, stride_average=stride_average, levers=levers)
     raise ValueError("body must be 'drawn' or 'physics'")

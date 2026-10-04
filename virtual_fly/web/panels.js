@@ -698,19 +698,62 @@ export class EventsPanel {
 // ================================================================= 10. Recording
 export class RecordingPanel {
   // `on` is tracked here: the server keeps `state.recording` (the kept frames) after a stop.
-  constructor() {
-    this.on = null; this.holdUntil = 0;
+  // Replays on disk (docs/TWO_FLIES_PLAN.md 8.7-8.8, docs/API.md): "Save replay" posts the `capture` action (the server takes it
+  // only from this page's own origin), `capInfo` shows the state's `capture`, and the list of saved replays comes from
+  // api/replays; `opts.play(id)` is the page's player (app.js).
+  constructor(opts = {}) {
+    this.on = null; this.holdUntil = 0; this.play = opts.play || (() => {});
+    this.capOn = null; this.capHold = 0; this.capWas = null; this.capMsgUntil = 0;
     $("recBtn").onclick = () => { this.on = !this.on; this.holdUntil = performance.now() + 2000; post({ type: "record", on: this.on, spikes: $("recSpikes").checked }); this.render(this.last); };
+    $("capBtn").onclick = async () => {
+      const on = !this.capOn;
+      this.capOn = on; this.capHold = performance.now() + 2000; this.renderCap(this.lastCap);
+      const r = await post({ type: "capture", on });
+      if (r && r.ok === false) {                                                     // refused, with the reason (the cap, the folder, another page)
+        this.capOn = !on; this.capMsgUntil = performance.now() + 6000;
+        setText($("capInfo"), r.error || "refused"); setClass($("capInfo"), "err", true); this.renderCap(this.lastCap);
+      }
+    };
+    $("replayRefresh").onclick = () => this.refresh();
+    this.refresh();
   }
   update(S) {
     this.last = S.recording;
     if (this.on === null) this.on = !!S.recording;                                   // first state: adopt what the server says
     else if (!S.recording && performance.now() > this.holdUntil) this.on = false;   // (after a grace period: the action lands on the next brain tick)
     this.render(S.recording);
+    const c = S.capture || null;
+    if (this.capOn === null) this.capOn = !!(c && c.active);
+    else if (performance.now() > this.capHold) this.capOn = !!(c && c.active);
+    if (this.capWas && !c) this.refresh();                                           // a replay was just saved: the list has it
+    this.capWas = c; this.lastCap = c;
+    this.renderCap(c);
   }
   render(r) {
     setText($("recBtn"), this.on ? "■ Stop" : "● Record"); setClass($("recBtn"), "rec", this.on);
     setText($("recInfo"), r ? `${r.frames.toLocaleString()} frames${r.spikes ? " + every spike" : ""}${this.on ? "" : " kept: download below"}` : "not recording");
+  }
+  renderCap(c) {
+    setText($("capBtn"), this.capOn ? "■ Stop saving" : "💾 Save replay"); setClass($("capBtn"), "rec", this.capOn);
+    if (performance.now() < this.capMsgUntil) return;                                // a refusal stays readable for a while
+    setClass($("capInfo"), "err", !!(c && c.error));
+    setText($("capInfo"), c ? (c.error ? `stopped: ${c.error}` : `saving recordings/${c.id}: ${(c.ticks || 0).toLocaleString()} ticks`
+                                        + (c.physics ? " (with MuJoCo's state)" : "")) : "no replay being saved");
+  }
+  /** The replays on disk (GET api/replays), newest first, each with a Play button for the page's player. */
+  async refresh() {
+    const box = $("replayList"), r = await getJSON("api/replays");
+    box.innerHTML = "";
+    if (!r || !r.ok) { box.appendChild(el("li", "none", "the replay list did not answer")); return; }
+    if (!r.replays.length) { box.appendChild(el("li", "none", "none yet: Save replay writes one to disk")); return; }
+    for (const x of r.replays) {
+      const flies = (x.flies || []).map((f) => `${f.sex === "female" ? "♀" : "♂"} ${f.body || "drawn"}`).join(", ");
+      const size = x.bytes >= 1e6 ? `${(x.bytes / 1e6).toFixed(1)} MB` : `${Math.round((x.bytes || 0) / 1e3)} kB`;
+      const li = el("li", "", `<span title="${esc(x.id)}: ${esc(flies)}; ${x.physics ? "physics bodies" + (x.poses ? ", every geom's pose recorded" : "") : "drawn bodies"}">`
+        + `${esc(x.id)} · ${x.seconds != null ? fmt(x.seconds, 1) + " s" : "…"} · ${esc(flies)} · ${size}${x.active ? " · saving" : ""}</span>`);
+      if (!x.active) { const b = el("button", "btn", "▶ Play"); b.dataset.id = x.id; b.onclick = () => this.play(x.id); li.appendChild(b); }
+      box.appendChild(li);
+    }
   }
 }
 
@@ -735,5 +778,8 @@ export class ModelPanel {
     t.innerHTML = `<tr><th>DN</th><th>direct → motor</th><th>2-hop motor synapses by neuromere</th></tr>` + Object.entries(dec).map(([k, v]) =>
       `<tr><td>${esc(k)}</td><td>${v.direct_motor_synapses}</td><td>${Object.entries(v.two_hop_motor_synapses_by_neuromere || {}).map(([n, c]) => `${esc(n)} ${c}`).join(", ")}</td></tr>`).join("");
   }
-  update(S) { setText($("modelRtf"), S.paused ? "paused" : `${fmt(S.rtf, 2)}× real time at speed ${fmt(S.speed, 2)}× · ${S.stims} stimulated populations · brain calmed ${S.calms}×`); }
+  update(S) {
+    setText($("modelRtf"), S.replay ? `a replay of a recorded run, played at ${fmt(S.replay.speed, 2)}× its own clock` : S.paused ? "paused"
+      : `${fmt(S.rtf, 2)}× real time at speed ${fmt(S.speed, 2)}× · ${S.stims} stimulated populations · brain calmed ${S.calms}×`);
+  }
 }

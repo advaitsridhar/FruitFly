@@ -153,6 +153,7 @@ ACTIONS = {
     "female": {"x": (float, False), "y": (float, False), "on": (bool, False)},
     "learning": {"on": (bool, False), "forget": (bool, False)}, "scenario": {},
     "record": {"on": (bool, False), "spikes": (bool, False)}, "state": {"hunger": (float, False), "thirst": (float, False)},
+    "capture": {"on": (bool, False)},                     # save a replay to disk (recording.py; the server checks its origin)
     "place_fly": {"x": (float, True), "y": (float, True), "h": (float, False)},
 }
 # the tools the page offers (and "none", which scenarios use): the "tool" action takes these and the odour ids
@@ -300,13 +301,13 @@ class Game:
     def __init__(self, brain: FlyBrain, autopilot: bool = True, seed: int = 0, columnar: bool = True,
                  profile_name: str = "game", brain_factory=None, parts_list=None, brain_kwargs: dict | None = None,
                  retest: str = "auto", body: str = "drawn", stride_average: bool = False, brain_procs: str = "auto",
-                 partner: dict | None = None, social=None):
+                 partner: dict | None = None, social=None, physics_levers=None):
         """``partner``: a second simulated fly in the dish (docs/TWO_FLIES_PLAN.md 5.4): a dict with its ``conn``
         (loaded here, for the API and the layout; its brain is built from the file in a process of its own, or here
         with brain_procs="off"), and optionally ``brain_kwargs`` (default: the protagonist's overrides), ``parts``
         (False, True or a PartsList), ``autopilot`` (default on: her walking urge, decision 13). ``social``: a
         senses.social.SocialConfig, or its comma list (default "seen,song,contact,collide")."""
-        from .agent import PARTNER_HOME, FlyAgent          # (agent.py imports this module's constants)
+        from .agent import HOME, PARTNER_HOME, FlyAgent    # (agent.py imports this module's constants)
         from .senses.social import SocialConfig
         if brain_procs not in ("auto", "on", "off", "server"):
             raise ValueError("brain_procs must be 'auto', 'on', 'off' or 'server'")
@@ -322,8 +323,20 @@ class Game:
         self.world = World(seed)
         self.events = EventLog()
         self.scenario = ScenarioRunner(self)
-        if partner is not None and body == "physics":
-            raise ValueError("a partner with the physics body is Phase 4's (docs/TWO_FLIES_PLAN.md D10): use the drawn body")
+        from .physics import DEFAULT_LEVERS, parse_levers
+        # speed levers of the physics body (physics.LEVERS): the adopted default when none are named (docs/SCIENCE.md 13.5),
+        # "none" switches them off; nothing for the drawn body
+        if physics_levers is None:
+            physics_levers = DEFAULT_LEVERS if body == "physics" else ()
+        self.physics_levers = parse_levers(physics_levers)
+        self.pair_world = None                           # a partner with the physics body: one MuJoCo world for both flies
+        if partner is not None and body == "physics":    # (physics_pair.py; docs/TWO_FLIES_PLAN.md 8.3-8.5)
+            from .physics_pair import PairWorld, available, unavailable_reason
+            if not available():
+                raise RuntimeError(unavailable_reason())
+            if stride_average:
+                raise ValueError("--stride-average is the single physics fly's: in a pair each fly's senses see its body as it is")
+            self.pair_world = PairWorld([HOME, PARTNER_HOME], seed=seed, world=self.world, levers=self.physics_levers)
         # where the brains run: "local" (this process), "procs" (a process per brain), "server" (one process for every
         # brain: the GPU's way, docs/TWO_FLIES_PLAN.md 6.5, chosen by auto when a fly's brain_kwargs say backend cupy)
         self.brain_mode = self._brain_mode(brain_procs, brain_kwargs, partner)
@@ -337,7 +350,9 @@ class Game:
         # the flies: fly 0 keeps the game's own random stream and seed; fly k gets random.Random(f"{seed}:fly{k}") and
         # brain seed + 1000 k, and never draws from World.rng (docs/TWO_FLIES_PLAN.md D11)
         self.flies = [FlyAgent(self, 0, brain, sex=getattr(brain.conn, "sex", "male"), rng=self.rng, seed=seed,
-                               autopilot=autopilot, columnar=columnar, body=body, stride_average=stride_average,
+                               autopilot=autopilot, columnar=columnar, stride_average=stride_average,
+                               body=self.pair_world.bodies[0] if self.pair_world is not None else body,
+                               physics_levers=self.physics_levers,
                                parts_list=parts_list, brain_factory=brain_factory, brain_kwargs=brain_kwargs, retest=retest,
                                brain_procs=procs, pair=partner is not None, io_factory=io_factory)]
         del brain                                        # a process brain has been built from it: let it go
@@ -349,7 +364,8 @@ class Game:
             kw["seed"] = seed + 1000 * k
             self.flies.append(FlyAgent(self, k, None, conn=pconn, sex=getattr(pconn, "sex", "male"),
                                        rng=random.Random(f"{seed}:fly{k}"), seed=seed + 1000 * k,
-                                       autopilot=partner.get("autopilot", True), columnar=columnar, body="drawn",
+                                       autopilot=partner.get("autopilot", True), columnar=columnar,
+                                       body=self.pair_world.bodies[k] if self.pair_world is not None else "drawn",
                                        parts_list=parts_list, brain_kwargs=kw, retest=retest, brain_procs=procs,
                                        parts=partner.get("parts", False), pair=True, home=PARTNER_HOME, io_factory=io_factory))
             if self.social.mating == "mated":                # channel 6 (off by default): a mated female's SAG is silent
@@ -366,6 +382,7 @@ class Game:
         self.recording: list | None = None
         self.record_active = False
         self.record_spikes = False
+        self.capture = None                              # a replay being saved to disk (recording.Capture)
         self.lock = threading.RLock()
         self.stop_loop = threading.Event()               # set: loop() returns after the tick it is in
         self.subscribers: list[queue.Queue] = []
@@ -401,10 +418,15 @@ class Game:
         """Stop the loop (it returns after the tick it is in) and let every fly's brain process go. server.serve calls
         this after Ctrl+C, once the loop thread has been joined, so no child is closed while a tick is still using it."""
         self.stop_loop.set()
+        if self.capture is not None:                 # a replay being saved is finished first (its files, poses, header)
+            c, self.capture = self.capture, None
+            c.stop()
         for a in self.flies:
             a.io.close()
         if self.brain_server is not None:            # every handle's close reached it already; once more is harmless
             self.brain_server.close()
+        if self.pair_world is not None:              # the shared MuJoCo world, once no tick can be using it (8.11)
+            self.pair_world.close()
 
     # ------------------------------------------------------------------ world
     def reset_world(self, first: bool = False):
@@ -529,6 +551,14 @@ class Game:
             why = pair_available(self, a["id"])              # a two-fly scenario (docs/TWO_FLIES_PLAN.md 5.9 item 3)
             if why is not None:
                 return {"ok": False, "error": why}
+        if kind == "capture":                                # refused here, with the reason, before it is queued (8.8)
+            from . import recording
+            if a.get("on", True):
+                why = recording.cannot_start(self)
+                if why:
+                    return {"ok": False, "error": why}
+            elif self.capture is None:
+                return {"ok": False, "error": "no replay is being saved"}
         if kind == "grow":
             level = str(a.get("level", "type")).strip().lower()
             if not wiring.valid_level(level):
@@ -705,6 +735,18 @@ class Game:
                     if io.record("active"):
                         io.record("stop")
                 self.events.add(self.t, "system", f"recording stopped ({len(self.recording or [])} frames)")
+        elif kind == "capture":
+            from . import recording
+            if a.get("on", True):
+                if self.capture is None:
+                    self.capture = recording.Capture.start(self)
+                    self.events.add(self.t, "system", f"saving a replay: recordings/{self.capture.id}")
+                    self.say(f"Saving a replay to recordings/{self.capture.id}", 3.0)
+            elif self.capture is not None:
+                c, self.capture = self.capture, None
+                c.stop()
+                self.events.add(self.t, "system", f"replay saved: recordings/{c.id} ({c.ticks} ticks)")
+                self.say(f"Replay saved: recordings/{c.id} ({c.ticks} ticks)", 3.0)
         elif kind == "grow":
             f._start_grow(a["level"], a["seed"])
         elif kind == "parts":
@@ -754,6 +796,8 @@ class Game:
             bts = [f.advance_done(bt) for f, bt in zip(flies, advance_all([f.io for f in flies], inputs))]
         for f, bt, o in zip(flies, bts, others):
             f.act(dt, bt, o)
+        if self.pair_world is not None:                  # both drives set: the shared physics world steps once (8.5)
+            self.pair_world.advance_tick(dt)
         if len(flies) > 1 and self.social.collide:
             resolve_overlaps(flies)                      # both pushed apart equally (D4; senses/social.py)
         for f in flies:
@@ -777,6 +821,17 @@ class Game:
                 w = self.world.to_dict()
                 frame["world"] = {k: w[k] for k in ("food", "obstacles", "odours", "wind", "stripes", "tool")}
             self.recording.append(frame)
+        if self.capture is not None:                     # a replay saved to disk: its own frame (recording.py)
+            c = self.capture
+            try:
+                c.add(self)
+            except Exception as e:                       # a full disk must not kill the loop: the replay stops here
+                c.error = f"{e!r}"
+                c.stop()
+            if c.error and self.capture is c:            # stopped on its own (the cap, a rebuilt world, an error)
+                self.capture = None
+                self.events.add(self.t, "system", f"replay recordings/{c.id} stopped: {c.error}")
+                self.say(f"Replay stopped: {c.error}", 5.0)
         self.publish(bt, a.hz_shown, a.sps, bts)
 
     # ------------------------------------------------------------------ publishing
@@ -815,6 +870,9 @@ class Game:
             "genome": a.genome_status(bt.parts_status, known=True),
             "recording": None if self.recording is None else {"frames": len(self.recording), "spikes": self.record_spikes,
                                                               "active": self.record_active},
+            # "capture" only while a replay is being saved: the single fly's frames stay byte for byte what they were (the
+            # golden hashes cover every state frame), and the page reads a missing key as "not saving"
+            **({"capture": self.capture.status()} if self.capture is not None else {}),
         }
         if len(self.flies) > 1 and bts is not None:
             state["flies"] = [f.state_entry(b) for f, b in zip(self.flies, bts)]

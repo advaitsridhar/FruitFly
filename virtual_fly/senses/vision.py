@@ -41,6 +41,12 @@ WALL_HEIGHT = 30.0      # mm: a tall wall, so the drum stripes fill a good part 
 DARK = 0.15             # brightness of a dark object (floor = 1.0)
 
 
+# how another fly looks to the retina: a dark cylinder (radius, height) in mm. "drawn": the scripted female and a drawn
+# simulated fly, at the drawn scale (about three times real); "physics": a fly in a shared MuJoCo world (physics_pair.py),
+# at real size, from the standing NeuroMechFly body's measured 2.8 x 1.0 x 1.1 mm (decision 23). Hand-built.
+SEEN_FLY = {"drawn": (1.6, 2.2), "physics": (0.7, 1.1)}
+
+
 @dataclass
 class VisibleObject:
     x: float
@@ -478,9 +484,10 @@ class Retina:
         objs = [VisibleObject(o.x, o.y, o.r, 15.0, "post", 0.1) for o in w.obstacles]
         objs += [VisibleObject(f.x, f.y, f.r, 0.6, "food", 0.5) for f in w.food]
         if w.female is not None:
-            objs.append(VisibleObject(w.female.x, w.female.y, 1.6, 2.2, "fly", 0.12))
-        for o in others:
-            objs.append(VisibleObject(o.x, o.y, 1.6, 2.2, "fly", 0.12))
+            objs.append(VisibleObject(w.female.x, w.female.y, *SEEN_FLY["drawn"], "fly", 0.12))
+        for o in others:                                 # a physics other shares this fly's MuJoCo world: real size
+            r, h = SEEN_FLY["physics" if getattr(o, "body_kind", "drawn") == "physics" else "drawn"]
+            objs.append(VisibleObject(o.x, o.y, r, h, "fly", 0.12))
         if w.hand is not None and pose.jump is None:
             hx, hy = w.hand
             if w.tool == "lure":
