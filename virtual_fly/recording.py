@@ -2,8 +2,7 @@
 Record-and-replay for the dish (the two-flies work, docs/TWO_FLIES_PLAN.md 8.7-8.8): a recording is one folder,
 ``recordings/<YYYYmmdd-HHMMSS>/`` in a checkout (the repository ignores ``recordings/``) or ``<data folder>/recordings/``
 in an installed copy, never inside site-packages. It holds what the page needs to play a run back smoothly at any speed,
-however slowly the run itself went (a physics pair runs at about a tenth of real time), and what an offline render needs
-(``tools/render_replay.py``):
+however fast or slowly the run itself went, and what an offline render needs (``tools/render_replay.py``):
 
     header.json        format 1; the kit's version and git commit; tick_ms; every fly (id, sex, dataset, body kind, brain
                        settings); the social channels; the physics settings; the model file; at the stop: ticks, seconds, bytes
@@ -11,11 +10,13 @@ however slowly the run itself went (a physics pair runs at about a tenth of real
                        (fly: the body's to_dict, the state's "fly"; world: the dish's food, posts, odours, wind, stripes, tool,
                        the pointer and the scripted female)
     qpos.npy, t.npy    physics runs: MuJoCo's qpos after every tick (float64, ticks x nq) and the game's clock
-    model/             physics runs: the MuJoCo model as compiled, with its assets (dm_control's export_with_assets)
+    model/             physics runs: the MuJoCo model as compiled, meshes included (MuJoCo's binary .mjb from mj_saveModel,
+                       gzipped: the meshes' bounding-volume trees are most of its 46 MB for a pair, 21 MB gzipped)
     poses.f32          physics runs, written at the stop: per tick, per fly, per geom, position and quaternion in that fly's
                        thorax frame (float32 little-endian, ticks x flies x geoms x 7: x y z qw qx qy qz, mm), from qpos through
                        mj_kinematics on the exported model, so the browser plays the legs with no kinematics of its own;
-                       header.json's "poses" gives the geom order (models/nmf_gait.json's, which the 3-D view already uses)
+                       header.json's "poses" gives the geom order (models/nmf_gait.json's, which the 3-D view already uses:
+                       flygym 1.2.1's geoms, placed on the flygym 2.1 bodies by the fixed offsets of models/nmf_stride.npz)
 
 A drawn-body run has no qpos, model or poses. A size cap on the whole recordings folder (SIZE_CAP, 2 GB): when it is
 reached, a recording refuses to start, and one in progress stops; nothing is deleted for you. The existing in-memory
@@ -31,6 +32,7 @@ import gzip
 import json
 import os
 import re
+import shutil
 import subprocess
 import tempfile
 import time
@@ -139,17 +141,19 @@ def _git_commit() -> str | None:
 
 
 def _physics_source(game):
-    """(model ptr, data ptr, the MJCF root, the flies' model names, the model file name, settings) of the game's MuJoCo
-    world, or None for drawn bodies."""
+    """(model, data, the flies' model names, the model file name, settings) of the game's MuJoCo world, or None for drawn
+    bodies."""
     pw = getattr(game, "pair_world", None)
     if pw is not None:
-        return (pw._m, pw._d, pw.sim.arena.root_element, [f.name for f in pw.flies], "two_flies.xml",
+        return (pw._m, pw._d, [f.name for f in pw.flies], "two_flies.mjb.gz",
                 {"timestep": pw.timestep, "contact_set": pw.contact_set, "pairs": len(pw.pairs), "hulls": pw.hulls,
-                 "native_ccd": pw.native_ccd, "pair_solref": pw.pair_solref, "pair_solimp": pw.pair_solimp, "wall": pw.wall})
+                 "native_ccd": pw.native_ccd, "pair_solref": pw.pair_solref, "pair_solimp": pw.pair_solimp, "wall": pw.wall,
+                 "levers": list(pw.levers)})
     walker = getattr(game.flies[0].body, "walker", None)
     if walker is not None:
-        return (walker._m, walker._d, walker.sim.arena.root_element, [walker.fly.name], "one_fly.xml",
-                {"timestep": walker.timestep, "stride_average": bool(getattr(game.flies[0].body, "stride_average", False))})
+        return (walker._m, walker._d, [walker.fly.name], "one_fly.mjb.gz",
+                {"timestep": walker.timestep, "stride_average": bool(getattr(game.flies[0].body, "stride_average", False)),
+                 "levers": list(walker.levers)})
     return None
 
 
@@ -202,11 +206,14 @@ class Capture:
                   "social": game.social.names() if hasattr(game.social, "names") else None,
                   "physics": None, "poses": None, "active": True}
         if src is not None:
-            m, d, root, names, model_file, settings = src
-            from dm_control import mjcf
-            mjcf.export_with_assets(root, str(folder / "model"), out_file_name=model_file)
-            header["physics"] = {**settings, "model": model_file, "fly_names": names, "nq": int(m.nq)}
-            header["poses"] = {"geoms": atlas_geoms(), "fly_names": names, "layout": POSES_LAYOUT}
+            import mujoco
+            m, d, names, model_file, settings = src
+            (folder / "model").mkdir()
+            save_model(m, folder / "model" / model_file)                         # self-contained: the meshes travel inside
+            header["physics"] = {**settings, "model": model_file, "fly_names": names, "nq": int(m.nq),
+                                 "engine": f"flygym 2.1, MuJoCo {mujoco.__version__}"}
+            header["poses"] = {"geoms": atlas_geoms(), "fly_names": names, "layout": POSES_LAYOUT,
+                               "placed_by": "fixed offsets of flygym 1.2.1's geoms on flygym 2.1's bodies (models/nmf_stride.npz)"}
             self.physics = (m, d, names, model_file)
             self._data = d
             self._qpos = open(folder / "qpos.f64", "wb")
@@ -302,24 +309,84 @@ def _mat2quat(R: np.ndarray) -> np.ndarray:
     return q
 
 
+def save_model(m, path: Path) -> None:
+    """The compiled model as MuJoCo's binary (mj_saveModel), gzipped when the name ends in .gz (level 1: a pair's 46 MB in
+    about half a second, to 21 MB)."""
+    import mujoco
+    if path.suffix != ".gz":
+        mujoco.mj_saveModel(m, str(path), None)
+        return
+    raw = path.with_suffix("")
+    mujoco.mj_saveModel(m, str(raw), None)
+    try:
+        with open(raw, "rb") as src, gzip.open(path, "wb", compresslevel=1) as dst:
+            shutil.copyfileobj(src, dst, 1 << 20)
+    finally:
+        raw.unlink(missing_ok=True)
+
+
 def load_model(folder: Path, header: dict | None = None):
-    """The recording's exported MuJoCo model (physics runs)."""
+    """The recording's exported MuJoCo model (physics runs): a binary .mjb, gzipped or not (since v3.0), or the older
+    MJCF export of v2.12."""
     import mujoco
     header = header or read_header(folder)
-    return mujoco.MjModel.from_xml_path(str(folder / "model" / header["physics"]["model"]))
+    path = folder / "model" / header["physics"]["model"]
+    if path.suffix == ".gz":                       # MuJoCo reads files only: inflate into a temporary file, then drop it
+        with tempfile.NamedTemporaryFile(suffix=".mjb", delete=False) as tmp:
+            with gzip.open(path, "rb") as src:
+                shutil.copyfileobj(src, tmp, 1 << 20)
+        try:
+            return mujoco.MjModel.from_binary_path(tmp.name)
+        finally:
+            os.unlink(tmp.name)
+    if path.suffix == ".mjb":
+        return mujoco.MjModel.from_binary_path(str(path))
+    return mujoco.MjModel.from_xml_path(str(path))
+
+
+def _quat2mat(q: np.ndarray) -> np.ndarray:
+    """(N, 4) unit quaternions (w, x, y, z) -> (N, 3, 3) rotation matrices."""
+    w, x, y, z = q[:, 0], q[:, 1], q[:, 2], q[:, 3]
+    R = np.empty((q.shape[0], 3, 3))
+    R[:, 0, 0], R[:, 0, 1], R[:, 0, 2] = 1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)
+    R[:, 1, 0], R[:, 1, 1], R[:, 1, 2] = 2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)
+    R[:, 2, 0], R[:, 2, 1], R[:, 2, 2] = 2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)
+    return R
+
+
+class PoseMapper:
+    """The 3-D view's geoms (flygym 1.2.1's, the atlas's order) placed on a flygym 2.1 fly's bodies by the fixed offsets of
+    models/nmf_stride.npz (tools/refit_stride.py: the whole gait atlas rebuilt this way agrees to 0.003 mm and 0.4 deg),
+    then expressed in that fly's thorax frame."""
+
+    def __init__(self, m, fly_names: list[str], geoms: list[str]):
+        from . import physics
+        st = physics.stride()
+        idx = [st.geoms.index(g) for g in geoms]
+        self.fly_names = list(fly_names)
+        self.bodies = [np.array([m.body(f"{fly}/{st.geom_bodies[i]}").id for i in idx]) for fly in fly_names]
+        self.thorax = [m.body(f"{fly}/{physics.THORAX}").id for fly in fly_names]
+        self.pos = st.geom_pos[idx]                        # (geoms, 3): each geom in its body's frame
+        self.rot = _quat2mat(st.geom_quat[idx])            # (geoms, 3, 3)
+
+    def poses(self, d) -> np.ndarray:
+        """Every fly's geoms in its thorax frame at the model's current kinematics: (flies, geoms, 7)."""
+        out = np.empty((len(self.fly_names), self.pos.shape[0], 7), dtype=np.float32)
+        for k in range(len(self.fly_names)):
+            b = self.bodies[k]
+            Rb = d.xmat[b].reshape(-1, 3, 3)
+            p = d.xpos[b] + np.einsum("nij,nj->ni", Rb, self.pos)
+            Rg = Rb @ self.rot
+            t = self.thorax[k]
+            Rt = d.xmat[t].reshape(3, 3)
+            out[k, :, :3] = (p - d.xpos[t]) @ Rt                           # R_t^T (p - p_t)
+            out[k, :, 3:] = _mat2quat(np.einsum("ji,njk->nik", Rt, Rg))     # R_t^T R_g
+        return out
 
 
 def geom_poses(m, d, fly_names: list[str], geoms: list[str]) -> np.ndarray:
     """Every fly's geoms in its thorax frame at the model's current kinematics: (flies, geoms, 7)."""
-    out = np.empty((len(fly_names), len(geoms), 7), dtype=np.float32)
-    for k, fly in enumerate(fly_names):
-        gids = np.array([m.geom(f"{fly}/{n}").id for n in geoms])
-        t = m.body(f"{fly}/Thorax").id
-        Rt = d.xmat[t].reshape(3, 3)
-        out[k, :, :3] = (d.geom_xpos[gids] - d.xpos[t]) @ Rt           # R_t^T (p - p_t)
-        Rg = d.geom_xmat[gids].reshape(-1, 3, 3)
-        out[k, :, 3:] = _mat2quat(np.einsum("ji,njk->nik", Rt, Rg))     # R_t^T R_g
-    return out
+    return PoseMapper(m, fly_names, geoms).poses(d)
 
 
 def write_poses(folder: Path, header: dict | None = None) -> Path:
@@ -330,10 +397,11 @@ def write_poses(folder: Path, header: dict | None = None) -> Path:
     d = mujoco.MjData(m)
     q = np.load(folder / "qpos.npy", allow_pickle=False)
     names, geoms = header["poses"]["fly_names"], header["poses"]["geoms"]
+    mapper = PoseMapper(m, names, geoms)
     out = folder / "poses.f32"
     with open(out, "wb") as f:
         for row in q:
             d.qpos[:] = row
             mujoco.mj_kinematics(m, d)
-            f.write(geom_poses(m, d, names, geoms).astype("<f4").tobytes())
+            f.write(mapper.poses(d).astype("<f4").tobytes())
     return out

@@ -13,8 +13,8 @@ Start the game: ``python fly_game.py`` or ``python -m virtual_fly.play``.
     --fast               brain time step 1 ms instead of 0.5 ms (about twice as fast; all six
                          classic experiments still pass)
     --parts              start with the genes as each neuron's parts list (the Genome card toggles it)
-    --body physics       walk with NeuroMechFly v2 legs in MuJoCo instead of the drawn body (needs flygym;
-                         runs at about a tenth of real time)
+    --body physics       walk with NeuroMechFly v2 legs in MuJoCo instead of the drawn body (needs flygym 2.1,
+                         Python 3.12-3.14; about real time)
     --fly banc           BANC's female with a nerve cord instead (--fly flywire is --female; --partner banc for the partner)
     --partner female     a second simulated fly in the dish, with a brain of its own (FlyWire's female, or
                          `male` for a second MaleCNS brain); each brain then runs in its own process
@@ -209,9 +209,9 @@ def _main(argv=None):
               + " (it changes no number; --physics-levers none switches it off).", file=sys.stderr)
     if args.body == "physics" and partner is not None:
         print("Body: physics for both flies (NeuroMechFly v2 in one MuJoCo world, each with its own brain, able to touch; "
-              "slower than real time, about a tenth with two flies; both drawn at real size).", file=sys.stderr)
+              "about half real time on a laptop; both drawn at real size).", file=sys.stderr)
     elif args.body == "physics":
-        print("Body: physics (NeuroMechFly v2 legs in MuJoCo; about a tenth of real time"
+        print("Body: physics (NeuroMechFly v2 legs in MuJoCo through flygym 2.1; about real time"
               + ("; the senses see the pose averaged over a stride)." if args.stride_average else ")."), file=sys.stderr)
     partner_spec = None
     if partner is not None:

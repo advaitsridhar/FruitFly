@@ -1306,8 +1306,8 @@ would ship as a separate profile judged by the validated experiments.
 ### 6.7 An optional physics body: NeuroMechFly v2 (v2.8)
 
 `--body physics` swaps the drawn body for NeuroMechFly v2 (Wang-Chen et al. 2024) in MuJoCo, through
-the `flygym` package (`virtual_fly/physics.py`; Python 3.10-3.12, installed as at the end of this
-section). The decoder is
+the `flygym` package (`virtual_fly/physics.py`; flygym 1.2.1 up to v2.13, flygym 2.1 since v3.0, section 6.7.1;
+Python 3.12-3.14, installed as at the end of this section). The decoder is
 unchanged; its drives become flygym's two-sided descending signal, one stepping amplitude per body
 side (sign = stepping direction), with flygym's published steering constants: the inner side
 x (1 - 0.6|s|), the outer side x (1 + 0.2|s|). These are the two steering gestures Yang et al. (2024)
@@ -1364,24 +1364,98 @@ giant-fibre burst (section 5.7) still wins for one tick, with the legs standing,
 "escape command" instead of "escape jump". With this body, walking alone set off v2.8.0's one-tick rule
 6 times in 60 s (seed 0, walking urge on, empty dish) and sets off the burst rule none, while 10 of 10
 claps and DNp01 zaps at 30-150 Hz still give the escape command.
-Cost: about a tenth of real time, about 0.45 GB more memory and about 680 MB of dependencies. No OpenGL
-is needed (MUJOCO_GL=disable); rendering video needs EGL, OSMesa or a display. The drawn body is
+Cost on flygym 1.2.1 (the table above): about a tenth of real time, about 0.45 GB more memory and about 680 MB
+of dependencies; on flygym 2.1 (section 6.7.1): about real time, 0.2 GB more memory, about 400 MB of packages.
+No OpenGL is needed (MUJOCO_GL=disable); rendering video needs EGL, OSMesa or a display. The drawn body is
 unchanged and bit-identical with or without flygym installed. The physics body runs on the female fly
 too (section 9.5).
 
-Install. The physics body needs Python 3.10-3.12: flygym 1.2.1 requires Python below 3.13, dm_tree 0.1.8
-and labmaze (which dm_control needs) have no wheels for 3.13, and mujoco 3.2.7 has none for 3.14. In the
-kit's folder, with its virtual environment active (README, Setup, step 3; `python --version` must say
-3.10-3.12, else make the environment again with such a Python, e.g. `python3.12 -m venv --clear .venv`):
+Install. The physics body needs Python 3.12-3.14 (flygym 2.1 installs on no other). In the kit's folder, with its
+virtual environment active (README, Setup, step 3; `python --version` must say 3.12-3.14, else make the
+environment again with such a Python, e.g. `python3.12 -m venv --clear .venv`):
 
 ```
-python -m pip install -e ".[physics]"            # the kit, MuJoCo, dm_control, numba and the rest
-python -m pip install --no-deps flygym==1.2.1
+python -m pip install -e ".[physics]"            # flygym 2.1.0 with MuJoCo 3.9, scipy and numba; opencv for the video tool
 ```
 
-flygym goes in without its dependencies because its own list pins numba 0.60 and pulls in Jupyter; it
-imports numba all the same, so the `physics` extra includes numba (0.67 works). When the body cannot
-start, `--body physics` prints these steps and the import that failed.
+When the body cannot start, `--body physics` prints this step and the import that failed.
+
+### 6.7.1 The body on flygym 2.1 (v3.0): about real time
+
+The owner's word of 2026-10-04, after the two-fly physics game of section 13 ran at a tenth of real time: move the body
+to flygym 2.1 (decision 20's spike, docs/TWO_FLIES_PROGRESS.md). flygym 2.1.0 (2026-06-24) is a rewrite on MuJoCo 3.9
+for Python 3.12-3.14: the fly is composed from parts (`virtual_fly/physics.py`, `build_fly`): its legs-only skeleton
+(66 hinges, 42 of them actuated), position servos, tarsal adhesion and its flat ground, with simplified meshes (at most
+2,000 faces each), 55 ground contact pairs per fly and no self-collision pairs, the Newton solver at 100 iterations and
+1e-8 and 5 noslip iterations, which is what section 13.5's `dedupe`, `solver100`, `noslip5` and `noself` levers asked of
+1.2.1. It ships no controller and no recorded step. What the kit carried over from the body it validated on 1.2.1, and
+why:
+
+- **The joint, servo and adhesion settings** (flygym 1.2.1's `Fly` defaults: the actuated joints' spring 0.05 and damping
+  0.06, the passive tarsi's 7.5 and 0.01, kp 45 with a ±65 force limit, adhesion 40). flygym 2.1's own joints (10 and
+  0.5) hold the stride back: 10.3 mm/s at full drive with a 9 deg tracking error, against 14.3 with 1.2.1's (2.6 deg).
+- **The recorded stride**, refitted (`tools/refit_stride.py` → `web/models/nmf_stride.npz`). 2.1's skeleton has its own
+  joint conventions (every neutral angle differs; the thorax frame and the coxa roots coincide to 0.00 mm), so the step
+  cannot be copied joint by joint; the tool fits, per frame of the 3-D view's gait atlas and per leg, the seven angles
+  that put the leg's eight bodies where 1.2.1 had them (every body within 0.014 mm), then re-indexes the frames so that
+  frame k is every leg at its own step phase: the atlas is a whole-body tripod cycle, and the first fit, taken as a
+  per-leg table, had the legs RF, LM and RH half a cycle off and walked at 2 mm/s sideways. The same file carries every
+  atlas geom's fixed offset on the 2.1 body that carries it, so the browser's 1.2.1 meshes follow a 2.1 body in replays:
+  the whole atlas rebuilt that way agrees with itself to 0.003 mm and 0.4 deg (the tool's `--check`, tested).
+- **The oscillators**: flygym 1.2.1's `CPGNetwork` equations and tripod constants (Apache-2.0, `physics.CPG`, credited
+  in `web/models/NOTICE-NeuroMechFly.txt`), stepped every 0.5 ms (`CONTROL_MS`; 170 updates per stride) instead of every
+  0.1 ms step: speed, turn and wobble within 1 %, the pair 23 % faster (the controller is Python).
+- **The wall's friction, 0.3, hand-set** (`physics.WALL_FRICTION`; flygym's ground has 1.0). At 1.0 the 2.1 body's
+  forelegs climb the 3 mm wall and the fly falls on its side within half a second of walking into it (head-on and at
+  29 deg, two seeds); at 0 the contact solver blows up; at 0.3 it slides along the wall on its feet (tested). The drawn
+  body has no wall physics; "What's real here?" says so.
+
+Measured (`tools/physics_table.py --bodies physics --baseline ../runs/p4-table.json`, the same protocol as the table
+above, seeds 0-4, four runs at a time; `../runs/p6-table-k5.json`), against the 1.2.1 body's baseline run:
+
+| | flygym 1.2.1 body (baseline, MuJoCo 3.2.7) | flygym 2.1 body (v3.0, MuJoCo 3.9) |
+|---|---|---|
+| speed at forward drive 0.3 / 0.6 / 1.0 | 4.0 / 8.7 / 14.3 mm/s | 4.0 / 8.7 / 14.5 mm/s |
+| turn rate at full steering, same drives | 32 / 85 / 165 deg/s | 45 / 86 / 129 deg/s |
+| lure 20 mm at 70 deg left, urge on: heading change | 83, 103, 95, 101, 121 deg (101) | 99, 94, 110, 102, 115 deg (104) |
+| same, right | -101, -93, -97, -99, -120 deg (-102) | -100, -98, -86, -84, -100 deg (-94) |
+| faces the lure (within 15 deg) | 10 of 10, at 1.23-1.98 s | 9 of 10, at 1.50-2.77 s |
+| lure 15 mm left, urge off | turns 0 to 0.7 deg | turns -7 to +7 deg (-2) |
+| MDN at 60 Hz: distance backward | 19.0-21.4 mm (20.0) | 21.1-22.1 mm (21.6); heading drifts 2-9 deg |
+| MDN: HS / brain while backing | 47-83 Hz / 98-123k events/s | 51-72 Hz / 90-108k events/s |
+| 10 s quiet arena, urge on: HS | 24.8, 17.7, 14.4, 18.4, 19.0 Hz | 22.2, 39.0, 5.8, 10.2, 11.8 Hz |
+| same: brain | 73, 59, 51, 48, 75k events/s | 71, 68, 39, 55, 68k events/s |
+| same: a high state (> 60k events/s held ≥ 1 s) | seeds 0, 1, 2, 4, from 4.1-8.9 s | seeds 0, 1, 3, 4, from 5.4-8.9 s |
+| same: backing up with no wall touch in the last 1.5 s | none | seed 1 (21 ticks from 4.4 s), seed 2 (16 ticks from 8.8 s) |
+| real-time factor (MuJoCo alone) | 0.14-0.19 (0.15-0.21) | 0.68-0.88 (1.17-1.54), four runs at once |
+| peak memory | 1.57 GB | 1.07-1.14 GB |
+
+Decision 25's verdicts: speed within 10 %, "faces the lure" within 1, turn rates outside (+40 % at drive 0.3, -22 % at
+1.0). The turn rates are the engine's, not the port's: the 1.2.1 body itself, loaded from the sample recording's
+exported model into MuJoCo 3.9 and driven by the kit's controller with 1.2.1's own step tables, turns at 136 deg/s at
+full steering and wobbles 260 deg/s (the standard deviation of the thorax's yaw rate per tick at full drive); the 2.1
+body turns at 127-130 and wobbles 256; at drive 0.6 the two give 150 and 137, 8.8 and 8.6 mm/s. The two bodies agree
+within 7 % under one engine; the baseline's 165 deg/s came from MuJoCo 3.2.7's solver, which the kit no longer runs.
+Tried and ruled out as the wobble's cause (measured, no change): 1.2.1's contact parameters, 100 noslip iterations
+with the Newton solver at 1,000 and 1e-12, the elliptic friction cone, 1.2.1's mass distribution transplanted (both
+bodies put 0.9 of the fly's 1.0 mg in the thorax group and 0.1 in the legs), and self-collisions. The quiet-arena
+numbers scatter from run to run with this body as with the last (a seed's high state moves by seconds when anything
+changes), so the table's per-seed values are one run each.
+
+The `dt2` lever (a 0.2 ms step), measured against the new body's own table (`../runs/p6-table-dt2.json`): speeds 4.0 /
+8.6 / 14.3, turns 47 / 88 / 121 (within 10 %), but the lure is faced on 7 of 10 runs against 9, MDN's heading drifts
+12-27 deg against 2-9, and a quiet-arena seed enters its high state at 0.15 s; the game then runs at 0.88-1.17 (MuJoCo
+alone 2.1-2.8). Outside decision 25's tolerance on the lure, so a switch (`--physics-levers dt2`), not the default: it
+is the way to run the two-fly physics game faster if the lure count is an acceptable price.
+
+**Pace** (`tools/bench_two_flies.py --only physics,pair-physics`, the game with the parts list on, one run at a time,
+80 ticks after 20; `../runs/p6-bench-k5.json`, `p6-bench-dt2.json`): one physics fly in the game at **1.04x real time**
+(tick p50 23.9 ms, p99 32.5; 1.37x with `dt2`), against 0.14-0.19 on flygym 1.2.1; the two-fly physics game at **0.49x**
+(p50 48.8 ms; MuJoCo and the controller 69 % of the tick at 0.139 ms per 0.1 ms step for both flies; the `full` contact set
+0.46, `none` 0.52), against 0.085 on 1.2.1; with `dt2` 0.69 (MuJoCo 55 % of the tick). The rest of the pair's tick is the
+game's own two-fly work (senses, brain traffic, the state), about 16 ms, which no body setting touches: real time for the
+pair would need the brains to compute while the bodies step (a tick of sensorimotor latency, a game-loop change), or a
+faster solver than MuJoCo's single thread.
 
 ## 7. The genome as a wiring recipe (v2.3)
 
@@ -2683,20 +2757,20 @@ per second**, against the plan's target of 50; headless Chromium on a software r
 
 `python fly_game.py --partner female --body physics` puts both flies into ONE MuJoCo world as NeuroMechFly v2
 bodies, each driven by its own brain, able to touch each other (`virtual_fly/physics_pair.py`; the two-flies work,
-docs/TWO_FLIES_PLAN.md section 8, decisions 20-24). The single physics body of section 6.7 (`physics.py`) is not
-touched: the pair module reuses its drive mapping, its walled floor and its fly class, and builds flygym's multi-fly
-`Simulation` instead of its `SingleFlySimulation`. Without a partner nothing changes (the golden hashes, the physics
-one included, are unchanged); without `--body physics` the two-fly game is section 10's.
+docs/TWO_FLIES_PLAN.md section 8, decisions 20-24). The single physics body of section 6.7 (`physics.py`) is the same
+body: the pair module reuses its drive mapping, its fly, its wall and its leg controller, and puts two flies into one
+flygym world. Without a partner nothing changes; without `--body physics` the two-fly game is section 10's. Built on
+flygym 1.2.1 in v2.12 (a tenth of real time), on flygym 2.1 since v3.0 (section 6.7.1: about real time).
 
 ### 13.1 What is physical and what is hand-built
 
 Physical, in MuJoCo: the two bodies, the floor and the wall, the contact between the flies, and the tap. The world
-is flygym's `Simulation(flies=[fly0, fly1], arena=the kit's walled floor centred at the origin, timestep 0.1 ms)`;
-MuJoCo's frame is the kit's frame here (the single fly builds its world around its start instead). Each fly is
-spawned at its kit pose, and since the thorax sits 0.496 mm ahead of the spawn site (measured on the built model,
-a constant: the thorax is fixed to the root), each fly is then moved by writing its root free joint so that its
-thorax lands on the kit pose exactly; the same write (its joints back to the spawn pose, its velocities zeroed, its
-CPG reset) moves a fly later without rebuilding the model, which costs about a second. Each fly has its own six
+is flygym's flat ground with the kit's wall and both flies added to it (timestep 0.1 ms); MuJoCo's frame is the
+kit's frame here (the single fly builds its world around its start instead). Each fly is spawned at its kit pose
+and then moved by writing its root free joint so that its thorax lands on the kit pose exactly (on flygym 2.1 the
+thorax is the root; on 1.2.1 it sat 0.496 mm ahead of the spawn site); the same write (its joints back to the spawn
+pose, its velocities zeroed, its CPG reset) moves a fly later without rebuilding the model, which costs about a
+second. Each fly has its own six
 coupled oscillators (seeded `seed + 1000 k`, as its brain is); per 0.1 ms step both flies' leg targets and adhesion
 are written, then MuJoCo steps once; per 25 ms tick the game sets both drives first, then the world steps 250 times,
 then each body reads its thorax pose, its own wall contact and its tap.
@@ -2707,7 +2781,7 @@ switch): each fly's head and forelegs (Tibia, Tarsus1-4) against the other's tho
 and wings, plus body to body (thorax, head, abdomen): 233 distinct pairs. Never Tarsus5: it carries the adhesion
 actuator, and MuJoCo's adhesion acts on every contact of that body, so a stance foot would glue itself to the other
 fly. The tap of channel 3 (section 10.1) is then MuJoCo's contact: a foreleg or the head of one fly on the other's
-body, with the summed normal force (the model's units, mm and mg: 1 is 1 nN, and the fly weighs about 9,800), in
+body, with the summed normal force (the model's units, mm and g: 1 is 1 µN, and the fly weighs about 10), in
 place of the drawn rule (a foreleg tip within 3.4 mm of the other's centre). Each fly's wall bump is its own
 contact with the wall, not the other fly's.
 
@@ -2718,11 +2792,11 @@ measured 2.8 x 1.0 x 1.1 mm; a drawn fly is 1.6 and 2.2, section 10.1); that bot
 apart, which the drawn-scale senses would get wrong); and, as for one fly, the decoder's weights, the forward term
 and the drawn proboscis, wings and abdomen. Song and cVA already use real centre-to-centre millimetres (section
 10.1). NeuroMechFly's body was built from a micro-CT scan of a female fly: the male wears it too (decision 24;
-flygym 1.2.1 has no male body, and scaling this one would be hand-built). Not modelled: the escape jump (a
+flygym has no male body, and scaling this one would be hand-built). Not modelled: the escape jump (a
 giant-fibre burst is the escape command with the legs standing, as in section 6.7); the drawn bodies' capsule
 collisions do not apply (the contact is physical).
 
-### 13.2 Measured (flygym 1.2.1, MuJoCo 3.2.7, this laptop)
+### 13.2 Measured (flygym 1.2.1, MuJoCo 3.2.7, this laptop; section 6.7.1 has the v3.0 numbers on flygym 2.1)
 
 - Placement: both thoraxes land on their kit poses to 1e-6 mm after the build and after a move; a fly moved into
   a new place stands on its legs within 0.2 s.
@@ -2760,15 +2834,20 @@ collisions do not apply (the contact is physical).
 
 ### 13.4 Record and replay, and a video (plan 8.7-8.9)
 
-A physics pair runs at about a tenth of real time, so the way to see it move naturally is to record it and play
-it back at real speed. The `capture` action (the page's "Save replay" switch; `docs/API.md`) writes a folder
+A physics pair ran at about a tenth of real time on flygym 1.2.1 (since v3.0 it runs at about real time, section 6.7), and
+the way to see a run again at any speed is to record it and play it back. The `capture` action (the page's "Save replay" switch; `docs/API.md`) writes a folder
 `recordings/<YYYYmmdd-HHMMSS>/` in a checkout (ignored by git) or under the data folder in an installed copy, never
 into site-packages: `header.json` (the kit's version and commit, the tick, every fly's sex, dataset, body and brain
 settings, the social channels, the physics settings and the model's name), `frames.jsonl.gz` (one line per tick:
 every fly's body, mode, rates, senses and events-per-second, and the dish), and, with physics bodies, `qpos.npy`
-and `t.npy` (MuJoCo's whole state after every tick), the model as compiled with its assets (`model/`, dm_control's
-export, about 16 MB for the pair) and, when the recording stops, `poses.f32`: every geom of every fly, per tick, in
-its fly's thorax frame, computed by replaying `qpos` through MuJoCo's kinematics on the exported model. The browser
+and `t.npy` (MuJoCo's whole state after every tick), the model as compiled, meshes included (`model/two_flies.mjb.gz`,
+MuJoCo's own binary format written by `mj_saveModel` and gzipped: 21 MB for a pair, 46 unzipped, most of it the simplified
+meshes' bounding-volume trees; v2.12 wrote dm_control's MJCF export, 16 MB, which `load_model` still reads) and, when the
+recording stops, `poses.f32`: every geom of every fly, per tick, in its fly's thorax frame,
+computed by replaying `qpos` through MuJoCo's kinematics on the exported model. Since v3.0 the model is flygym 2.1's
+and the browser's meshes are flygym 1.2.1's, so each geom is placed on the 2.1 body that carries it by a fixed offset
+calibrated once (`web/models/nmf_stride.npz`, `tools/refit_stride.py`; the whole gait atlas rebuilt that way agrees
+with itself to 0.003 mm and 0.4 deg). The browser
 plays the legs from that file with no kinematics of its own; a drawn-body recording has none of the MuJoCo files and
 the page animates the legs as it does live. The recordings folder has a size cap of 2 GB: at the cap a recording
 refuses to start, one in progress stops, and nothing is deleted for you. The existing Record button (frames kept in
@@ -2794,7 +2873,8 @@ and a label gives the recording, the time and the speed (all hand-built choices)
 an 8 s recording of the pair: a 1080p MP4 at 30 fps, 241 frames, in 40 s (overhead, 3.1 MB) and 36 s (follow, 3.6 MB),
 about 6-7 frames rendered per second; the whole model's 1,005,562 mesh triangles are what each frame costs (about 130 ms
 at any size from 640 x 480 up, and the same with `MUJOCO_GL=egl`, `osmesa` or `glfw`, all of which render here;
-`egl` is the tool's default and needs no display). The MP4 is written by OpenCV (`mp4v`), which the physics extra
+`egl` is the tool's default and needs no display). With flygym 2.1's simplified meshes (230,316 triangles for the pair,
+v3.0) the same 8 s render at 720p takes 10.6 s, 23 frames per second. The MP4 is written by OpenCV (`mp4v`), which the physics extra
 brings; `tests/test_render_replay.py` renders a six-tick recording and reads the file back.
 
 ### 13.5 The speed levers (plan 8.6)
@@ -2861,6 +2941,13 @@ rather than the faster in-tolerance preset `dedupe, solver100, noslip5` (the pai
 stays a switch. `simple` and `dt2` fall outside the tolerance (turn rates off by 18-25 %) and are not adopted; `simple` is the
 fastest world by far (the pair at 0.141-0.155, the contacts halved), which is where a flygym 2.x spike would start if the owner
 ever wanted one (decision 20). The research's "2 flies, defaults 0.037" on a loaded 4-core machine is this laptop's 0.087.
+
+**On flygym 2.1 (v3.0, section 6.7.1)** the levers' story closes: `dedupe`, `solver100`, `noslip5` and `noself` describe what
+flygym 2.1's model already is (each contact pair once, the Newton solver at 100 iterations and 1e-8, 5 noslip iterations, no
+self-collision pairs), so they are accepted and change nothing, and no lever is on by default (`physics.DEFAULT_LEVERS` is
+empty). `noslip0` still sets 0 noslip iterations, `simple` now fits every body part to a capsule (flygym 2.1's
+`ALL_TO_CAPSULES`), and `dt2` is measured in 6.7.1: within tolerance on speeds and turn rates, outside on the lure, so still a
+switch. The owner's own word on the earlier faster preset holds: the body's pace is the engine's, not a lever's.
 
 ## 14. The female fly with a nerve cord: BANC (v2.13)
 
@@ -3048,7 +3135,7 @@ The starter kit's list, extended. These are the things a neuroscientist would po
 12. **Descending neurons barely move the leg motor neurons** (a few Hz at most, at any gain,
     section 6.5), so the decoder's weights are chosen by hand; the wiring only says which motor
     pools each DN reaches. The drawn body's speeds are chosen to look right; the optional physics
-    body (section 6.7) walks on NeuroMechFly's legs, at about a tenth of real time.
+    body (section 6.7) walks on NeuroMechFly's legs, at about real time since v3.0.
 13. **Single seeds.** The validated experiments run on five seeds (section 2.3) and the readouts
     near a range edge were checked on 30 (section 8.4), but most probe numbers are one Poisson
     realisation (seed 0); where a second or

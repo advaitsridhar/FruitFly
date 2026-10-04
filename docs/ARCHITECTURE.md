@@ -27,7 +27,8 @@ virtual_fly/
   __main__.py      `python -m virtual_fly ...`, the same command line
   world.py         the arena: food, posts, odour sources and plume puffs, wind, the drum, the female
   body.py          the fly's body: inertia, gait, appendages, collisions
-  physics.py       the optional physics body: NeuroMechFly v2 legs in MuJoCo through flygym (--body physics)
+  physics.py       the optional physics body: NeuroMechFly v2 legs in MuJoCo through flygym 2.1 (--body physics; about
+                   real time): the fly built from flygym's parts, the kit's wall, the recorded stride and the CPG controller
   physics_pair.py  two (or more) physics bodies in ONE MuJoCo world, able to touch (--partner ... --body physics; the
                    two-flies work): the shared world, each fly's body in it, the contact pairs and the physical tap
   senses/
@@ -65,6 +66,9 @@ tools/
   render_replay.py     a saved physics recording (recordings/<id>, recording.py) rendered to an MP4 at real speed by
                        MuJoCo's renderer: overhead, follow or side camera, the joints interpolated between ticks
                        (hand-run; docs/TWO_FLIES_PLAN.md 8.9)
+  refit_stride.py      NeuroMechFly's recorded stride (the 3-D view's gait atlas, from flygym 1.2.1) refitted onto flygym
+                       2.1's skeleton, with every atlas geom's offset on the 2.1 bodies: web/models/nmf_stride.npz, the
+                       physics body's step tables and the replays' pose mapping (hand-run once; --check verifies)
   alias_audit.py       every population spec the kit's code names (virtual_fly/specs.py), counted on the male, FlyWire
                        and BANC files term by term, so that a union with one empty member cannot hide behind the others'
                        cells; an empty term on BANC comes with candidate names (hand-run; docs/TWO_FLIES_PLAN.md 9.5)

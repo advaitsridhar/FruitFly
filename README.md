@@ -122,10 +122,9 @@ ventral nerve cord (Bates et al. 2026, Nature; the data deposit on Harvard Datav
 fetched once (0.44 GB, pinned by checksum) and built in under a minute (`docs/SCIENCE.md` section 14). FlyWire stays the
 default female.
 
-**The physics body** (`--body physics`, optional) needs Python 3.10-3.12 (flygym 1.2.1 does not install
-on 3.13 or newer) and about 680 MB of packages; in a virtual environment made with such a Python:
-`py -m pip install -e ".[physics]"`, then `py -m pip install --no-deps flygym==1.2.1`
-(docs/SCIENCE.md section 6.7).
+**The physics body** (`--body physics`, optional) needs Python 3.12-3.14 (flygym 2.1 installs on no other) and
+about 400 MB of packages; in a virtual environment made with such a Python: `py -m pip install -e ".[physics]"`
+(flygym 2.1.0 with MuJoCo 3.9; docs/SCIENCE.md section 6.7). One physics fly runs at real time, two at about half.
 
 **The GPU brain** (`--backend cupy`, optional; Windows and Linux with an NVIDIA GPU, no CUDA toolkit to install) runs
 the same model, spike for spike, on the graphics card through CuPy (`docs/SCIENCE.md` section 11). Install CuPy for
@@ -296,11 +295,12 @@ the page stays in 2-D and says so.
 
 **Two physics flies.** `py fly_game.py --partner female --body physics` puts both flies into one MuJoCo world as NeuroMechFly
 bodies, each driven by its own brain, able to touch each other: the tap is a physical contact with its force, both flies are
-drawn at real size, and the pair runs at about a tenth of real time (that is the bodies' pace, the page says so). The single
-physics fly is unchanged (`docs/SCIENCE.md` section 13). The page's "Save replay" switch writes the run to `recordings/`, and
-`py tools/render_replay.py recordings/<id>` turns a physics replay into a 1080p MP4 at real speed with MuJoCo's own renderer
-(`--camera overhead`, `follow` or `side`; section 13.4). `--physics-levers LIST` switches on measured speed levers (section 13.5;
-the default, `dedupe`, changes no number and runs 1.3x faster; `none` switches it off).
+drawn at real size, and the pair runs at about half real time on a laptop since v3.0 (flygym 2.1; a tenth before; the page
+says so).
+The single physics fly is the same body (`docs/SCIENCE.md` section 13). The page's "Save replay" switch writes the run to
+`recordings/`, and `py tools/render_replay.py recordings/<id>` turns a physics replay into a 1080p MP4 at real speed with MuJoCo's
+own renderer (`--camera overhead`, `follow` or `side`; section 13.4). `--physics-levers LIST` switches on the measured speed levers
+of section 13.5 (on flygym 2.1 the model already has what the adopted ones asked for, so none is on by default).
 
 **In code**, start with `my_first_fly.py`: poke, wait, listen, in three lines. Then:
 
@@ -317,7 +317,7 @@ the default, `dedupe`, changes no number and runs 1.3x faster; `none` switches i
 | `py fly_brain.py --silence GNG087 --only bitter` | Knock out the bitter relay |
 | `py fly_brain.py --stim "prefix:JO-B:100" --record spikes.npz` | Every spike, with neuPrint IDs |
 | `py fly_game.py --partner female` | Two simulated brains in one dish (the male and FlyWire's female) |
-| `py fly_game.py --partner female --body physics` | The same pair as two NeuroMechFly bodies in one MuJoCo world, able to touch (about 0.1x real time) |
+| `py fly_game.py --partner female --body physics` | The same pair as two NeuroMechFly bodies in one MuJoCo world, able to touch (about half real time) |
 | `py fly_brain.py --fly banc` | A third connectome: BANC, a female with a whole ventral nerve cord (built on first use from its public deposit, `docs/SCIENCE.md` section 14) |
 | `py tools/render_replay.py recordings/<id> --camera follow` | A saved physics replay as a 1080p MP4 at real speed, rendered by MuJoCo (overhead, follow or side camera) |
 | `py fly_brain.py --female --pair-experiments` | Her song, pC1, pC2l, cVA and SAG routes, measured (provisional ranges) |
@@ -456,9 +456,9 @@ These are the things the critics point at, so it's worth knowing them:
 - **The odour code is odd in places.** Kenyon-cell subtypes are recruited unlike real flies (γ-main
   cells hardly at all), single glomeruli barely reach the mushroom body, and an odour leaves the
   central-complex heading circuit ringing for a second or two after it stops.
-- **The body is a drawing** unless you ask for the optional physics body (`--body physics`, Python 3.10-3.12
-  only: NeuroMechFly v2 legs in MuJoCo, about a tenth of real time; docs/SCIENCE.md section 6.7). The drawn
-  body's speeds and turn rates are chosen by hand.
+- **The body is a drawing** unless you ask for the optional physics body (`--body physics`, Python 3.12-3.14
+  only: NeuroMechFly v2 legs in MuJoCo through flygym 2.1, at real time for one fly; docs/SCIENCE.md section 6.7).
+  The drawn body's speeds and turn rates are chosen by hand.
   The decoder's weights are hand-chosen too, but it measures and shows which motor pools each
   descending neuron reaches in the wiring.
 - **No hormones, no electrical synapses, no development,** one fly's brain, one seed unless you ask

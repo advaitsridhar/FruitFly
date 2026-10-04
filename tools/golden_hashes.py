@@ -36,7 +36,7 @@ CONFIGS = {
     "zap_mdn":            ({}, [], [{"type": "zap", "spec": "MDN", "hz": 60, "secs": 1.0}]),
     "silence_and_watch":  ({}, [{"type": "silence", "spec": "MN9"}, {"type": "watch", "spec": "DNa02"}], []),
     "courtship_scenario": ({}, [{"type": "scenario", "id": "courtship"}], []),
-    "physics_body":       ({"body": "physics"}, [], []),     # 80 ticks, not 400 (about 0.1x real time); needs flygym
+    "physics_body":       ({"body": "physics"}, [], []),     # 80 ticks, not 400; needs flygym
 }
 TICKS, PHYSICS_TICKS, ACTION_TICK = 400, 80, 100
 

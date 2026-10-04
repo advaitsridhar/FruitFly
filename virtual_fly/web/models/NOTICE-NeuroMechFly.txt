@@ -1,4 +1,5 @@
-NeuroMechFly v2 body meshes, as shipped with Virtual Fly's 3-D view (nmf_fly.glb, nmf_gait.bin, nmf_gait.json)
+NeuroMechFly v2 body meshes, as shipped with Virtual Fly's 3-D view (nmf_fly.glb, nmf_gait.bin, nmf_gait.json), and its
+recorded stride on the flygym 2.1 skeleton (nmf_stride.npz)
 
 Taken from: the mesh files of the flygym package, version 1.2.1 (flygym-1.2.1-py3-none-any.whl, 23,345,853 bytes from PyPI,
 SHA-256 5db9bb89b7f57e2fda8d716fd8205b0ba7ac9a46e7c194ea6e752e38964f390d), NeLy-EPFL, licensed under the Apache License 2.0 (LICENSE-NeuroMechFly.txt next to this file).
@@ -8,6 +9,14 @@ exported from MuJoCo's compiled model in the frames MuJoCo poses them (recentred
 converted to glTF binary with vertex normals, and decimated from 502,781 to 58,293 triangles in all (per part: {"Thorax": 4000, "A1A2": 1500, "A3": 1500, "A4": 1500, "A5": 1499, "A6": 1500, "LHaltere": 300, "LWing": 1499, "RHaltere": 300, "RWing": 1499, "LFCoxa": 899, "LFFemur": 900, "LFTibia": 700, "LFTarsus1": 600, "LFTarsus2": 300, "LFTarsus3": 300, "LFTarsus4": 300, "LFTarsus5": 300, "LHCoxa": 900, "LHFemur": 900, "LHTibia": 700, "LHTarsus1": 599, "LHTarsus2": 300, "LHTarsus3": 300, "LHTarsus4": 300, "LHTarsus5": 300, "LMCoxa": 900, "LMFemur": 826, "LMTibia": 676, "LMTarsus1": 600, "LMTarsus2": 300, "LMTarsus3": 300, "LMTarsus4": 300, "LMTarsus5": 300, "RHCoxa": 900, "RHFemur": 900, "RHTibia": 700, "RHTarsus1": 599, "RHTarsus2": 300, "RHTarsus3": 300, "RHTarsus4": 300, "RHTarsus5": 300, "RMCoxa": 900, "RMFemur": 826, "RMTibia": 676, "RMTarsus1": 600, "RMTarsus2": 300, "RMTarsus3": 300, "RMTarsus4": 300, "RMTarsus5": 300, "RFCoxa": 899, "RFFemur": 899, "RFTibia": 700, "RFTarsus1": 600, "RFTarsus2": 300, "RFTarsus3": 300, "RFTarsus4": 300, "RFTarsus5": 300, "Head": 8000, "LEye": 2500, "REye": 2500, "Rostrum": 999, "Haustellum": 1000, "LPedicel": 500, "LFuniculus": 498, "LArista": 300, "RPedicel": 500, "RFuniculus": 500, "RArista": 300});
 a gait atlas (nmf_gait.bin) of the model's poses over one stride of its recorded single step was computed with MuJoCo's
 forward kinematics. No mesh was redrawn; no vertex was edited by hand.
+
+nmf_stride.npz (Virtual Fly 3.0, tools/refit_stride.py, 2026-10-04): NeuroMechFly's recorded single step, as the gait atlas
+above holds it, refitted onto the skeleton of flygym 2.1.0 (NeLy-EPFL, Apache License 2.0, the same licence file) by
+least squares on MuJoCo's forward kinematics, re-indexed per leg, with every atlas geom's fixed offset on the 2.1 bodies;
+the swing windows are flygym 1.2.1's PreprogrammedSteps.swing_period. Virtual Fly's leg controller (virtual_fly/physics.py,
+class CPG) carries the equations and constants of flygym 1.2.1's CPGNetwork (flygym/examples/locomotion/cpg_controller.py)
+and its tripod coupling (turning_controller.py), since flygym 2.x ships no controller; the joint, servo and adhesion
+settings are flygym 1.2.1's Fly defaults.
 
 Please cite: Wang-Chen S, Stimpfling VA, Lam TKC, Özdil PG, Genoud L, Hurtak F, Ramdya P (2024). NeuroMechFly v2: simulating embodied sensorimotor control in adult Drosophila. Nature Methods 21(12):2353-2362. doi:10.1038/s41592-024-02497-y
 

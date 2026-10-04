@@ -1,6 +1,7 @@
 """The 3-D fly model shipped with the kit (docs/TWO_FLIES_PLAN.md 7.2, 7.3): the GLB, the gait atlas and its header, the
 licence and the notice are present and agree with each other, parsed with plain Python (no MuJoCo, no trimesh)."""
 
+import importlib.util
 import json
 import struct
 import subprocess
@@ -84,6 +85,25 @@ def test_the_atlas_and_the_model_agree():
         assert np.abs(T[:3, 3] - standing[k, :3]).max() < 1e-4, n
     assert header["triangles"] < 100_000 and header["triangles_before"] > header["triangles"]
     assert header["source"]["wheel_sha256"] == WHEEL_SHA and header["source"]["licence"] == "Apache-2.0"
+
+
+def test_the_stride_fits_flygym_2_1_and_rebuilds_the_atlas():
+    """The shipped stride (web/models/nmf_stride.npz, tools/refit_stride.py): flygym 2.1's joint order, the recorded step's swing
+    windows, and the whole gait atlas rebuilt from the 2.1 skeleton through the file's geom offsets (needs the physics extra)."""
+    from virtual_fly import physics
+    z = np.load(ROOT / "virtual_fly" / "web" / "models" / "nmf_stride.npz", allow_pickle=False)
+    assert z["angles"].shape == (65, 42) and int(z["phases"]) == 64 and int(z["standing"]) == 64 and float(z["stride_ms"]) == pytest.approx(1000 / 12, abs=0.01)
+    assert len(z["dof_names"]) == 42 and str(z["dof_names"][0]) == "c_thorax-lf_coxa-pitch" and str(z["dof_names"][41]) == "rh_tibia-rh_tarsus1-pitch"
+    assert list(z["geom_names"]) == json.loads((ROOT / "virtual_fly" / "web" / "models" / "nmf_gait.json").read_text())["geoms"]
+    assert set(z["geom_bodies"]) >= {"c_thorax", "lf_coxa", "rh_tarsus5"} and float(z["atlas_pos_error_mm"]) < 0.02 and float(z["atlas_angle_error_deg"]) < 1.0
+    assert (z["swing_start"] == 0).all() and (z["swing_end"] > 1.9).all() and (z["swing_end"] < 2.4).all()
+    assert "Apache-2.0" in str(z["source"]) and "NOTICE-NeuroMechFly" in str(z["source"])
+    if not physics.available():
+        pytest.skip("the physics extra is not installed")
+    spec = importlib.util.spec_from_file_location("refit_stride", ROOT / "tools" / "refit_stride.py")
+    tool = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(tool)
+    assert tool.check(ROOT / "virtual_fly" / "web" / "models") == []
 
 
 def test_the_tool_checks_its_own_files():

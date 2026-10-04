@@ -119,12 +119,17 @@ def test_two_flies_meet_within_half_a_second_feel_the_tap_and_do_not_stick():
 def test_each_fly_feels_only_its_own_wall():
     w = _world(poses=((48.0, 0.0, 0.0), (0.0, 0.0, 0.0)))
     try:
-        for _ in range(20):
+        bumps, others, zs = 0, 0, []
+        for _ in range(40):                                # 1 s of walking into the wall 2 mm ahead, then along it
             w.bodies[0].move(TICK, "walk", drive(forward=1.0))
             w.bodies[1].move(TICK, "idle", drive())
             w.advance_tick(TICK)
-        assert w.bodies[0].bumped and not w.bodies[1].bumped
-        assert w.touching_wall(0) and not w.touching_wall(1)
+            bumps += w.bodies[0].bumped
+            others += w.bodies[1].bumped or w.touching_wall(1)
+            zs.append(w.thorax(0)[0][2])
+        assert bumps >= 20 and others == 0                 # fly 0 feels the wall on most ticks, fly 1 never
+        assert min(zs) > 0.75 and zs[-1] > 0.85            # and stays on its feet (physics.WALL_FRICTION: no climbing, no fall)
+        assert math.hypot(w.bodies[0].pose.x, w.bodies[0].pose.y) < 50.0   # inside the dish still
     finally:
         w.close()
 
@@ -152,7 +157,7 @@ def test_a_game_runs_two_physics_flies_in_one_world(conn):
              partner={"conn": conn, "brain_kwargs": {"seed": 1000}, "parts": False})
     try:
         assert g.pair_world is not None and [f.body_kind for f in g.flies] == ["physics", "physics"]
-        assert g.physics_levers == ("dedupe",) and g.pair_world.levers == ("dedupe",)    # the adopted default (SCIENCE.md 13.5)
+        assert g.physics_levers == () and g.pair_world.levers == ()   # nothing to switch on flygym 2.1 (SCIENCE.md 13.5)
         assert g.flies[0].body is g.pair_world.bodies[0] and g.flies[1].body is g.pair_world.bodies[1]
         for _ in range(4):
             g.tick()
@@ -175,14 +180,15 @@ def test_the_pair_world_takes_the_levers_too():
     plain = _world()
     try:
         npair0 = plain._m.npair
-        assert plain.levers == () and plain._m.opt.iterations == 1000
+        assert plain.levers == () and plain._m.opt.iterations == 100 and plain._m.opt.noslip_iterations == 5   # flygym 2.1's own
+        assert npair0 == 2 * 55 + 2 * 48 * len(physics.WALL_TOUCHERS) + 233       # ground, wall and fly-to-fly pairs, each once
     finally:
         plain.close()
     w = pp.PairWorld([(-3.0, 0.0, 0.0), (3.0, 0.0, math.pi)], seed=0, levers="dedupe,solver100,noslip5")
     try:
-        assert w.levers == ("dedupe", "solver100", "noslip5")
-        assert w._m.npair == npair0 - 2 * 1086 and w._m.opt.iterations == 100 and w._m.opt.noslip_iterations == 5
-        assert len(w.pairs) == 233                                     # the fly-to-fly pairs are not what dedupe drops
+        assert w.levers == ("dedupe", "solver100", "noslip5")          # accepted, and nothing to change on flygym 2.1
+        assert w._m.npair == npair0 and w._m.opt.iterations == 100 and w._m.opt.noslip_iterations == 5
+        assert len(w.pairs) == 233
         _stand(w)
         assert 0.8 < w.thorax(0)[0][2] < 1.4                           # it still stands
     finally:
