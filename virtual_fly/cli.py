@@ -137,18 +137,25 @@ def _main(argv=None):
     ap.add_argument("--female", action="store_true",
                     help="the female fly: FlyWire's whole-brain connectome (release 783), built on first use from its public "
                          "sources (needs pyarrow); no nerve cord, so experiments on leg and wing motor neurons are n/a")
+    ap.add_argument("--fly", choices=("male", "flywire", "banc"), default=None,
+                    help="which fly: male (the MaleCNS, the default), flywire (the same as --female) or banc (BANC: a female "
+                         "with a nerve cord, built on first use from the Dataverse deposit, 0.4 GB; needs pyarrow)")
     ap.add_argument("--top", type=int, default=15, help="how many rows to show in rankings")
     ap.add_argument("--seed", type=int, default=0,
                     help="first random seed (default 0): the experiments and --genome-sweep use SEED to SEED+SEEDS-1; "
                          "--stim, --sweep and --lesion use SEED")
     args = ap.parse_args(argv)
+    if args.female and args.fly not in (None, "flywire"):
+        _usage_error(ap, f"--female means --fly flywire; it cannot go with --fly {args.fly}")
+    args.fly = args.fly or ("flywire" if args.female else "male")
+    args.female = args.fly == "flywire"
     _check_args(ap, args)
     # None above only tells _check_args whether the option was given; these are the documented defaults
     args.hops = 4 if args.hops is None else args.hops
     args.grow_seed = 1 if args.grow_seed is None else args.grow_seed
     args.candidates = args.candidates or ""
 
-    conn = load_connectome(female=args.female)
+    conn = load_connectome(dataset=args.fly)
     if args.find:
         hits = conn.find_types(args.find)
         types = set(conn.tables["types"])
@@ -169,7 +176,7 @@ def _main(argv=None):
         from .wiring import compare, grow_level
         t0 = time.time()
         conn, rules = grow_level(conn, args.grow, args.grow_seed)
-        cmp = compare(load_connectome(quiet=True, female=args.female), conn) if rules is not None else {}
+        cmp = compare(load_connectome(quiet=True, dataset=args.fly), conn) if rules is not None else {}
         print(f"grown a fly from its {args.grow} wiring rules (seed {args.grow_seed}) in {time.time() - t0:.0f} s: "
               f"{conn.n_edges:,} connections, {int(conn.n_syn.sum()):,} synapses"
               + (f", {100 * cmp.get('shared_connections_fraction', 0):.0f}% shared with the real wiring" if cmp else "")
@@ -177,7 +184,8 @@ def _main(argv=None):
     if args.genes:
         from .genetics import summary
         g = summary(conn)
-        print(f"\nGene expression in the data ({'FlyWire' if conn.sex == 'female' else 'the MaleCNS'} annotation):")
+        from .genetics import dataset_kind
+        print(f"\nGene expression in the data ({ {'flywire': 'FlyWire', 'banc': 'BANC'}.get(dataset_kind(conn), 'the MaleCNS') } annotation):")
         for e in g["expression"]:
             high = f"{e['high']:,} high confidence" if e["high"] is not None else ""
             print(f"  {e['label']:26} {e['n']:7,} neurons in {e['types']:5,} types  {high:24} {e['spec']:22} {e['flybase'] or ''}")
@@ -460,7 +468,7 @@ def _main(argv=None):
         E.save_json(results, args.json, brain)
         print(f"wrote {args.json}")
     parts_on = args.parts or args.part or args.curated or args.no_receptor_signs or args.global_apl or args.one_sign_rule
-    same_fly = ((" --female" if args.female else "") + (f" --grow {args.grow}" if args.grow else "")
+    same_fly = (fly_flag(args.fly) + (f" --grow {args.grow}" if args.grow else "")
                 + (f" --grow-seed {args.grow_seed}" if args.grow and args.grow_seed != 1 else "")
                 + (" --parts" if parts_on else "") + (f" --curated {args.curated}" if args.curated not in (None, "modulators") else ""))
     brain_only = [o for o, on in (("--part", args.part), ("--no-receptor-signs", args.no_receptor_signs),
@@ -469,7 +477,7 @@ def _main(argv=None):
         print(f"Try the game's settings: {command('fly_brain.py')} --profile game" + same_fly
               + "".join(f' --part "{p}"' for p in args.part) + "".join(f" {o}" for o in brain_only if o != "--part"))
     print(f"Then play: {command('fly_game.py')}" + same_fly
-          + (" --partner male" if args.pair_experiments and args.female else " --partner female" if args.pair_experiments else "")
+          + (" --partner male" if args.pair_experiments and conn.sex == "female" else " --partner female" if args.pair_experiments else "")
           + (f" (without {', '.join(brain_only)}, which the game does not take)" if brain_only else ""))
 
 
@@ -589,10 +597,17 @@ def _check_args(ap, args):
             raise SystemExit(f"--backend cupy: {reason} (or leave out --backend: the CPU gives the same spikes)")
 
 
+def fly_flag(dataset: str | None) -> str:
+    """The command-line flag that picks a fly, for the hints the kit prints ("" for the male)."""
+    return {"flywire": " --female", "banc": " --fly banc"}.get(dataset or "male", "")
+
+
 def check(conn, spec):
     """The neurons ``spec`` selects; or stop with one line, and a hint to search the names in the same fly.
     Each term of a comma union must select some: a misspelt one would otherwise be dropped without a word."""
-    female = getattr(conn, "sex", "male") == "female"
+    from .genetics import dataset_kind
+    kind = dataset_kind(conn)
+    female = kind != "male"
     bad, note = spec, ""
     try:
         idx = conn.select(spec)
@@ -604,13 +619,14 @@ def check(conn, spec):
             if name:                             # "MN9,DLMn a, b": select() reads 'DLMn a' and 'b'
                 note = f" '{name}' is one cell type's name, which a list separated by commas splits: give it on its own."
         problem = (f"No neurons match '{bad}'" + (f" (part of '{spec}')" if bad != spec else "")
-                   + (" in the female fly (no nerve cord, no male-specific cells)" if female else "") + "." + note)
+                   + (" in the BANC fly (a female: no male-specific cells)" if kind == "banc" else
+                      " in the female fly (no nerve cord, no male-specific cells)" if female else "") + "." + note)
     except ValueError as e:
         problem = str(e).rstrip(".") + "."
     if bad.split(":")[0] in ("body", "index", "hex", "regex"):
         raise SystemExit(problem)                # a number or a pattern, not a name: a name search would not help
     word = bad.split(":")[-1].split("/")[0].split(",")[0]
-    raise SystemExit(f"{problem} Search for names with: {command('fly_brain.py')}{' --female' if female else ''} "
+    raise SystemExit(f"{problem} Search for names with: {command('fly_brain.py')}{fly_flag(kind)} "
                      f"--find {shlex.quote(word)}")
 
 

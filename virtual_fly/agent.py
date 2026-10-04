@@ -1050,7 +1050,7 @@ class FlyAgent:
             why.append("touches water, but this fly's data name no water cells" if not self.water_cells else
                        "touches water, but is not thirsty" if self.state.thirst <= 0.2 else
                        "tastes water (LB3a), but in this wiring the water cells do not reach MN9: it does not drink"
-                       if getattr(self.real_conn, "sex", "male") != "female" else      # as her What's real says
+                       if __import__("virtual_fly.genetics", fromlist=["dataset_kind"]).dataset_kind(self.real_conn) != "flywire" else   # as her What's real says
                        "tastes water (the published model's water cells), but at the game's rates they do not reach MN9: "
                        "it does not drink")
         self.driver = "  +  ".join(why)
@@ -1134,6 +1134,12 @@ class FlyAgent:
     def _make_layout(self):
         c = self.conn
         x, y, z = c.soma[:, 0], c.soma[:, 1], c.soma[:, 2]
+        # the map's vertical axis is z in the MaleCNS and FlyWire files (head at the top, the cord below); a file whose
+        # body runs along y says so in its meta (BANC: layout_axis_hint "y", the brain at small y, the cord at large y),
+        # and the other axis is the depth. The hint goes into the layout as axis_hint, for the page to know.
+        axis_hint = (getattr(c, "meta", {}) or {}).get("layout_axis_hint", "z")
+        if axis_hint == "y":
+            y, z = z, y
         ok = ~np.isnan(x)
         x0, x1 = np.nanmin(x), np.nanmax(x)
         y0, y1 = np.nanmin(y), np.nanmax(y)
@@ -1164,11 +1170,11 @@ class FlyAgent:
             "presets": [{"spec": s, "hz": h, "label": l} for s, h, l in ZAP_PRESETS if c.select(s).size],   # cells this fly has
             "types": sorted(type_counts, key=lambda t: -type_counts[t])[:5000],
             "edges": int(c.n_edges), "synapses": int(c.n_syn.sum()),
-            "dataset": c.dataset, "sex": c.sex,
+            "dataset": c.dataset, "sex": c.sex, "axis_hint": axis_hint,
             "readouts": self.readout_meta,
             "checks": [{"id": i, "text": self._check_text(i, t)} for i, t in CHECKS   # none this fly cannot do
                        if (i not in ("court", "genetics") or self.readouts["pIP10"].size)   # no song cells, no song to lose
-                       and not (c.sex == "female" and i in ("groom", "sound", "wall"))
+                       and i not in self._checks_the_data_cannot_do()
                        and not (i == "court" and self._partner_sexes() == {"male"})]    # a male partner: no one to court, no female to add (D9)
                       + [{"id": i, "text": t} for i, t in self.pair_checks()],        # only with a partner in the dish
             "odours": [{"id": o.id, "name": o.name, "glomeruli": o.glomeruli, "innate": o.innate, "colour": o.colour,
@@ -1189,6 +1195,26 @@ class FlyAgent:
             "body": self.body_kind, "stride_average": bool(getattr(self.body, "stride_average", False)),
             "whats_real": self.whats_real(),
         }, separators=(",", ":")).encode()
+
+    # The checks a fly's data cannot pass, by data, not by sex (docs/TWO_FLIES_PLAN.md 9.6): groom needs the grooming
+    # command neurons (aDN1/aDN2: DNg62, DNge078), sound the Johnston's organ B cells, wall the head bristles. FlyWire has
+    # all three populations, but its routes were measured too weak for the checks (dust and a clap do not reach aDN and
+    # the giant fibre at the game's rates; at a wall the bristles reach aDN1, not MDN: docs/SCIENCE.md 9.4), so the
+    # measured exception stays by dataset. BANC's routes are not measured yet: her checks stay, and the log says so.
+    WEAK_ROUTES = {"flywire": ("groom", "sound", "wall")}
+
+    def _checks_the_data_cannot_do(self) -> set[str]:
+        from .genetics import dataset_kind
+        c = self.conn
+        out = set(self.WEAK_ROUTES.get(dataset_kind(c), ()))      # by the data's kind (a female file of no known name counts as FlyWire's)
+        if not (c.count("DNg62") and c.count("DNge078")):
+            out.add("groom")
+        if not c.count(SOUND_SPEC):
+            out.add("sound")
+        from .senses.mechano import HEAD_BRISTLES
+        if not c.count(HEAD_BRISTLES):
+            out.add("wall")
+        return out
 
     def _scenario_text(self, s) -> str:
         """A scenario's description for this fly: its two-fly text with a partner in the dish (the scripted female
@@ -1276,8 +1302,11 @@ class FlyAgent:
                                    "copulation; her decision neurons (DNp37, DNp13) are shown as readouts and never read as a verdict.")
 
     def _whats_real_one(self) -> dict:
-        male = getattr(self.real_conn, "sex", "male") != "female"
-        src = "MaleCNS" if male else "FlyWire"
+        from .genetics import dataset_kind
+        kind = dataset_kind(self.real_conn)                      # "male", "flywire" or "banc": the texts name the data
+        male = kind != "flywire"                                 # BANC has a nerve cord and MaleCNS-like routes: the male's lines fit it
+        banc = kind == "banc"
+        src = {"male": "MaleCNS", "flywire": "FlyWire", "banc": "BANC"}[kind]
         return {
             "wiring": [
                 "Sugar taste neurons → MN9, the proboscis motor neuron. Bitter taste keeps MN9 silent"
@@ -1307,7 +1336,9 @@ class FlyAgent:
                                                  "driven as whole populations from the retina's motion signal") +
                 ") → HS cells → DNa02 and DNp15 on the same side: the optomotor reflex.",
                 ("Which neurons express fruitless and doublesex, and which are male-specific or dimorphic: the MaleCNS annotation, read from the data. Silencing the fruitless neurons stops the song (pIP10 and its route to the wing motor neurons are fru+) and leaves feeding and escape alone."
-                 if male else "Which neurons express fruitless and doublesex, and which are female-specific or dimorphic: FlyWire's annotation (Schlegel et al. 2024), read from the data. This female brain has no pIP10 and no nerve cord, so no song."),
+                 if male and not banc else
+                 "Which neurons are female-specific or dimorphic: BANC's annotation (Bates et al. 2026), read from the data. BANC has no fruitless or doublesex labels, so the gene: selectors select nothing here and the fruitless-silencing check cannot be done; this female has no pIP10 (a male cell), so no song, but she has a nerve cord: leg taste, leg motor neurons and the abdominal ganglion are hers."
+                 if banc else "Which neurons express fruitless and doublesex, and which are female-specific or dimorphic: FlyWire's annotation (Schlegel et al. 2024), read from the data. This female brain has no pIP10 and no nerve cord, so no song."),
                 *(["A grown fly (Genome card) keeps the connectome's cell-type wiring rules and nothing else: 9 of the 11 validated reflexes survive on type-level rules, none on class-level rules."] if male else []),
                 f"The parts list (Genome card): which neurons make dopamine, octopamine or serotonin is the {src} transmitter prediction"
                 + ("" if male else ", corrected from FlyWire's literature column (known_nt)") +

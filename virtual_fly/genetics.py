@@ -80,6 +80,21 @@ SOURCE_FEMALE = ("fruitless/doublesex labels and the female-specific/dimorphic s
                  "Transmitters: FlyWire's prediction from synapse appearance, as it is (it has no histamine class and "
                  "calls the Kenyon cells dopaminergic; the parts list corrects both from FlyWire's literature column, "
                  "this card does not). Gene identities and links: FlyBase.")
+SOURCE_BANC = ("fruitless/doublesex: BANC's annotation (Bates et al. 2026) has no fruitless or doublesex columns, so the "
+               "gene: selectors select nothing on this fly (the male's labels are not copied across: that would put another "
+               "fly's data on her). The female-specific/dimorphic status: BANC's sexually_dimorphic column. Transmitters: "
+               "BANC's prediction from synapse appearance (eight classes, histamine and tyramine included; tyramine counts as "
+               "excitatory here, a modelling choice). Gene identities and links: FlyBase.")
+
+
+def dataset_kind(conn) -> str:
+    """"male", "flywire" or "banc": which data this connectome is (from its dataset name, else its sex)."""
+    name = str(getattr(conn, "dataset", "") or "").lower()
+    if name.startswith("banc"):
+        return "banc"
+    if name.startswith("flywire"):
+        return "flywire"
+    return "male" if getattr(conn, "sex", "male") != "female" else "flywire"
 
 
 def gene_mask(conn, value: str) -> np.ndarray:
@@ -171,7 +186,7 @@ def summary(conn, readouts: list[dict] | None = None) -> dict:
     # MaleCNS counts its "unclear" neurons as excitatory; FlyWire's keep the low-confidence prediction's sign
     out = {"expression": groups, "transmitters": transmitters, "unclear": int(unclear.size),
            "unclear_inhibitory": int((conn.sign[unclear] < 0).sum()),
-           "source": SOURCE_FEMALE if sex == "female" else SOURCE,
+           "source": {"banc": SOURCE_BANC, "flywire": SOURCE_FEMALE}.get(dataset_kind(conn), SOURCE),
            "genes": [{"symbol": s, "flybase": FLYBASE.format(fb), "name": n, "marks": m, "spec": sp} for s, fb, n, m, sp in GENES]}
     if readouts is not None:
         out["readouts"] = {r["key"]: genotype(conn, conn.select(r["spec"])) for r in readouts}
@@ -195,7 +210,8 @@ def _default_fetch(url: str, timeout: float) -> bytes:
 def _malecns_only(conn):
     """NeuronBridge matches driver-line images to MaleCNS neurons by body id; a FlyWire root id matches nothing."""
     if getattr(conn, "sex", "male") != "male":
-        raise ValueError("NeuronBridge lookups match MaleCNS neurons; they are not available for the female fly (FlyWire)")
+        name = {"banc": "the BANC fly", "flywire": "the female fly (FlyWire)"}.get(dataset_kind(conn), "this fly")
+        raise ValueError(f"NeuronBridge lookups match MaleCNS neurons; they are not available for {name}")
 
 
 class NeuronBridge:
