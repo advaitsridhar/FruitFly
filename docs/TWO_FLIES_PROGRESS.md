@@ -11,7 +11,7 @@ Plan: docs/TWO_FLIES_PLAN.md. Newest session notes first.
 | 3 | claude/two-flies-p3-3d-view | #19 | merged (squash, `157ffa9`) | 2026-10-03 |
 | 4 | claude/two-flies-p4-physics-pair | #20 | merged (squash, `5a27efe`) | 2026-10-04 |
 | 5 | claude/two-flies-p5-banc | #21 | merged (squash, `ff16d8c`) | 2026-10-04 |
-| real time | claude/flygym2-realtime | draft | the flygym 2.1 migration, v3.0.0: built, measured, a draft PR; the owner's word needed on the physics golden hashes | 2026-10-04 |
+| real time | claude/flygym2-realtime | #22 (draft) | the flygym 2.1 migration, v3.0.0: built, measured, `0459fe1`; the owner's word needed on the physics golden hashes | 2026-10-04 |
 
 ## This machine
 - OS: WSL2 (Ubuntu 24.04.5 LTS) on Windows; the repository lives under the Linux home folder, not `/mnt/c`.
