@@ -301,16 +301,23 @@ class Game:
     def __init__(self, brain: FlyBrain, autopilot: bool = True, seed: int = 0, columnar: bool = True,
                  profile_name: str = "game", brain_factory=None, parts_list=None, brain_kwargs: dict | None = None,
                  retest: str = "auto", body: str = "drawn", stride_average: bool = False, brain_procs: str = "auto",
-                 partner: dict | None = None, social=None, physics_levers=None):
+                 partner: dict | None = None, social=None, physics_levers=None, brain_lag: str = "auto"):
         """``partner``: a second simulated fly in the dish (docs/TWO_FLIES_PLAN.md 5.4): a dict with its ``conn``
         (loaded here, for the API and the layout; its brain is built from the file in a process of its own, or here
         with brain_procs="off"), and optionally ``brain_kwargs`` (default: the protagonist's overrides), ``parts``
         (False, True or a PartsList), ``autopilot`` (default on: her walking urge, decision 13). ``social``: a
-        senses.social.SocialConfig, or its comma list (default "seen,song,contact,collide")."""
+        senses.social.SocialConfig, or its comma list (default "seen,song,contact,collide"). ``brain_lag``: whether the
+        bodies move on the brains' answers from the tick before while the brains compute this tick's (each answer then
+        reaches its body one tick, 25 ms, later; docs/SCIENCE.md 13.6): "auto" (on for a physics pair, whose physics no
+        longer waits for the brains; off otherwise), "on" (any pair whose brains have their own processes), "off".
+        ``physics_levers``: the physics body's speed levers (physics.LEVERS), a comma list or a tuple; None, the default,
+        gives none for one fly and the 0.2 ms step (dt2) for two physics flies (docs/SCIENCE.md 13.7); "none" gives none."""
         from .agent import HOME, PARTNER_HOME, FlyAgent    # (agent.py imports this module's constants)
         from .senses.social import SocialConfig
         if brain_procs not in ("auto", "on", "off", "server"):
             raise ValueError("brain_procs must be 'auto', 'on', 'off' or 'server'")
+        if brain_lag not in ("auto", "on", "off"):
+            raise ValueError("brain_lag must be 'auto', 'on' or 'off'")
         self.brain_procs = brain_procs                   # auto: in this process for one fly, a process per brain with more,
         #                                                  one process for every brain with a GPU brain (6.5); server: that one
         self.social = social if isinstance(social, SocialConfig) else SocialConfig.from_list(social)
@@ -323,12 +330,19 @@ class Game:
         self.world = World(seed)
         self.events = EventLog()
         self.scenario = ScenarioRunner(self)
-        from .physics import DEFAULT_LEVERS, parse_levers
-        # speed levers of the physics body (physics.LEVERS): the adopted default when none are named (docs/SCIENCE.md 13.5),
-        # "none" switches them off; nothing for the drawn body
+        from .physics import DEFAULT_LEVERS, PAIR_DEFAULT_LEVERS, parse_levers
+        # speed levers of the physics body (physics.LEVERS) when none are named: none for one fly (docs/SCIENCE.md 13.5),
+        # the 0.2 ms step for two physics flies (PAIR_DEFAULT_LEVERS, 13.7); "none" switches them off; nothing for the
+        # drawn body
         if physics_levers is None:
-            physics_levers = DEFAULT_LEVERS if body == "physics" else ()
+            physics_levers = (PAIR_DEFAULT_LEVERS if partner is not None else DEFAULT_LEVERS) if body == "physics" else ()
         self.physics_levers = parse_levers(physics_levers)
+        # where the brains run: "local" (this process), "procs" (a process per brain), "server" (one process for every
+        # brain: the GPU's way, docs/TWO_FLIES_PLAN.md 6.5, chosen by auto when a fly's brain_kwargs say backend cupy)
+        self.brain_mode = self._brain_mode(brain_procs, brain_kwargs, partner)
+        # the brain lag (docs/SCIENCE.md 13.6), a bool from here on: checked before the MuJoCo world or any brain is built
+        self.brain_lag = self._brain_lag(brain_lag, partner is not None, partner is not None and body == "physics",
+                                         self.brain_mode)
         self.pair_world = None                           # a partner with the physics body: one MuJoCo world for both flies
         if partner is not None and body == "physics":    # (physics_pair.py; docs/TWO_FLIES_PLAN.md 8.3-8.5)
             from .physics_pair import PairWorld, available, unavailable_reason
@@ -337,9 +351,6 @@ class Game:
             if stride_average:
                 raise ValueError("--stride-average is the single physics fly's: in a pair each fly's senses see its body as it is")
             self.pair_world = PairWorld([HOME, PARTNER_HOME], seed=seed, world=self.world, levers=self.physics_levers)
-        # where the brains run: "local" (this process), "procs" (a process per brain), "server" (one process for every
-        # brain: the GPU's way, docs/TWO_FLIES_PLAN.md 6.5, chosen by auto when a fly's brain_kwargs say backend cupy)
-        self.brain_mode = self._brain_mode(brain_procs, brain_kwargs, partner)
         self.brain_server = None
         io_factory = None
         if self.brain_mode == "server":
@@ -413,6 +424,21 @@ class Game:
         if brain_procs == "auto":
             return "server" if gpu else ("procs" if partner is not None else "local")
         return {"on": "procs", "off": "local", "server": "server"}[brain_procs]
+
+    @staticmethod
+    def _brain_lag(setting: str, pair: bool, physics_pair: bool, brain_mode: str) -> bool:
+        """The brain lag's setting -> on or off. It needs two or more flies (a single fly's tick is not changed) whose
+        brains compute in their own processes (brain_mode procs or server): a brain in this process cannot compute while
+        the bodies move. ``auto`` turns it on for a physics pair, where the brains' time hid behind none of the physics
+        (docs/SCIENCE.md 13.6); a drawn pair already runs faster than real time and keeps its lockstep."""
+        if setting == "on":
+            if not pair:
+                raise ValueError("brain_lag='on' needs a partner: one fly's tick has nothing to overlap (leave it at 'auto')")
+            if brain_mode == "local":
+                raise ValueError("brain_lag='on' needs the brains in their own processes (brain_procs 'auto', 'on' or "
+                                 "'server'): a brain in the game's process cannot compute while the bodies move")
+            return True
+        return setting == "auto" and physics_pair and brain_mode != "local"
 
     def close(self):
         """Stop the loop (it returns after the tick it is in) and let every fly's brain process go. server.serve calls
@@ -775,29 +801,49 @@ class Game:
     def tick(self):
         """One 25 ms tick of every fly in the dish (docs/TWO_FLIES_PLAN.md 5.4): all flies sense the same start-of-tick
         snapshot of the others, all brains advance (in lockstep when each has its own process), then all bodies
-        move, then the bookkeeping; with one fly this is exactly the single fly's order."""
+        move, then the bookkeeping; with one fly this is exactly the single fly's order. With the brain lag
+        (:attr:`brain_lag`, docs/SCIENCE.md 13.6; a hand-built timing) the bodies move on the answers the brains gave last
+        tick while the brains compute this tick's, received after the move: each answer reaches its body one tick later
+        (a brain that has said nothing valid gives its body an empty answer for that tick: FlyAgent.lagged_tick).
+        Everything after the move (the bookkeeping, the watchdog, the published frame) reads this tick's rates, spikes
+        and counts, as before; the mode, the motor drives and the learned bias stay what act made of last tick's."""
         dt = TICK_MS / 1000.0
         self._apply_actions()
         self.scenario.step(dt)
         flies = self.flies
         a = flies[0]
+        moved = False
         if len(flies) == 1:
             rates, col_idx, col_hz = a.senses(dt)
             bts = [a.advance(dt, rates, col_idx, col_hz, self.seq)]   # seq: the brain-map sample is drawn as publish will number it
             others = [()]
         else:
-            from .brainio import advance_all                 # (brainio.py imports this module's constants)
+            from .brainio import advance_all, receive_all, send_all     # (brainio.py imports this module's constants)
             snap = [f.pose_view() for f in flies]
             others = [[s for s in snap if s.id != f.id] for f in flies]
             inputs = []
             for f, o in zip(flies, others):
                 rates, col_idx, col_hz = f.senses(dt, o)
                 inputs.append(f.advance_input(dt, rates, col_idx, col_hz, self.seq))
-            bts = [f.advance_done(bt) for f, bt in zip(flies, advance_all([f.io for f in flies], inputs))]
-        for f, bt, o in zip(flies, bts, others):
-            f.act(dt, bt, o)
-        if self.pair_world is not None:                  # both drives set: the shared physics world steps once (8.5)
-            self.pair_world.advance_tick(dt)
+            if self.brain_lag:
+                lagged = [f.lagged_tick() for f in flies]               # last tick's answers (empty where none is valid)
+                for f in flies:                                         # none is valid until this tick's arrives (advance_done):
+                    f.bt_epoch = -1                                     # after a failure the next tick gets empty answers
+                # every answer carries the learned odour bias: odour steering reads it a tick later, when the fly may
+                # have begun to smell (the lockstep asks for it only on the ticks the fly smells, advance_input)
+                inputs = [args[:-1] + (True,) for args in inputs]
+                sent = send_all([f.io for f in flies], inputs)          # the brains compute this tick's answers ...
+                try:
+                    self._move(dt, lagged, others)                      # ... while the bodies move on last tick's
+                except BaseException:
+                    receive_all(sent, quiet=True)                       # nothing left in flight: every answer read, every lock let go
+                    raise
+                bts = [f.advance_done(bt) for f, bt in zip(flies, receive_all(sent))]
+                moved = True
+            else:
+                bts = [f.advance_done(bt) for f, bt in zip(flies, advance_all([f.io for f in flies], inputs))]
+        if not moved:
+            self._move(dt, bts, others)
         if len(flies) > 1 and self.social.collide:
             resolve_overlaps(flies)                      # both pushed apart equally (D4; senses/social.py)
         for f in flies:
@@ -833,6 +879,15 @@ class Game:
                 self.events.add(self.t, "system", f"replay recordings/{c.id} stopped: {c.error}")
                 self.say(f"Replay stopped: {c.error}", 5.0)
         self.publish(bt, a.hz_shown, a.sps, bts)
+
+    def _move(self, dt: float, bts: list, others: list):
+        """Every fly acts on a BrainTick (decodes it, chooses a mode, sets its drive), then a physics pair's shared world
+        steps once. Under the brain lag this runs while the brains hold their pipes (brainio.send_all), so nothing here
+        may ask a brain anything: act reads only the BrainTick it is given and ``f.bt`` (the same one, FlyAgent.lagged_tick)."""
+        for f, bt, o in zip(self.flies, bts, others):
+            f.act(dt, bt, o)
+        if self.pair_world is not None:                  # both drives set: the shared physics world steps once (8.5)
+            self.pair_world.advance_tick(dt)
 
     # ------------------------------------------------------------------ publishing
     def publish(self, bt, hz, sps, bts=None):

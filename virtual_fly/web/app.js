@@ -242,7 +242,7 @@ function syncControls(s) {
 }
 let slowSince = 0, bodyNoted = false;
 const PHYSICS_PACE = "The physics body (NeuroMechFly's legs in MuJoCo) runs at about real time on a laptop; slower here means your computer is behind, and the fly's world slows down to keep up.";
-const PAIR_PACE = "Both flies are physics bodies (NeuroMechFly in one MuJoCo world, drawn at real size), which runs at about half real time on a laptop: that is the bodies' pace, not your computer's.";
+const PAIR_PACE = "Both flies are physics bodies (NeuroMechFly in one MuJoCo world, drawn at real size). With the defaults, a 0.2 ms physics step and the brain lag (each body moves on its brain's answer from one tick, 25 ms, before), both chosen for speed and said in What's real here?, they run at about real time on a laptop, so slower here means your computer is behind. With flygym's 0.1 ms step (--physics-levers none) they run at about three quarters of real time, and without the brain lag as well at about two thirds (half with the parts list on): that is the bodies' pace, not your computer's.";
 function slowHint(s) {
   if (s.paused || s.rtf >= 0.6) { slowSince = 0; if ($("hint").__slow) { $("hint").__slow = false; setText($("hint"), HINTS[tool] || ""); } return; }
   if (!slowSince) slowSince = performance.now();

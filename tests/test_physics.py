@@ -90,6 +90,7 @@ def test_levers_are_named_checked_and_off_by_default():
     assert physics.parse_levers("solver100, dedupe") == ("dedupe", "solver100")     # LEVERS order, whatever the input's
     assert physics.parse_levers(["dt2"]) == ("dt2",) and physics.parse_levers("none") == ()
     assert physics.DEFAULT_LEVERS == ()                       # flygym 2.1's model already is what dedupe, solver100, noslip5, noself ask for
+    assert physics.PAIR_DEFAULT_LEVERS == ("dt2",)            # two physics flies: the 0.2 ms step, the owner's word (SCIENCE.md 13.7)
     assert set(physics.NO_OP_LEVERS) == {"dedupe", "solver100", "noslip5", "noself"} and all(l in physics.LEVERS for l in physics.NO_OP_LEVERS)
     with pytest.raises(ValueError, match="unknown physics lever nope"):
         physics.parse_levers("dedupe,nope")
@@ -126,3 +127,60 @@ def test_levers_change_the_model_as_they_say():
         body.move(0.025, "walk", drive(forward=1.0))
     assert body.pose.y - y0 > 1.5
     assert body.to_dict()["physics"]["z"] > 0.3
+
+
+# ---------------------------------------------------------------------------------------------- the compiled leg controller (v3.1)
+needs_numba = pytest.mark.skipif(not physics.HAVE_NUMBA, reason="numba is not installed (the compiled controller is optional)")
+
+
+@needs_numba
+def test_the_compiled_leg_controller_gives_numpys_numbers_bit_for_bit(monkeypatch):
+    """Without flygym too: the update is plain arithmetic on the stride file, so CI checks it on every Python it runs. The
+    compiled update is used exactly where it gives NumPy's numbers: a machine whose NumPy sine is not the C library's (an
+    AVX-512 build's own sine, say) keeps NumPy's code, and there this test can only check that it does."""
+    monkeypatch.delenv("VF_FAST_CONTROLLER", raising=False)              # the default decision, whatever the environment
+    monkeypatch.setattr(physics, "_FAST", None)
+    agrees = physics._fast_agrees(states=3000, seed=7)                   # phases, magnitudes and all 48 controls, exactly
+    assert physics.fast_controller() is agrees                           # the 200-state check decides as 3,000 states do
+    if not agrees:
+        pytest.skip("on this machine the compiled controller's numbers differ from NumPy's: NumPy's code runs, as designed")
+
+
+def test_the_compiled_controller_can_be_switched_off(monkeypatch, capsys):
+    monkeypatch.setattr(physics, "_FAST", None)
+    monkeypatch.setenv("VF_FAST_CONTROLLER", "0")
+    assert physics.fast_controller() is False                            # NumPy's code, as before v3.1
+    monkeypatch.setattr(physics, "_FAST", None)
+    monkeypatch.setattr(physics, "HAVE_NUMBA", False)
+    monkeypatch.delenv("VF_FAST_CONTROLLER")
+    assert physics.fast_controller() is False                            # no numba: NumPy's code
+    monkeypatch.setattr(physics, "_FAST", None)
+    monkeypatch.setattr(physics, "HAVE_NUMBA", True)
+    monkeypatch.setattr(physics, "_fast_agrees", lambda: False)
+    assert physics.fast_controller() is False                            # a machine where it would disagree: NumPy's code
+    assert "differs from NumPy's" in capsys.readouterr().err             # and it says so
+    monkeypatch.setattr(physics, "_FAST", None)
+
+    def broken():
+        raise RuntimeError("numba could not compile it")
+    monkeypatch.setattr(physics, "_fast_agrees", broken)
+    assert physics.fast_controller() is False                            # nor can a failed compile stop the body being built
+
+
+@needs_flygym
+@needs_numba
+def test_the_compiled_controller_walks_the_body_exactly_as_numpy_does():
+    """The same Walker stepped 0.3 s with changing drives, once with each update: every qpos bit the same."""
+    import numpy as np
+    from virtual_fly.physics import Walker
+    runs = []
+    for fast in (True, False):
+        w = Walker(seed=3)
+        w.rig._fast = fast
+        rng = np.random.default_rng(5)
+        for _ in range(12):
+            w.set_drive(*(float(v) for v in rng.uniform(-1.0, 1.0, 2)))
+            w.advance(250)
+        runs.append(np.array(w._d.qpos))
+        w.close()
+    assert np.array_equal(runs[0], runs[1])

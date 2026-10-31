@@ -30,7 +30,8 @@ virtual_fly/
   physics.py       the optional physics body: NeuroMechFly v2 legs in MuJoCo through flygym 2.1 (--body physics; about
                    real time): the fly built from flygym's parts, the kit's wall, the recorded stride and the CPG controller
   physics_pair.py  two (or more) physics bodies in ONE MuJoCo world, able to touch (--partner ... --body physics; the
-                   two-flies work): the shared world, each fly's body in it, the contact pairs and the physical tap
+                   two-flies work): the shared world, each fly's body in it, the contact pairs and the physical tap;
+                   the game steps it every 0.2 ms by default (physics.PAIR_DEFAULT_LEVERS, docs/SCIENCE.md 13.7)
   senses/
     vision.py      retina (two compound eyes), feature detectors, columnar T4/T5 motion detectors
     olfaction.py   odours -> glomeruli -> ORN rates, with adaptation
@@ -41,9 +42,11 @@ virtual_fly/
   agent.py         one fly: its brain handle, senses, decoder, body and bookkeeping (FlyAgent); the game holds the dish
   brainio.py       the seam between a fly and its brain: LocalBrain (in this process), ProcessBrain (a child process,
                    one per brain when there are two flies) or a GpuBrainServer handle (one child process owning every
-                   brain, where the GPU brains live), the same spikes either way; advance_all is the lockstep
-  game.py          the sensorimotor loop over every fly: senses -> brains (in lockstep) -> decoders -> bodies; the world's
-                   clock; internal state; events; the actions from the browser
+                   brain, where the GPU brains live), the same spikes either way; advance_all is the lockstep, and its
+                   two halves send_all / receive_all are the brain lag's
+  game.py          the sensorimotor loop over every fly: senses -> brains (in lockstep) -> decoders -> bodies, or, with the
+                   brain lag (the physics pair's default), the bodies moving on last tick's answers while the brains
+                   compute this tick's; the world's clock; internal state; events; the actions from the browser
   scenarios.py     scripted protocols (conditioning, courtship, plume, escape; with a partner, the two-fly courtship)
   server.py        HTTP + Server-Sent Events API (docs/API.md); every per-fly endpoint takes ?fly=k, actions a "fly" field
   play.py          `python fly_game.py ...`
@@ -60,7 +63,10 @@ tools/
   vfb_overlay.json     the connector harvest: FBbt classes for the names the OBO lacks (an input of build_vfb_data.py)
   bench_two_flies.py   baseline speeds for the two-flies work: one brain, the male and female brains side by side,
                        game ticks with the drawn and the physics body, and the two-fly game with both as physics
-                       bodies per contact set (hand-run; docs/TWO_FLIES_PLAN.md 4.8, 8.2)
+                       bodies per contact set, with the brain lag on or off (hand-run; docs/TWO_FLIES_PLAN.md 4.8, 8.2)
+  pair_courtship.py    the pair scenario measured over five seeds and its controls, drawn or physics bodies, the brain lag
+                       on or off, the physics step (--levers) (hand-run; docs/TWO_FLIES_PLAN.md 5.9; docs/SCIENCE.md 10.5,
+                       13.6, 13.7)
   physics_table.py     docs/SCIENCE.md 6.7's physics table measured again on the kit as it is: the gate every speed
                        lever of the two-flies work is checked against (hand-run; docs/TWO_FLIES_PLAN.md 8.2)
   render_replay.py     a saved physics recording (recordings/<id>, recording.py) rendered to an MP4 at real speed by
@@ -121,7 +127,16 @@ are checked on arrival (a bad one is refused with its reason), queued, and appli
 With `--partner` each brain runs in its own child process (`spawn`, as the re-test child does; the
 parent warms the numba cache first so the children load it). A tick sends every brain its rates,
 then waits for every `BrainTick` (the lockstep), then moves the bodies; a child that dies or stops
-answering is reported and stopped, never waited on, and the other brain's lock is released. After
+answering is reported and stopped, never waited on, and the other brain's lock is released. With the
+brain lag (`--brain-lag`, on by default for two physics bodies; docs/SCIENCE.md 13.6) the order is
+send (`brainio.send_all`), then move the bodies on the answers the brains gave last tick and step
+the shared MuJoCo world while the children compute, then receive (`brainio.receive_all`): steps 5-7
+below run on the tick before's answers. Steps 8-9 read this tick's rates, spikes and counts, while the frame's mode,
+motor drives, the decoder's lines of the driver text and the learned bias stay what step 5-7 made of the tick before's
+answer. Between the send and the
+receive every brain's pipe is held, so nothing in that stretch may ask a brain anything (an HTTP
+query waits for the receive); an exception there still receives every answer before it is raised,
+so no lock stays held and no answer is left in a pipe for the next tick. After
 `Ctrl+C`, `server.serve` stops and joins the loop thread and only then `Game.close()` closes the
 children (the order that keeps a MuJoCo body from being torn down mid-step). The re-test of a
 rebuilt brain is a third child, at low priority, as before.

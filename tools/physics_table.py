@@ -117,7 +117,8 @@ def drive(**kw) -> dict:
 
 
 def peak_mb() -> float:
-    return round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024.0, 0)      # Linux: kB
+    per_mb = 1024.0 * 1024.0 if sys.platform == "darwin" else 1024.0          # ru_maxrss: bytes on macOS, kB on Linux
+    return round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / per_mb, 0)
 
 
 def mean(xs, nd: int = 2):
@@ -538,8 +539,8 @@ def main(argv=None) -> int:
     ap.add_argument("--baseline", type=Path, help="read the numbers against this saved run (the tool's own run on the unchanged "
                                                   "body: the levers' gate) instead of the published table")
     ap.add_argument("--levers", default=None, help="physics speed levers to switch on, a comma list of " + ", ".join(
-        __import__("virtual_fly.physics", fromlist=["LEVERS"]).LEVERS) + "; unset: the game's default (dedupe, which changes no "
-        "number); 'none': the body with no lever")
+        __import__("virtual_fly.physics", fromlist=["LEVERS"]).LEVERS) + "; unset: the game's default (no lever since v3.0: "
+        "flygym 2.1's model already is what dedupe asked for); 'none': the body with no lever")
     args = ap.parse_args(argv)
     from virtual_fly.physics import parse_levers
     try:

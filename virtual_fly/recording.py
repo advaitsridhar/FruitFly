@@ -5,7 +5,8 @@ in an installed copy, never inside site-packages. It holds what the page needs t
 however fast or slowly the run itself went, and what an offline render needs (``tools/render_replay.py``):
 
     header.json        format 1; the kit's version and git commit; tick_ms; every fly (id, sex, dataset, body kind, brain
-                       settings); the social channels; the physics settings; the model file; at the stop: ticks, seconds, bytes
+                       settings); the social channels; brain_lag (the bodies moved on the tick before's answers,
+                       docs/SCIENCE.md 13.6); the physics settings; the model file; at the stop: ticks, seconds, bytes
     frames.jsonl.gz    one line per tick: {seq, t, flies: [{id, sex, fly, mode, hz, senses, sps, graded_eps, driver}], world}
                        (fly: the body's to_dict, the state's "fly"; world: the dish's food, posts, odours, wind, stripes, tool,
                        the pointer and the scripted female)
@@ -204,6 +205,7 @@ class Capture:
                   "flies": [{"id": f.id, "sex": f.sex, "dataset": getattr(f.conn, "dataset", None), "body": f.body_kind,
                              "settings": f.io.settings()} for f in game.flies],
                   "social": game.social.names() if hasattr(game.social, "names") else None,
+                  "brain_lag": bool(getattr(game, "brain_lag", False)),      # the bodies moved on last tick's answers (13.6)
                   "physics": None, "poses": None, "active": True}
         if src is not None:
             import mujoco
