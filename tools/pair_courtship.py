@@ -9,6 +9,8 @@ controls the plan asks for (a hand-run tool for the two-flies work; docs/TWO_FLI
 ``--body physics`` puts both flies in one MuJoCo world (physics_pair.py, real size, MuJoCo's tap); there the collide
 channel has nothing to do (the bodies collide physically), so ``no_social`` still lets them touch. ``--brain-lag``: the
 game's setting (docs/SCIENCE.md 13.6): auto, the default, is on for the physics pair and off for drawn flies.
+``--levers``: the physics speed levers; unset, the physics pair runs the game's default 0.2 ms step (13.7), and
+``--levers none`` gives flygym's 0.1 ms step.
 
 Conditions (each seed starts a fresh game, both brains in their own processes, placed as the courtship scenario places them:
 the male at (-10, -8) heading 0.3 rad, the female at (14, 10) with a heading from her own dice):
@@ -57,7 +59,8 @@ def mean(xs):
     return round(statistics.fmean(xs), 3) if xs else None
 
 
-def run(seed: int, condition: str, seconds: float, parts: bool, body: str = "drawn", brain_lag: str = "auto") -> dict:
+def run(seed: int, condition: str, seconds: float, parts: bool, body: str = "drawn", brain_lag: str = "auto",
+        levers=None) -> dict:
     from virtual_fly import load_connectome
     from virtual_fly.game import Game
     from virtual_fly.parts import PartsList
@@ -68,7 +71,8 @@ def run(seed: int, condition: str, seconds: float, parts: bool, body: str = "dra
     brain = build_brain(conn, "game", **kw, **({"parts": parts_list} if parts else {}))
     game = Game(brain, seed=seed, brain_kwargs=dict(kw), parts_list=parts_list, brain_procs="auto", social=social_for(condition),
                 partner={"conn": fconn, "brain_kwargs": dict(kw), "parts": parts_list if parts else False,
-                         "autopilot": condition != "no_urge"}, body=body, brain_lag=brain_lag)
+                         "autopilot": condition != "no_urge"}, body=body, brain_lag=brain_lag,
+                physics_levers=levers)
     del brain
     try:
         m, f = game.flies
@@ -123,7 +127,7 @@ def run(seed: int, condition: str, seconds: float, parts: bool, body: str = "dra
                 escapes[name] += esc and not escaping[name]
                 escaping[name] = esc
         return {"seed": seed, "condition": condition, "parts": parts, "seconds": seconds, "ticks": ticks,
-                "channels": game.social.names(), "body": body, "brain_lag": game.brain_lag,
+                "channels": game.social.names(), "body": body, "brain_lag": game.brain_lag, "levers": list(game.physics_levers),
                 "time_near_s": round(near * TICK_MS / 1000, 1), "facing_when_near": round(facing / near, 3) if near else None,
                 "min_distance_mm": round(min_d, 1), "time_singing_s": round(singing * TICK_MS / 1000, 1),
                 "contacts_per_min": round(contacts / seconds * 60, 2),
@@ -146,12 +150,24 @@ def main(argv=None) -> int:
                     help="drawn (default) or physics: both flies NeuroMechFly bodies in one MuJoCo world (needs flygym)")
     ap.add_argument("--brain-lag", choices=("auto", "on", "off"), default="auto",
                     help="the game's brain lag (docs/SCIENCE.md 13.6): auto = on for the physics pair, off for drawn flies")
+    ap.add_argument("--levers", default=None,
+                    help="--body physics: the speed levers (physics.LEVERS), a comma list; unset: the game's default (the "
+                         "physics pair's 0.2 ms step, dt2, since v3.1: docs/SCIENCE.md 13.7); 'none': flygym's 0.1 ms step")
     ap.add_argument("--json", metavar="FILE")
     args = ap.parse_args(argv)
     if args.body == "physics":
         from virtual_fly.physics import available, unavailable_reason
         if not available():
             ap.error(f"--body physics: {unavailable_reason()}")
+    if args.levers is not None and args.body != "physics":
+        ap.error("--levers only applies with --body physics")
+    levers = None
+    if args.levers is not None:
+        from virtual_fly.physics import parse_levers
+        try:
+            levers = parse_levers(args.levers)
+        except ValueError as e:
+            ap.error(str(e))
     conds = [c.strip() for c in args.conditions.split(",") if c.strip()]
     bad = [c for c in conds if c not in CONDITIONS]
     if bad or not conds:
@@ -171,7 +187,7 @@ def main(argv=None) -> int:
     for condition in conds:
         for seed in seeds:
             t1 = time.time()
-            row = run(seed, condition, args.seconds, args.parts, args.body, args.brain_lag)
+            row = run(seed, condition, args.seconds, args.parts, args.body, args.brain_lag, levers)
             rows.append(row)
             print(f"{condition:9s} seed {seed}: near {row['time_near_s']:5.1f} s, facing {row['facing_when_near']}, sang "
                   f"{row['time_singing_s']:5.1f} s, contacts/min {row['contacts_per_min']}, she hears {row['her_hearing_hz_mean']} Hz "
@@ -181,6 +197,7 @@ def main(argv=None) -> int:
     if args.json:
         Path(args.json).write_text(json.dumps({"when": time.strftime("%Y-%m-%d %H:%M:%S"), "seconds": args.seconds,
                                                "parts": args.parts, "body": args.body, "brain_lag": args.brain_lag,
+                                               "levers": args.levers,
                                                "rows": rows, "wall_s": round(time.time() - t0)}, indent=1))
         print(f"wrote {args.json}")
     return 0

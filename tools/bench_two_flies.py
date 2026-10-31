@@ -329,7 +329,8 @@ def main():
     ap.add_argument("--contact-sets", default="forelegs", help="pair-physics: the fly-to-fly contact sets to measure, a comma list "
                                                                "of forelegs, full, none (physics_pair.CONTACT_SETS)")
     ap.add_argument("--levers", default=None, help="physics and pair-physics: speed levers to switch on (physics.LEVERS), a comma "
-                                                  "list; unset: the game's default (no lever since v3.0); 'none': no lever")
+                                                  "list; unset: the game's default (none for one fly; dt2, the 0.2 ms step, for the "
+                                                  "physics pair since v3.1); 'none': no lever")
     ap.add_argument("--backend", choices=("auto", "numpy", "numba", "cupy"), default="auto",
                     help="the brains' integrator for every row (cupy: the GPU, Phase 2; checked before anything loads)")
     ap.add_argument("--brain-lag", choices=("auto", "on", "off"), default="auto",

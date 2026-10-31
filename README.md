@@ -124,9 +124,9 @@ default female.
 
 **The physics body** (`--body physics`, optional) needs Python 3.12-3.14 (flygym 2.1 installs on no other) and
 about 400 MB of packages; in a virtual environment made with such a Python: `py -m pip install -e ".[physics]"`
-(flygym 2.1.0 with MuJoCo 3.9; docs/SCIENCE.md section 6.7). One physics fly runs at real time, two at about three
-quarters (with the brain lag, the pair's default: section 13.6; with `--brain-lag off` about two thirds, half with the
-parts list on).
+(flygym 2.1.0 with MuJoCo 3.9; docs/SCIENCE.md section 6.7). One physics fly runs at real time, and so do two with the
+pair's defaults, the brain lag and a 0.2 ms physics step (sections 13.6 and 13.7); with flygym's 0.1 ms step
+(`--physics-levers none`) two run at about three quarters of real time.
 
 **The GPU brain** (`--backend cupy`, optional; Windows and Linux with an NVIDIA GPU, no CUDA toolkit to install) runs
 the same model, spike for spike, on the graphics card through CuPy (`docs/SCIENCE.md` section 11). Install CuPy for
@@ -158,7 +158,7 @@ against the CPU's 2.8x (parts list off; 2.6x against 1.8x with it on).
 | Download blocked by a firewall | Download [the file](https://raw.githubusercontent.com/blendi-remade/fly-brain-minecraft/6cfa30175003ef25da68a237d5eda958f8047b82/src/main/resources/connectome/malecns-v1.0.flyb.gz) in your browser and put it in `data/` as it is (named `malecns-v1.0.flyb.gz`, not unpacked); the error message gives the exact path. |
 | "Could not find a free port" | Run the same command again with `--port 9000` added (the message names the ports it tried; if 9000 was among them, any other number from 1024 to 65535) |
 | `--backend cupy` stops with "the cupy backend needs ..." | CuPy is not installed in this virtual environment, or no NVIDIA GPU (or driver) is visible: install it as in "The GPU brain" above, or leave out `--backend` (the CPU gives the same spikes). On Windows, WSL2 works too when the Windows NVIDIA driver is current. |
-| The game says it's running below real time | Your computer is simulating 176k neurons slower than real time; the fly's world slows down to keep up. First make sure numba is installed (`py -m pip install numba`; the terminal says "Brain integrator: compiled (numba)" at start-up): with it, a 4-core laptop-class machine manages about 1.5x real time with a busy brain, without it about 0.7x. Then close other programs, or start it with `py fly_game.py --fast` (a 1 ms time step, about twice as fast again; every classic experiment still passes). With `--body physics` one fly runs at about real time, and two (`--partner female --body physics`, two bodies in one world) at about 0.75x with the brain lag, their default, or about two thirds with `--brain-lag off` (half with `--parts`): the physics (MuJoCo) sets that pace, not your computer (`docs/SCIENCE.md` sections 6.7.1 and 13.6). |
+| The game says it's running below real time | Your computer is simulating 176k neurons slower than real time; the fly's world slows down to keep up. First make sure numba is installed (`py -m pip install numba`; the terminal says "Brain integrator: compiled (numba)" at start-up): with it, a 4-core laptop-class machine manages about 1.5x real time with a busy brain, without it about 0.7x. Then close other programs, or start it with `py fly_game.py --fast` (a 1 ms time step, about twice as fast again; every classic experiment still passes). With `--body physics` one fly runs at about real time, and so do two (`--partner female --body physics`, two bodies in one world) with their defaults, the brain lag and a 0.2 ms physics step. With `--physics-levers none` (flygym's 0.1 ms step) two run at about 0.75x, and with `--brain-lag off` as well at about two thirds (half with `--parts`): there the physics (MuJoCo) sets the pace, not your computer (`docs/SCIENCE.md` sections 6.7.1, 13.6 and 13.7). |
 | The 3-D brain map goes dark while its yaw counter keeps ticking | Your browser took the graphics (WebGL) context away, for instance after a GPU driver reset, sleep and resume, or too many WebGL tabs (Firefox drops the least recently used one past 16). The page now asks for it back and redraws the map when it returns, and says "graphics reset, restoring…" in the map meanwhile; if it says to reload, reload the tab. A flat map with the note that WebGL is unavailable means the browser refused WebGL altogether (check its graphics settings). |
 
 ## 3. How it works (the whole idea)
@@ -298,17 +298,24 @@ the page stays in 2-D and says so.
 
 **Two physics flies.** `py fly_game.py --partner female --body physics` puts both flies into one MuJoCo world as NeuroMechFly
 bodies, each driven by its own brain, able to touch each other: the tap is a physical contact with its force, both flies are
-drawn at real size, and the pair runs at about three quarters of real time on a laptop since v3.1 (half in v3.0, a tenth
-before). That pace comes from the brain lag, on by default here: each body moves on the answer its brain
-gave one tick (25 ms) earlier, while the brains compute the next one, so the brains no longer wait for the physics or the
-physics for the brains. It is hand-built and labelled in "What's real here?"; `--brain-lag off` gives the old lockstep
-(`docs/SCIENCE.md` section 13.6). Measured over five seeds, the lag changes how the physics pair courts (the male faces
-the female less when near her, and in two runs of five they stayed together most of the time); the drawn pair is
-unchanged.
+drawn at real size, and since v3.1 the pair runs at real time on a laptop (half in v3.0, a tenth before). Two settings,
+both on by default here and both chosen for speed, give that pace:
+- **The brain lag.** Each body moves on the answer its brain gave one tick (25 ms) earlier, while the brains compute the
+  next one, so the brains no longer wait for the physics or the physics for the brains. It is hand-built and labelled in
+  "What's real here?"; `--brain-lag off` gives the old lockstep (`docs/SCIENCE.md` section 13.6).
+- **A 0.2 ms physics step** instead of flygym's 0.1 ms (the `dt2` lever; `--physics-levers none` gives 0.1 ms; section
+  13.7). It changes the physics a little: one physics fly faces a lure on 16 of 20 runs against 18.
+
+Measured over five seeds, the physics pair's courtship moves with both settings: at the 0.1 ms step the lag made the
+male face the female less when near her (in two runs of five they stayed together most of the time), and at 0.2 ms
+the step changes other measures while the lag's effects do not recur, so five seeds cannot say what either does
+(sections 13.6, 13.7). The drawn pair is unchanged.
+
 The single physics fly is the same body (`docs/SCIENCE.md` section 13). The page's "Save replay" switch writes the run to
 `recordings/`, and `py tools/render_replay.py recordings/<id>` turns a physics replay into a 1080p MP4 at real speed with MuJoCo's
 own renderer (`--camera overhead`, `follow` or `side`; section 13.4). `--physics-levers LIST` switches on the measured speed levers
-of section 13.5 (on flygym 2.1 the model already has what the adopted ones asked for, so none is on by default).
+of section 13.5 (on flygym 2.1 the model already has what the adopted ones asked for, so one fly runs none by default; the
+pair runs `dt2`, and `--physics-levers none` gives it flygym's 0.1 ms step).
 
 **In code**, start with `my_first_fly.py`: poke, wait, listen, in three lines. Then:
 
@@ -325,7 +332,7 @@ of section 13.5 (on flygym 2.1 the model already has what the adopted ones asked
 | `py fly_brain.py --silence GNG087 --only bitter` | Knock out the bitter relay |
 | `py fly_brain.py --stim "prefix:JO-B:100" --record spikes.npz` | Every spike, with neuPrint IDs |
 | `py fly_game.py --partner female` | Two simulated brains in one dish (the male and FlyWire's female) |
-| `py fly_game.py --partner female --body physics` | The same pair as two NeuroMechFly bodies in one MuJoCo world, able to touch (about three quarters of real time with the brain lag, its default) |
+| `py fly_game.py --partner female --body physics` | The same pair as two NeuroMechFly bodies in one MuJoCo world, able to touch (about real time with its defaults, the brain lag and a 0.2 ms physics step) |
 | `py fly_brain.py --fly banc` | A third connectome: BANC, a female with a whole ventral nerve cord (built on first use from its public deposit, `docs/SCIENCE.md` section 14) |
 | `py tools/render_replay.py recordings/<id> --camera follow` | A saved physics replay as a 1080p MP4 at real speed, rendered by MuJoCo (overhead, follow or side camera) |
 | `py fly_brain.py --female --pair-experiments` | Her song, pC1, pC2l, cVA and SAG routes, measured (provisional ranges) |
@@ -477,7 +484,8 @@ These are the things the critics point at, so it's worth knowing them:
   a labelled encoder, and in this data his song does not reach her song-tuned neurons at all
   (`docs/SCIENCE.md` 10.3), so what she does next to him comes mostly from her hand-built walking urge.
   The pair experiments' ranges are measured, not validated. As two physics bodies, each fly's legs act on its
-  brain's answer 25 ms late by default (the brain lag, a hand-built timing chosen for speed: `docs/SCIENCE.md` 13.6).
+  brain's answer 25 ms late by default (the brain lag, a hand-built timing chosen for speed: `docs/SCIENCE.md` 13.6),
+  and their world steps every 0.2 ms instead of 0.1, also for speed, which changes the physics a little (13.7).
 
 ## 7. Where to go next
 

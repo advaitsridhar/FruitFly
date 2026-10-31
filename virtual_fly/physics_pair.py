@@ -5,11 +5,13 @@ whose single-fly body this module leaves exactly as it is: it reuses that module
 its leg controller (``physics.FlyRig``), and puts several flies into one flygym world.
 
     brain k --decoder--> drives --descending_drive()--> (left, right) stepping drive for fly k   (physics.py, unchanged)
-    both drives set --> PairWorld.advance_tick(): per 0.1 ms step each fly's CPG and control writes, then ONE mj_step
+    both drives set --> PairWorld.advance_tick(): per physics step each fly's CPG and control writes, then ONE mj_step
     --> each PairPhysicsBody reads its thorax pose, its own wall contact and its tap on the other fly
 
 With the brain lag (game.py, the default here: docs/SCIENCE.md 13.6) the drives are the brains' answers from the tick
 before, and advance_tick runs while both brains compute this tick's (hand-built timing: each body acts 25 ms late).
+The game also gives its pair a 0.2 ms physics step (physics.PAIR_DEFAULT_LEVERS, the dt2 lever: docs/SCIENCE.md 13.7);
+a PairWorld built without levers steps at flygym's 0.1 ms.
 
 What is physical here: the bodies, the floor and the wall, the contact between the flies (explicit MuJoCo contact pairs:
 every pair is checked on every step, so the set is kept small, ``CONTACT_SETS``), the tap (a foreleg or the head on the
@@ -22,7 +24,8 @@ NeuroMechFly body was built from a micro-CT scan of a female fly: the male wears
 Frames: MuJoCo's frame IS the kit's frame here (the wall is centred at the origin), unlike the single-fly body, which
 builds its world around the fly's start. Positions in mm, headings counter-clockwise from +x, as everywhere in the kit.
 Since v3.0 the world is flygym 2.1's (MuJoCo 3.9): the pair runs at about half real time, 5.8x faster than before
-(docs/SCIENCE.md 6.7.1); since v3.1 at 0.72-0.74 with the brain lag and the compiled leg controller (13.6).
+(docs/SCIENCE.md 6.7.1); since v3.1 at 0.72-0.74 with the brain lag and the compiled leg controller (13.6), and at
+about real time with the 0.2 ms step as well, the game's default for the pair (13.7).
 """
 from __future__ import annotations
 
@@ -109,7 +112,8 @@ class PairWorld:
         poses = [tuple(float(v) for v in p) for p in poses]
         if len(poses) < 1:
             raise ValueError("a pair world needs at least one fly")
-        self.levers = physics.parse_levers(levers)             # speed levers (physics.LEVERS): none unless asked for
+        self.levers = physics.parse_levers(levers)             # speed levers (physics.LEVERS): none unless asked for (the
+        #                                                        game asks for physics.PAIR_DEFAULT_LEVERS, the 0.2 ms step)
         timestep = physics.lever_timestep(self.levers, timestep)
         self.timestep, self.seed, self.contact_set, self.wall = timestep, seed, contact_set, wall
         self.pair_solref, self.pair_solimp, self.hulls, self.native_ccd = pair_solref, pair_solimp, hulls, native_ccd

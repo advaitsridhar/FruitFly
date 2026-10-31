@@ -30,7 +30,8 @@ virtual_fly/
   physics.py       the optional physics body: NeuroMechFly v2 legs in MuJoCo through flygym 2.1 (--body physics; about
                    real time): the fly built from flygym's parts, the kit's wall, the recorded stride and the CPG controller
   physics_pair.py  two (or more) physics bodies in ONE MuJoCo world, able to touch (--partner ... --body physics; the
-                   two-flies work): the shared world, each fly's body in it, the contact pairs and the physical tap
+                   two-flies work): the shared world, each fly's body in it, the contact pairs and the physical tap;
+                   the game steps it every 0.2 ms by default (physics.PAIR_DEFAULT_LEVERS, docs/SCIENCE.md 13.7)
   senses/
     vision.py      retina (two compound eyes), feature detectors, columnar T4/T5 motion detectors
     olfaction.py   odours -> glomeruli -> ORN rates, with adaptation
@@ -64,7 +65,8 @@ tools/
                        game ticks with the drawn and the physics body, and the two-fly game with both as physics
                        bodies per contact set, with the brain lag on or off (hand-run; docs/TWO_FLIES_PLAN.md 4.8, 8.2)
   pair_courtship.py    the pair scenario measured over five seeds and its controls, drawn or physics bodies, the brain lag
-                       on or off (hand-run; docs/TWO_FLIES_PLAN.md 5.9; docs/SCIENCE.md 10.5, 13.6)
+                       on or off, the physics step (--levers) (hand-run; docs/TWO_FLIES_PLAN.md 5.9; docs/SCIENCE.md 10.5,
+                       13.6, 13.7)
   physics_table.py     docs/SCIENCE.md 6.7's physics table measured again on the kit as it is: the gate every speed
                        lever of the two-flies work is checked against (hand-run; docs/TWO_FLIES_PLAN.md 8.2)
   render_replay.py     a saved physics recording (recordings/<id>, recording.py) rendered to an MP4 at real speed by

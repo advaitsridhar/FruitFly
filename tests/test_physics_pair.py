@@ -157,7 +157,10 @@ def test_a_game_runs_two_physics_flies_in_one_world(conn):
              partner={"conn": conn, "brain_kwargs": {"seed": 1000}, "parts": False})
     try:
         assert g.pair_world is not None and [f.body_kind for f in g.flies] == ["physics", "physics"]
-        assert g.physics_levers == () and g.pair_world.levers == ()   # nothing to switch on flygym 2.1 (SCIENCE.md 13.5)
+        # the physics pair's default lever, the 0.2 ms step (physics.PAIR_DEFAULT_LEVERS, SCIENCE.md 13.7); one fly has none
+        assert g.physics_levers == physics.PAIR_DEFAULT_LEVERS == ("dt2",) and g.pair_world.levers == ("dt2",)
+        assert g.pair_world.timestep == 2e-4 and g.pair_world._m.opt.timestep == pytest.approx(2e-4)
+        assert all(L.rig.control_steps == 2 for L in g.pair_world.legs)    # the leg controller every 0.4 ms
         assert g.flies[0].body is g.pair_world.bodies[0] and g.flies[1].body is g.pair_world.bodies[1]
         for _ in range(4):
             g.tick()
@@ -167,6 +170,7 @@ def test_a_game_runs_two_physics_flies_in_one_world(conn):
         real = g.whats_real()
         assert any("ONE MuJoCo world" in line for line in real["hand_built"])
         assert any("built from a female fly" in line for line in real["hand_built"])
+        assert any(line.startswith("Physics step: the two flies' MuJoCo world steps every 0.2 ms") for line in real["hand_built"])
         with pytest.raises(ValueError, match="stride-average"):
             Game(build_brain(conn, "game", seed=0), seed=1, body="physics", stride_average=True, brain_procs="off",
                  partner={"conn": conn, "brain_kwargs": {"seed": 1000}, "parts": False})
@@ -179,7 +183,8 @@ def test_a_game_runs_two_physics_flies_in_one_world(conn):
 def test_the_physics_pair_moves_while_its_brains_compute(conn, monkeypatch):
     """The brain lag, the physics pair's default with its brains in their own processes (docs/SCIENCE.md 13.6): on every
     tick after the first the shared world steps while both brains hold their pipes (computing this tick's answers), and
-    two runs give the same bytes; brain_procs off keeps today's lockstep, and 'on' there is refused before any world."""
+    two runs give the same bytes; brain_procs off keeps today's lockstep, and 'on' there is refused before any world.
+    The lockstep game also checks that --physics-levers none gives the pair flygym's 0.1 ms step (docs/SCIENCE.md 13.7)."""
     import hashlib
     from virtual_fly.game import Game
     from virtual_fly.settings import build_brain
@@ -211,9 +216,11 @@ def test_the_physics_pair_moves_while_its_brains_compute(conn, monkeypatch):
         finally:
             g.close()
     assert hashes[0] == hashes[1]
-    g = game(brain_procs="off")
+    g = game(brain_procs="off", physics_levers="none")
     try:
         assert g.brain_lag is False
+        assert g.physics_levers == () and g.pair_world.timestep == 1e-4 and all(L.rig.control_steps == 5 for L in g.pair_world.legs)
+        assert not any(line.startswith("Physics step") for line in g.whats_real()["hand_built"])
         held.clear()
         g.tick()
         assert held == [[False, False]]                                # lockstep: the answers are in before the world steps

@@ -90,6 +90,7 @@ def test_levers_are_named_checked_and_off_by_default():
     assert physics.parse_levers("solver100, dedupe") == ("dedupe", "solver100")     # LEVERS order, whatever the input's
     assert physics.parse_levers(["dt2"]) == ("dt2",) and physics.parse_levers("none") == ()
     assert physics.DEFAULT_LEVERS == ()                       # flygym 2.1's model already is what dedupe, solver100, noslip5, noself ask for
+    assert physics.PAIR_DEFAULT_LEVERS == ("dt2",)            # two physics flies: the 0.2 ms step, the owner's word (SCIENCE.md 13.7)
     assert set(physics.NO_OP_LEVERS) == {"dedupe", "solver100", "noslip5", "noself"} and all(l in physics.LEVERS for l in physics.NO_OP_LEVERS)
     with pytest.raises(ValueError, match="unknown physics lever nope"):
         physics.parse_levers("dedupe,nope")

@@ -309,7 +309,9 @@ class Game:
         senses.social.SocialConfig, or its comma list (default "seen,song,contact,collide"). ``brain_lag``: whether the
         bodies move on the brains' answers from the tick before while the brains compute this tick's (each answer then
         reaches its body one tick, 25 ms, later; docs/SCIENCE.md 13.6): "auto" (on for a physics pair, whose physics no
-        longer waits for the brains; off otherwise), "on" (any pair whose brains have their own processes), "off"."""
+        longer waits for the brains; off otherwise), "on" (any pair whose brains have their own processes), "off".
+        ``physics_levers``: the physics body's speed levers (physics.LEVERS), a comma list or a tuple; None, the default,
+        gives none for one fly and the 0.2 ms step (dt2) for two physics flies (docs/SCIENCE.md 13.7); "none" gives none."""
         from .agent import HOME, PARTNER_HOME, FlyAgent    # (agent.py imports this module's constants)
         from .senses.social import SocialConfig
         if brain_procs not in ("auto", "on", "off", "server"):
@@ -328,11 +330,12 @@ class Game:
         self.world = World(seed)
         self.events = EventLog()
         self.scenario = ScenarioRunner(self)
-        from .physics import DEFAULT_LEVERS, parse_levers
-        # speed levers of the physics body (physics.LEVERS): the adopted default when none are named (docs/SCIENCE.md 13.5),
-        # "none" switches them off; nothing for the drawn body
+        from .physics import DEFAULT_LEVERS, PAIR_DEFAULT_LEVERS, parse_levers
+        # speed levers of the physics body (physics.LEVERS) when none are named: none for one fly (docs/SCIENCE.md 13.5),
+        # the 0.2 ms step for two physics flies (PAIR_DEFAULT_LEVERS, 13.7); "none" switches them off; nothing for the
+        # drawn body
         if physics_levers is None:
-            physics_levers = DEFAULT_LEVERS if body == "physics" else ()
+            physics_levers = (PAIR_DEFAULT_LEVERS if partner is not None else DEFAULT_LEVERS) if body == "physics" else ()
         self.physics_levers = parse_levers(physics_levers)
         # where the brains run: "local" (this process), "procs" (a process per brain), "server" (one process for every
         # brain: the GPU's way, docs/TWO_FLIES_PLAN.md 6.5, chosen by auto when a fly's brain_kwargs say backend cupy)

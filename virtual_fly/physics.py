@@ -156,7 +156,8 @@ def part_geom(part: str) -> str:
 # Each lever changes the physics, so each is a switch that is OFF unless asked for (fly_game.py --physics-levers, or
 # tools/physics_table.py --levers): measured against docs/SCIENCE.md 6.7's table with tools/physics_table.py before it
 # is ever adopted, and adopted only within the agreed tolerance (docs/TWO_FLIES_PLAN.md 8.6, decision 25). On flygym 2.1
-# three of them describe what the model already is (docs/SCIENCE.md 13.5): they are accepted and change nothing.
+# three of them describe what the model already is (docs/SCIENCE.md 13.5): they are accepted and change nothing. The one
+# exception to the tolerance is the physics pair's dt2 (PAIR_DEFAULT_LEVERS), adopted by the owner's word (13.7).
 LEVERS = {
     "dedupe": "keep one of each self-collision pair (flygym 1.2.1 added every pair twice; 2.1 adds none: nothing to drop)",
     "solver100": "the Newton solver at 100 iterations and tolerance 1e-8 (flygym 2.1's own setting: no change)",
@@ -168,7 +169,12 @@ LEVERS = {
 }
 NO_OP_LEVERS = ("dedupe", "solver100", "noslip5", "noself")   # what flygym 2.1's model already is
 
-DEFAULT_LEVERS = ()   # nothing: the 1.2.1 default `dedupe` (docs/SCIENCE.md 13.5) has nothing to drop on 2.1
+DEFAULT_LEVERS = ()   # one physics fly: nothing (the 1.2.1 default `dedupe`, docs/SCIENCE.md 13.5, has nothing to drop on 2.1)
+# Two physics flies in one world (Game with a partner and body="physics"): the 0.2 ms step, the owner's word of 2026-11-01
+# (docs/SCIENCE.md 13.7). With the brain lag it runs the pair at about real time. It is outside decision 25 on one fly's
+# lure (faced on 7 of 10 runs against 9, seeds 0-4), a price the owner accepted. One fly keeps the 0.1 ms step: it runs
+# at real time without it, and its golden hashes stay. "none" (--physics-levers none) gives the pair the 0.1 ms step.
+PAIR_DEFAULT_LEVERS = ("dt2",)
 
 
 def parse_levers(levers) -> tuple[str, ...]:

@@ -1293,6 +1293,12 @@ class FlyAgent:
                       "this tick's, so the brains run alongside the physics instead of before it. Each brain still senses every "
                       "tick; its descending neurons reach the legs 25 ms later than in the lockstep. A hand-built timing chosen "
                       "for speed (the physics pair's default); --brain-lag off gives the lockstep.")
+        pw = getattr(self.game, "pair_world", None)
+        if pw is not None and "dt2" in pw.levers:        # the physics pair's default step (physics.PAIR_DEFAULT_LEVERS; SCIENCE.md 13.7)
+            hb.append("Physics step: the two flies' MuJoCo world steps every 0.2 ms, twice flygym's 0.1 ms (the dt2 speed lever, "
+                      "the physics pair's default), so that with the brain lag the pair runs at about real time. It changes the "
+                      "physics a little: one physics fly faces a lure on 16 of 20 runs against 18 at 0.1 ms, and its heading "
+                      "drifts more while it walks backwards. A setting chosen for speed; --physics-levers none gives the 0.1 ms step.")
         if cfg.seen:
             hb.append("Seen: the other fly is a small dark object to the retina (radius 1.6 mm, height 2.2 mm at the drawn scale, "
                       "as the scripted female was); the detectors that turn it into LC10a/LC11/LC4/LPLC2 rates are the kit's.")

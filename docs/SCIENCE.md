@@ -1446,7 +1446,8 @@ The `dt2` lever (a 0.2 ms step), measured against the new body's own table (`../
 8.6 / 14.3, turns 47 / 88 / 121 (within 10 %), but the lure is faced on 7 of 10 runs against 9, MDN's heading drifts
 12-27 deg against 2-9, and a quiet-arena seed enters its high state at 0.15 s; the game then runs at 0.88-1.17 (MuJoCo
 alone 2.1-2.8). Outside decision 25's tolerance on the lure, so a switch (`--physics-levers dt2`), not the default: it
-is the way to run the two-fly physics game faster if the lure count is an acceptable price.
+is the way to run the two-fly physics game faster if the lure count is an acceptable price. In v3.1 the owner accepted
+that price for the two-fly physics game, where `dt2` is now the default (section 13.7); one fly keeps the 0.1 ms step.
 
 **Pace** (`tools/bench_two_flies.py --only physics,pair-physics`, the game with the parts list on, one run at a time,
 80 ticks after 20; `../runs/p6-bench-k5.json`, `p6-bench-dt2.json`): one physics fly in the game at **1.04x real time**
@@ -1456,7 +1457,8 @@ is the way to run the two-fly physics game faster if the lure count is an accept
 game's own two-fly work (senses, brain traffic, the state), about 16 ms, which no body setting touches: real time for the
 pair would need the brains to compute while the bodies step (a tick of sensorimotor latency, a game-loop change), or a
 faster solver than MuJoCo's single thread. v3.1 did the first, with the leg controller compiled (section 13.6): the pair
-at 0.72-0.74x with the brain lag, its default, and 0.50-0.54x without it; one physics fly at 1.05-1.09x.
+at 0.72-0.74x with the brain lag and 0.50-0.54x without it; one physics fly at 1.05-1.09x. With the 0.2 ms step as well,
+the pair's default since v3.1 (section 13.7), the pair runs past real time.
 
 ## 7. The genome as a wiring recipe (v2.3)
 
@@ -2764,20 +2766,23 @@ docs/TWO_FLIES_PLAN.md section 8, decisions 20-24). The single physics body of s
 body: the pair module reuses its drive mapping, its fly, its wall and its leg controller, and puts two flies into one
 flygym world. Without a partner nothing changes; without `--body physics` the two-fly game is section 10's. Built on
 flygym 1.2.1 in v2.12 (a tenth of real time), on flygym 2.1 since v3.0 (section 6.7.1: about half real time for the
-pair, one fly about real time), with the brain lag since v3.1 (section 13.6: about 0.73x).
+pair, one fly about real time), and since v3.1 with the brain lag and a 0.2 ms physics step (sections 13.6 and 13.7:
+about real time; about 0.73x at flygym's 0.1 ms step).
 
 ### 13.1 What is physical and what is hand-built
 
 Physical, in MuJoCo: the two bodies, the floor and the wall, the contact between the flies, and the tap. The world
-is flygym's flat ground with the kit's wall and both flies added to it (timestep 0.1 ms); MuJoCo's frame is the
+is flygym's flat ground with the kit's wall and both flies added to it (timestep 0.2 ms by default since v3.1, the
+`dt2` lever of section 13.7; flygym's 0.1 ms with `--physics-levers none`); MuJoCo's frame is the
 kit's frame here (the single fly builds its world around its start instead). Each fly is spawned at its kit pose
 and then moved by writing its root free joint so that its thorax lands on the kit pose exactly (on flygym 2.1 the
 thorax is the root; on 1.2.1 it sat 0.496 mm ahead of the spawn site); the same write (its joints back to the spawn
 pose, its velocities zeroed, its CPG reset) moves a fly later without rebuilding the model, which costs about a
 second. Each fly has its own six
-coupled oscillators (seeded `seed + 1000 k`, as its brain is); per 0.1 ms step MuJoCo steps once, and every 0.5 ms
-(`CONTROL_MS`, since v3.0) each fly's oscillators advance and its leg targets and adhesion are written; per 25 ms tick
-the game sets both drives first, then the world steps 250 times,
+coupled oscillators (seeded `seed + 1000 k`, as its brain is); per step MuJoCo steps once, and every 0.4 ms at the
+0.2 ms step, 0.5 ms at 0.1 ms (`CONTROL_MS`, 0.5 ms rounded to whole steps, since v3.0), each fly's oscillators advance
+and its leg targets and adhesion are written; per 25 ms tick the game sets both drives first, then the world steps 125
+times (250 at 0.1 ms),
 then each body reads its thorax pose, its own wall contact and its tap. Since v3.1 the drives come by default from the
 answers the brains gave the tick before, and the world steps while the brains compute this tick's (the brain lag,
 section 13.6).
@@ -2797,7 +2802,8 @@ the contact set; the size the other
 fly's retina gives a physics fly (a dark cylinder 0.7 mm in radius and 1.1 mm tall, from the standing model's
 measured 2.8 x 1.0 x 1.1 mm; a drawn fly is 1.6 and 2.2, section 10.1); that both flies are drawn at real size,
 0.389 of the drawn fly, in the 2-D dish and the 3-D view (decision 23: two physics flies in contact are 1-2 mm
-apart, which the drawn-scale senses would get wrong); the brain lag (on by default, section 13.6); and, as for one
+apart, which the drawn-scale senses would get wrong); the brain lag (on by default, section 13.6); the 0.2 ms
+physics step (on by default, section 13.7); and, as for one
 fly, the decoder's weights, the forward term and the drawn proboscis, wings and abdomen. Song and cVA already use real
 centre-to-centre millimetres (section
 10.1). NeuroMechFly's body was built from a micro-CT scan of a female fly: the male wears it too (decision 24;
@@ -2843,8 +2849,8 @@ collisions do not apply (the contact is physical).
 
 ### 13.4 Record and replay, and a video (plan 8.7-8.9)
 
-A physics pair ran at about a tenth of real time on flygym 1.2.1 (about half since v3.0, section 6.7.1, and about 0.73x
-with the brain lag since v3.1, section 13.6), and the way to see a run again at any speed is to record it and play it back. The `capture` action (the page's "Save replay" switch; `docs/API.md`) writes a folder
+A physics pair ran at about a tenth of real time on flygym 1.2.1 (about half since v3.0, section 6.7.1, and about real
+time since v3.1 with the brain lag and the 0.2 ms step, sections 13.6 and 13.7), and the way to see a run again at any speed is to record it and play it back. The `capture` action (the page's "Save replay" switch; `docs/API.md`) writes a folder
 `recordings/<YYYYmmdd-HHMMSS>/` in a checkout (ignored by git) or under the data folder in an installed copy, never
 into site-packages: `header.json` (the kit's version and commit, the tick, every fly's sex, dataset, body and brain
 settings, the social channels, whether the brain lag was on (13.6), the physics settings and the model's name),
@@ -2956,8 +2962,8 @@ ever wanted one (decision 20). The research's "2 flies, defaults 0.037" on a loa
 flygym 2.1's model already is (each contact pair once, the Newton solver at 100 iterations and 1e-8, 5 noslip iterations, no
 self-collision pairs), so they are accepted and change nothing, and no lever is on by default (`physics.DEFAULT_LEVERS` is
 empty). `noslip0` still sets 0 noslip iterations, `simple` now fits every body part to a capsule (flygym 2.1's
-`ALL_TO_CAPSULES`), and `dt2` is measured in 6.7.1: within tolerance on speeds and turn rates, outside on the lure, so still a
-switch. The owner's own word on the earlier faster preset holds: the body's pace is the engine's, not a lever's. The levers
+`ALL_TO_CAPSULES`), and `dt2` is measured in 6.7.1: within tolerance on speeds and turn rates, outside on the lure, so a
+switch for one fly; since v3.1 it is the physics pair's default, by the owner's word (section 13.7). The owner's own word on the earlier faster preset holds: the body's pace is the engine's, not a lever's. The levers
 measured again on flygym 2.1 in v3.1, with the brain lag on, are in section 13.6.
 
 ### 13.6 The brain lag: the brains compute while the bodies move (v3.1)
@@ -3068,7 +3074,8 @@ before the review's learned-bias fix (above); the bench, re-run after it, did no
 
 **Measured: behaviour.** Conditions:
 - `tools/pair_courtship.py --conditions full --body physics --brain-lag off|on`: the male and the FlyWire female, the four
-  default channels, both walking urges on, the parts list off.
+  default channels, both walking urges on, the parts list off, at flygym's 0.1 ms step (the pair's default until the
+  owner chose the 0.2 ms step; section 13.7 runs the same comparison at 0.2 ms).
 - Seeds 0-4, 90 s each. The two arms ran side by side, since behaviour is in simulated time.
 - Files: `../runs/lag/p7-courtship-physics-<lag>.json`.
 - The same comparison on the drawn pair: `p7-courtship-drawn-<lag>.json`.
@@ -3122,6 +3129,7 @@ default is the owner's call (docs/TWO_FLIES_PROGRESS.md, Open issues).
 two-fly physics game goes from 0.49x real time (v3.0) to about 0.73x: 1.5 times as fast, measured. It cannot reach real time on
 its own, because the physics alone runs at 0.76-0.81x for the pair (MuJoCo's single thread). Real time needs a faster
 world: one of the levers below, or a newer engine (MuJoCo 3.10's thread pool, which flygym 2.1 excludes; plan 8.6).
+The owner chose the lever `dt2` for the pair (section 13.7).
 
 **The levers on flygym 2.1, with the lag** (the gate of decision 25: `tools/physics_table.py --bodies physics --levers
 LIST --baseline ../runs/p6-table-k5.json`, the single physics fly, seeds 0-4, four runs at a time, `../runs/lag/p7-table-*`;
@@ -3142,8 +3150,9 @@ from the bench above with the lever on):
 quiet-arena numbers scatter from run to run, as 6.7.1 says. On 1.2.1 the owner kept the noslip levers a switch for that
 reason (13.5). `dt2` is the one setting that takes the two-fly physics game past real time with the lag (1.18x; one
 physics fly 1.45x), at the price measured in 6.7.1: the lure faced on 7 of 10 runs against 9 on seeds 0-4 (9 against 9 on
-seeds 5-9, so on 20 runs 16 against 18). Both stay switches: adopting one changes the physics golden hashes and is the
-owner's call.
+seeds 5-9, so on 20 runs 16 against 18). Adopting either for every physics body would change the physics golden hashes,
+and either was the owner's call. The owner chose `dt2` for the pair only (section 13.7), so the single fly and its
+golden hashes are unchanged.
 
 **Tried, not adopted: the physics in a thread.** MuJoCo's `mj_step` lets go of the interpreter lock, but the stepping loop
 around it is Python. Next to a busy Python thread, one 250-step tick of the pair took 1,358-1,427 ms instead of 31-32 ms:
@@ -3154,6 +3163,98 @@ Hand-built, still: the lag's length (one tick, 25 ms), and that it applies to th
 modelled: a delay that differs by pathway (vision, touch, the giant fibre's fast escape), or that changes with
 temperature. Cost: 25 ms more between a brain's senses and its legs in the physics pair; a brain's answers arrive at the
 end of the physics step, so an API query of a brain may wait up to a tick.
+
+### 13.7 The physics pair's 0.2 ms step (v3.1)
+
+The owner's word of 2026-11-01, to "Want the coarser step, for full speed?" after 13.6's levers table: yes. Since v3.1 a
+game with two physics bodies runs the `dt2` lever by default (`physics.PAIR_DEFAULT_LEVERS`, chosen in `Game`):
+- the shared MuJoCo world steps every 0.2 ms instead of flygym's 0.1 ms, 125 steps per 25 ms tick;
+- each fly's leg controller updates every 0.4 ms instead of every 0.5 ms (`CONTROL_MS`, 0.5 ms, rounds to two steps);
+- `--physics-levers none` (`Game(physics_levers="none")`) gives the pair the 0.1 ms step back, and any other lever list
+  replaces the default.
+
+One physics fly keeps the 0.1 ms step, since it runs at real time without the lever, so its golden hashes and every
+number measured on it are unchanged. The pair has no golden hashes. The step is labelled in four places: "What's real
+here?" (a physics pair at 0.2 ms), the start-up line, the code (`physics.PAIR_DEFAULT_LEVERS`, `Game`) and here.
+
+**The price.** Decision 25's gate measured the lever on one physics fly (6.7.1 for seeds 0-4, `../runs/p6-table-dt2.json`;
+13.6 for seeds 5-9, `../runs/lag/p7-table-dt2-s5-9.json`):
+- speeds and turn rates stay within 10 %;
+- the lure is faced on 7 of 10 runs against 9 on seeds 0-4, outside the rule's "within 1", and on 9 against 9 on seeds
+  5-9 (16 of 20 against 18 in all);
+- MDN's backward walk drifts more in heading: 12-27 deg against 2-9 on seeds 0-4, and 3-43 against 1-13 on seeds 5-9;
+- in the quiet arena one more seed of five enters the brain's high state (above 60k events/s for 1 s) within 0.2 s of
+  the start, on both seed sets.
+
+The owner accepted that price for the pair: the only exception to decision 25 so far (docs/TWO_FLIES_PROGRESS.md,
+Decisions).
+
+**Measured: pace.**
+- Conditions: `tools/bench_two_flies.py --only physics,pair-physics` with the game's default levers (no `--levers`), the
+  pair with the parts list on and the brains in their own processes (numba), 80 ticks after 20.
+- One run at a time at `nice 10`, 2026-11-01, 1-minute load 0.1-1.0, three rounds.
+- Files: `../runs/lag/p7-dt2-bench-<lag>-<round>.json`; the session's output in `p7-dt2.out` and `p7-dt2b.out`.
+
+| two-fly physics game | real-time factor | tick p50 / p99 | MuJoCo's share | MuJoCo alone |
+|---|---|---|---|---|
+| 0.2 ms, the brain lag (the default) | **1.37, 1.32, 1.35x** | 17.8 / 22.3, 18.8 / 23.8, 18.2 / 23.8 ms | 88-89 % | 1.50-1.55x |
+| 0.2 ms, lockstep (`--brain-lag off`) | 0.72, 0.82x | 32.8 / 73.5, 30.4 / 36.7 ms | 51-52 % | 1.39-1.57x |
+| 0.1 ms, the brain lag (13.6) | 0.72, 0.74x | 33.3 / 48.5, 32.2 / 49.4 ms | 93 % | 0.77-0.79x |
+
+A step of 0.2 ms costs about what a step of 0.1 ms did (0.128-0.144 ms for both flies against 0.127-0.129), so the
+physics runs nearly twice as fast per simulated second. 13.6's single run of the lever, a session earlier, gave 1.18x
+(MuJoCo alone 1.35x then): the machine's pace moves this much between sessions. The second round ran on a machine busy
+with this session's own file traffic: its unchanged single-fly rows fell to 0.73 and 0.38x, against 1.06-1.14x in the
+other rounds, and its lockstep pair to 0.41x. That lockstep run is left out (kept as
+`p7-dt2-bench-off-2-disturbed.json`), and a third round ran on an idle machine. The second round's pair with the lag
+stays in the table: its MuJoCo pace, 1.50x alone, is the other rounds' (1.52-1.55x).
+
+The live game (the Ctrl+C recipe of plan 1.7, `../runs/p1-ctrlc.sh`, `--partner female --body physics` with the parts
+list off; the page's real-time factor read 6 s apart; the game's own output in `p7-dt2-ctrlc-pair*.log`):
+- with the defaults: 1.0 and 1.0 (the game never runs ahead of real time: `Game.loop` caps its pace);
+- with `--brain-lag off`: 1.0 and 1.0, and 0.98 and 1.0 in a second run (`p7-dt2-ctrlc-pair-off-2.log`).
+
+Each run gave "Bye!", exit code 0 and nothing left in the session, and the start-up lines name the step and the lag.
+
+So the step and the lag together run the pair past real time with the parts list on, and the live game holds real
+time. The step alone, in lockstep, gives 0.72-0.82x with the parts list on.
+
+**Measured: behaviour.** 13.6's courtship runs repeated at the 0.2 ms step, with the same conditions and seeds:
+- `tools/pair_courtship.py --conditions full --body physics --brain-lag on|off`, the game's default levers (`dt2`), parts
+  list off, seeds 0-4, 90 s each, the two arms side by side.
+- Files: `../runs/lag/p7-dt2-courtship-<lag>.json`; the comparison script `compare_dt2.py` next to them.
+
+The criterion was written before the runs (`run_dt2.sh`), as in 13.6: the step changes a measure where one arm's mean over
+the five seeds falls outside the other arm's range, each 0.2 ms arm read against the same lag setting at 0.1 ms (13.6's
+runs).
+
+| physics pair, seeds 0-4 | 0.2 ms, the brain lag (the default): per seed (mean) | 0.2 ms, lockstep: per seed (mean) | 0.1 ms means (13.6): lag; lockstep | the step changed it: with the lag; in lockstep |
+|---|---|---|---|---|
+| time near her, s of 90 | 88, 40.7, 12.6, 6.4, 0 (29.5) | 7.0, 28.4, 53.6, 21.5, 0 (22.1) | 38.1; 8.9 | no; yes |
+| facing her when near | 0, 0.64, 0.42, 0, – (0.26) | 0.13, 0.52, 0.63, 0.11, – (0.35) | 0.15; 0.47 | yes; no |
+| time singing, s | 0, 11.0, 7.1, 0, 0 (3.6) | 2.6, 11.1, 22.9, 8.5, 0 (9.0) | 14.3; 3.8 | yes; yes |
+| share of ticks she hears song | 0.95, 0.44, 0.13, 0.03, 0 (0.31) | 0.04, 0.30, 0.58, 0.22, 0 (0.23) | 0.40; 0.08 | no; yes |
+| her speed while he sings, mm/s | –, 5.8, 3.6, –, – (4.7) | 3.7, 4.9, 2.5, 3.5, – (3.6) | 0.9; 5.8 | yes, each mean outside the other's range; the same |
+| his speed, mm/s | 1.3, 3.3, 3.5, 4.3, 1.4 (2.7) | 2.3, 2.0, 3.6, 2.0, 2.0 (2.4) | 3.1; 1.8 | no; yes |
+| his escape events; his giant-fibre bursts | 0.4; 1.0 (means) | 0.6; 2.6 (means) | 1.4; 3.4 and 0.6; 2.0 | no; no |
+| contacts per minute; closest approach, mm | 5.7; 6.2 (means) | 11.3; 6.0 (means) | 14.5; 6.7 and 4.8; 6.8 | no; no |
+| her speed while he is quiet, mm/s; his grooming share | 2.1; 0.46 (means) | 1.5; 0.57 (means) | 2.3; 0.47 and 1.5; 0.53 | no; no |
+
+Two further readings by the same rule, not fixed before the runs:
+- **The new default against v3.0's** (0.2 ms with the lag against 0.1 ms in lockstep): five of twelve measures differ.
+  He spends more time near her (29.5 against 8.9 s), she hears him on more ticks (0.31 against 0.08), he faces her less
+  when near (0.26 against 0.47), she walks a little slower while he sings (4.7 against 5.8 mm/s, each mean outside the
+  other's range), and he grooms a little less (0.46 against 0.53).
+- **The lag at 0.2 ms** (lag against lockstep): only her speeds differ, up with the lag (4.7 against 3.6 mm/s while he
+  sings, 2.1 against 1.5 while he is quiet).
+
+**What this shows.** The step changes three of twelve measures with the lag and five in lockstep, and not the same
+ones. Neither of the lag's two firmest effects at 0.1 ms (13.6: facing her when near, 0.47 to 0.15; her speed while he
+sings, 5.8 to 0.9 mm/s, each mean outside the other's range) appears at 0.2 ms. There the lag leaves his facing alone
+(0.35 to 0.26), and her speed while he sings goes up, not down. Single seeds carry the means: in one 0.2 ms seed the
+flies stay together for 88 s without a note of song. So the five seeds of each arm show that the physics pair's
+courtship numbers move with any change to its loop, the step or the lag, but they cannot say what either does; that
+needs more seeds. The drawn pair has no physics step, so nothing here touches it.
 
 ## 14. The female fly with a nerve cord: BANC (v2.13)
 
@@ -3341,7 +3442,9 @@ The starter kit's list, extended. These are the things a neuroscientist would po
 12. **Descending neurons barely move the leg motor neurons** (a few Hz at most, at any gain,
     section 6.5), so the decoder's weights are chosen by hand; the wiring only says which motor
     pools each DN reaches. The drawn body's speeds are chosen to look right; the optional physics
-    body (section 6.7) walks on NeuroMechFly's legs, at about real time since v3.0.
+    body (section 6.7) walks on NeuroMechFly's legs, at about real time since v3.0. Two physics flies
+    reach real time only with a 25 ms motor delay and a coarser 0.2 ms physics step, both chosen for
+    speed (sections 13.6, 13.7).
 13. **Single seeds.** The validated experiments run on five seeds (section 2.3) and the readouts
     near a range edge were checked on 30 (section 8.4), but most probe numbers are one Poisson
     realisation (seed 0); where a second or

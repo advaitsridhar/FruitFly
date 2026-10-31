@@ -108,19 +108,19 @@ def _main(argv=None):
     ap.add_argument("--physics-levers", metavar="LIST", default=None,
                     help="physics body: speed levers to switch on, a comma list of " + ", ".join(
                         f"{k} ({v})" for k, v in __import__("virtual_fly.physics", fromlist=["LEVERS"]).LEVERS.items())
-                    + "; each changes the physics and is measured before it is adopted (docs/SCIENCE.md 13.5); none is on by "
-                      "default (on flygym 2.1 the model already is what the earlier default, dedupe, asked for), and 'none' "
-                      "switches off every lever")
+                    + "; each changes the physics and is measured before it is adopted (docs/SCIENCE.md 13.5). By default "
+                      "one physics fly runs none (on flygym 2.1 the model already is what the earlier default, dedupe, asked "
+                      "for) and two physics flies run dt2, the owner's choice for speed (13.7); 'none' switches off every lever")
     ap.add_argument("--partner-body", choices=("drawn", "physics"), default=None,
                     help="with --partner: the partner's body; it is the protagonist's (--body): physics puts both flies in one "
                          "MuJoCo world, so --partner-body physics needs --body physics, and --partner-body drawn the drawn body")
     ap.add_argument("--brain-lag", choices=("auto", "on", "off"), default=None,
                     help="with --partner: the brains think while the bodies move, so each brain's answer reaches its body one "
                          "tick (25 ms) later (hand-built; a tethered fly's wing steering lags what it sees by more than 40 ms): "
-                         "auto (default) = on for two physics bodies, whose physics then no longer waits for the brains (about "
-                         "three quarters of real time instead of two thirds, or half with --parts, measured on a laptop), off "
-                         "for drawn flies (they run faster than real time already); on = also for drawn flies; off = each "
-                         "tick's answer moves the body in the same tick (docs/SCIENCE.md 13.6)")
+                         "auto (default) = on for two physics bodies, whose physics then no longer waits for the brains (with "
+                         "the pair's 0.2 ms step past real time even with --parts, against 0.7-0.8x without the lag, measured "
+                         "on a laptop), off for drawn flies (they run faster than real time already); on = also for drawn "
+                         "flies; off = each tick's answer moves the body in the same tick (docs/SCIENCE.md 13.6)")
     args = ap.parse_args(argv)
     if args.female and args.fly not in (None, "flywire"):
         ap.error(f"--female means --fly flywire; it cannot go with --fly {args.fly}")
@@ -154,7 +154,7 @@ def _main(argv=None):
         social = SocialConfig.from_list(None)
     if args.physics_levers is not None and args.body != "physics":
         ap.error("--physics-levers only applies to the physics body: add --body physics")
-    levers = None                                # None: the game's default (physics.DEFAULT_LEVERS: none since v3.0)
+    levers = None                                # None: the game's default (none for one fly; dt2 for the physics pair since v3.1)
     if args.physics_levers is not None:
         from .physics import parse_levers
         try:
@@ -219,15 +219,24 @@ def _main(argv=None):
     if args.body == "physics" and levers:
         print("Physics levers on (each changes the physics; docs/SCIENCE.md 13.5): " + ", ".join(levers) + ".", file=sys.stderr)
     elif args.body == "physics" and levers is None:
-        from .physics import DEFAULT_LEVERS
-        if DEFAULT_LEVERS:                       # none since v3.0 (flygym 2.1's model already is what dedupe asked for)
+        from .physics import DEFAULT_LEVERS, LEVERS, PAIR_DEFAULT_LEVERS
+        if partner is not None and PAIR_DEFAULT_LEVERS:      # the physics pair's own default (v3.1, the owner's word)
+            print("Physics levers on, the physics pair's default (docs/SCIENCE.md 13.7): " + ", ".join(PAIR_DEFAULT_LEVERS)
+                  + " (" + "; ".join(LEVERS[k] for k in PAIR_DEFAULT_LEVERS) + "; chosen for speed, it changes the physics a "
+                  "little; --physics-levers none switches it off).", file=sys.stderr)
+        elif partner is None and DEFAULT_LEVERS:             # none since v3.0 (flygym 2.1's model already is what dedupe asked for)
             print("Physics levers on, the adopted default (docs/SCIENCE.md 13.5): " + ", ".join(DEFAULT_LEVERS)
                   + " (it changes no number; --physics-levers none switches it off).", file=sys.stderr)
     if args.body == "physics" and partner is not None:
+        from .physics import PAIR_DEFAULT_LEVERS
+        coarse = "dt2" in (PAIR_DEFAULT_LEVERS if levers is None else levers)    # the 0.2 ms step (docs/SCIENCE.md 13.7)
+        lagged = brain_lag != "off" and args.brain_procs != "off"                 # the brain lag (13.6)
+        pace = {(True, True): "about real time on a laptop, with the 0.2 ms step and the brain lag",
+                (True, False): "about real time on a laptop with the 0.2 ms step, 0.7-0.8x with --parts",
+                (False, True): "about three quarters of real time on a laptop with the brain lag",
+                (False, False): "about two thirds of real time on a laptop, half with --parts"}[coarse, lagged]
         print("Body: physics for both flies (NeuroMechFly v2 in one MuJoCo world, each with its own brain, able to touch; "
-              + ("about three quarters of real time on a laptop with the brain lag" if brain_lag != "off" and args.brain_procs != "off"
-                 else "about two thirds of real time on a laptop, half with --parts") + "; both drawn at real size).",
-              file=sys.stderr)
+              + pace + "; both drawn at real size).", file=sys.stderr)
     elif args.body == "physics":
         print("Body: physics (NeuroMechFly v2 legs in MuJoCo through flygym 2.1; about real time"
               + ("; the senses see the pose averaged over a stride)." if args.stride_average else ")."), file=sys.stderr)
