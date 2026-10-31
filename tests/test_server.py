@@ -436,7 +436,12 @@ def test_play_refuses_flags_it_cannot_honour(capsys, monkeypatch):
                       (["--body", "physics", "--physics-levers", "dedupe,nope"], "unknown physics lever nope"),
                       (["--partner", "female", "--social", "seen,sogn"], "unknown social channel 'sogn'"),
                       (["--partner", "male", "--social", "mating:maybe"], "mating takes mating:virgin or mating:mated"),
-                      (["--partner", "cat"], "invalid choice: 'cat'")):
+                      (["--partner", "cat"], "invalid choice: 'cat'"),
+                      # the brain lag (docs/SCIENCE.md 13.6): a pair's, with its brains in their own processes
+                      (["--brain-lag", "on"], "--brain-lag only applies with --partner"),
+                      (["--brain-lag", "off"], "--brain-lag only applies with --partner"),
+                      (["--partner", "female", "--brain-procs", "off", "--brain-lag", "on"], "needs the brains in their own processes"),
+                      (["--partner", "female", "--brain-lag", "maybe"], "invalid choice: 'maybe'")):
         with pytest.raises(SystemExit) as e:
             play.main(argv)
         assert e.value.code == 2

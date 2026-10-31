@@ -176,6 +176,52 @@ def test_a_game_runs_two_physics_flies_in_one_world(conn):
 
 
 @needs_flygym
+def test_the_physics_pair_moves_while_its_brains_compute(conn, monkeypatch):
+    """The brain lag, the physics pair's default with its brains in their own processes (docs/SCIENCE.md 13.6): on every
+    tick after the first the shared world steps while both brains hold their pipes (computing this tick's answers), and
+    two runs give the same bytes; brain_procs off keeps today's lockstep, and 'on' there is refused before any world."""
+    import hashlib
+    from virtual_fly.game import Game
+    from virtual_fly.settings import build_brain
+
+    def game(**kw):
+        return Game(build_brain(conn, "game", seed=0), seed=1, body="physics",
+                    partner={"conn": conn, "brain_kwargs": {"seed": 1000}, "parts": False}, **kw)
+    with pytest.raises(ValueError, match="own processes"):
+        game(brain_procs="off", brain_lag="on")
+    held, hashes = [], []
+    advance = pp.PairWorld.advance_tick
+
+    def spy(self, dt):
+        held.append([bool(getattr(f.io, "_lock", None) and f.io._lock.locked()) for f in g.flies])   # (a LocalBrain has none)
+        return advance(self, dt)
+    monkeypatch.setattr(pp.PairWorld, "advance_tick", spy)
+    for _ in range(2):
+        g = game(brain_procs="auto")
+        try:
+            assert g.brain_lag is True and g.brain_mode == "procs"
+            held.clear()
+            h = hashlib.sha1()
+            for _ in range(6):
+                g.tick()
+                h.update(g.state_json)
+            hashes.append(h.hexdigest())
+            assert held[0] == [True, True] and all(x == [True, True] for x in held)   # every tick: the brains are computing
+            assert all(not f.io._lock.locked() for f in g.flies)                     # and every pipe is free between ticks
+        finally:
+            g.close()
+    assert hashes[0] == hashes[1]
+    g = game(brain_procs="off")
+    try:
+        assert g.brain_lag is False
+        held.clear()
+        g.tick()
+        assert held == [[False, False]]                                # lockstep: the answers are in before the world steps
+    finally:
+        g.close()
+
+
+@needs_flygym
 def test_the_pair_world_takes_the_levers_too():
     plain = _world()
     try:

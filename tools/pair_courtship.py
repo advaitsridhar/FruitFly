@@ -4,6 +4,11 @@ controls the plan asks for (a hand-run tool for the two-flies work; docs/TWO_FLI
 
     nice -n 10 .venv/bin/python tools/pair_courtship.py --json ../runs/p1-pair-courtship.json
     nice -n 10 .venv/bin/python tools/pair_courtship.py --conditions full --seeds 0 --seconds 10
+    nice -n 10 .venv/bin/python tools/pair_courtship.py --conditions full --body physics --brain-lag off   # the physics pair, lockstep
+
+``--body physics`` puts both flies in one MuJoCo world (physics_pair.py, real size, MuJoCo's tap); there the collide
+channel has nothing to do (the bodies collide physically), so ``no_social`` still lets them touch. ``--brain-lag``: the
+game's setting (docs/SCIENCE.md 13.6): auto, the default, is on for the physics pair and off for drawn flies.
 
 Conditions (each seed starts a fresh game, both brains in their own processes, placed as the courtship scenario places them:
 the male at (-10, -8) heading 0.3 rad, the female at (14, 10) with a heading from her own dice):
@@ -52,7 +57,7 @@ def mean(xs):
     return round(statistics.fmean(xs), 3) if xs else None
 
 
-def run(seed: int, condition: str, seconds: float, parts: bool) -> dict:
+def run(seed: int, condition: str, seconds: float, parts: bool, body: str = "drawn", brain_lag: str = "auto") -> dict:
     from virtual_fly import load_connectome
     from virtual_fly.game import Game
     from virtual_fly.parts import PartsList
@@ -63,7 +68,7 @@ def run(seed: int, condition: str, seconds: float, parts: bool) -> dict:
     brain = build_brain(conn, "game", **kw, **({"parts": parts_list} if parts else {}))
     game = Game(brain, seed=seed, brain_kwargs=dict(kw), parts_list=parts_list, brain_procs="auto", social=social_for(condition),
                 partner={"conn": fconn, "brain_kwargs": dict(kw), "parts": parts_list if parts else False,
-                         "autopilot": condition != "no_urge"})
+                         "autopilot": condition != "no_urge"}, body=body, brain_lag=brain_lag)
     del brain
     try:
         m, f = game.flies
@@ -118,7 +123,7 @@ def run(seed: int, condition: str, seconds: float, parts: bool) -> dict:
                 escapes[name] += esc and not escaping[name]
                 escaping[name] = esc
         return {"seed": seed, "condition": condition, "parts": parts, "seconds": seconds, "ticks": ticks,
-                "channels": game.social.names(),
+                "channels": game.social.names(), "body": body, "brain_lag": game.brain_lag,
                 "time_near_s": round(near * TICK_MS / 1000, 1), "facing_when_near": round(facing / near, 3) if near else None,
                 "min_distance_mm": round(min_d, 1), "time_singing_s": round(singing * TICK_MS / 1000, 1),
                 "contacts_per_min": round(contacts / seconds * 60, 2),
@@ -137,8 +142,16 @@ def main(argv=None) -> int:
     ap.add_argument("--seeds", default="0,1,2,3,4")
     ap.add_argument("--seconds", type=float, default=90.0)
     ap.add_argument("--parts", action="store_true")
+    ap.add_argument("--body", choices=("drawn", "physics"), default="drawn",
+                    help="drawn (default) or physics: both flies NeuroMechFly bodies in one MuJoCo world (needs flygym)")
+    ap.add_argument("--brain-lag", choices=("auto", "on", "off"), default="auto",
+                    help="the game's brain lag (docs/SCIENCE.md 13.6): auto = on for the physics pair, off for drawn flies")
     ap.add_argument("--json", metavar="FILE")
     args = ap.parse_args(argv)
+    if args.body == "physics":
+        from virtual_fly.physics import available, unavailable_reason
+        if not available():
+            ap.error(f"--body physics: {unavailable_reason()}")
     conds = [c.strip() for c in args.conditions.split(",") if c.strip()]
     bad = [c for c in conds if c not in CONDITIONS]
     if bad or not conds:
@@ -158,7 +171,7 @@ def main(argv=None) -> int:
     for condition in conds:
         for seed in seeds:
             t1 = time.time()
-            row = run(seed, condition, args.seconds, args.parts)
+            row = run(seed, condition, args.seconds, args.parts, args.body, args.brain_lag)
             rows.append(row)
             print(f"{condition:9s} seed {seed}: near {row['time_near_s']:5.1f} s, facing {row['facing_when_near']}, sang "
                   f"{row['time_singing_s']:5.1f} s, contacts/min {row['contacts_per_min']}, she hears {row['her_hearing_hz_mean']} Hz "
@@ -167,7 +180,8 @@ def main(argv=None) -> int:
                   f"bursts m/f {row['bursts']['male']}/{row['bursts']['female']}  ({time.time() - t1:.0f} s)", flush=True)
     if args.json:
         Path(args.json).write_text(json.dumps({"when": time.strftime("%Y-%m-%d %H:%M:%S"), "seconds": args.seconds,
-                                               "parts": args.parts, "rows": rows, "wall_s": round(time.time() - t0)}, indent=1))
+                                               "parts": args.parts, "body": args.body, "brain_lag": args.brain_lag,
+                                               "rows": rows, "wall_s": round(time.time() - t0)}, indent=1))
         print(f"wrote {args.json}")
     return 0
 

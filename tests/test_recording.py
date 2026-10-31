@@ -60,6 +60,7 @@ def test_a_drawn_run_is_saved_and_listed(conn, rec_dir):
     h = recording.read_header(folder)
     assert h["format"] == 1 and h["active"] is False and h["ticks"] == 6 and h["seconds"] == 0.15 and h["physics"] is None
     assert h["flies"][0]["body"] == "drawn" and h["tick_ms"] == 25.0 and h["seed"] == 1 and h["bytes"] > 0
+    assert h["brain_lag"] is False                                      # one fly: never (docs/SCIENCE.md 13.6)
     lines = gzip.open(folder / "frames.jsonl.gz", "rt").read().splitlines()
     assert len(lines) == 6
     f = json.loads(lines[-1])
@@ -188,6 +189,7 @@ def test_a_physics_pair_replay_reproduces_the_geoms_exactly(conn, rec_dir):
     assert names == ["frames.jsonl.gz", "header.json", "model", "poses.f32", "qpos.npy", "t.npy"]
     h = recording.read_header(folder)
     assert h["physics"]["model"] == "two_flies.mjb.gz" and h["physics"]["fly_names"] == ["fly0", "fly1"] and h["physics"]["pairs"] == 233
+    assert h["brain_lag"] is False                                      # brains in the game's process: no lag
     assert 5_000_000 < (folder / "model" / "two_flies.mjb.gz").stat().st_size < 40_000_000 and h["physics"]["engine"].startswith("flygym 2.1, MuJoCo 3.9")
     assert sorted(p.name for p in (folder / "model").iterdir()) == ["two_flies.mjb.gz"]      # the raw .mjb is not left behind
     assert h["poses"]["geoms"] == recording.atlas_geoms() and len(h["poses"]["geoms"]) == 69 and h.get("poses_error") is None

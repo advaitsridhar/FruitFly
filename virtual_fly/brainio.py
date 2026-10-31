@@ -18,6 +18,10 @@ With the GPU backend (docs/TWO_FLIES_PLAN.md 6.5) every brain of the game lives 
 (:class:`GpuBrainServer`, one :class:`GpuBrainHandle` per fly): one CUDA context for both brains, and one
 ``advance_all`` message per tick. The protocol is the same, with the fly's number in each message.
 
+:func:`advance_all` sends every brain its tick and waits for every answer (the lockstep); its two halves,
+:func:`send_all` and :func:`receive_all`, let the game move the bodies in between (the brain lag of game.py,
+docs/SCIENCE.md 13.6). Every brain's pipe is held from its send to its receive.
+
 What crosses the pipe each tick is small: the rates dict and the columnar arrays in, a BrainTick out (readouts, a
 sample of at most 2,500 spikes for the brain map, the learning summary, the parts status: a few kB). The parent
 keeps each readout's history itself from the ticks (one value per 25 ms tick, the game's own monitor bin), so
@@ -121,8 +125,9 @@ def _tick_lazy(brain, dt: float, rates: dict, col_idx, col_hz):
 def tick_fields(brain, has_soma, readouts: dict, spikes, counts, live, dt: float, seq: int,
                 want_learned: bool = False) -> BrainTick:
     """Everything the game reads from a brain after a tick, computed the way the single fly always computed it.
-    ``want_learned``: the fly smells something, so odour steering will read the learned bias (a process brain
-    computes it here, once, from the same arrays odour steering read; it is 0.0 whenever the fly smells nothing)."""
+    ``want_learned``: odour steering will read the learned bias off this answer (a process brain computes it here, once,
+    from the same arrays odour steering read; otherwise 0.0). In the lockstep it is set on the ticks the fly smells; under
+    the brain lag on every tick, since the answer is read a tick later, when the fly may have begun to smell (game.py)."""
     hz = {k: (float(counts[i].sum()) / max(1, i.size) / dt if i.size else 0.0) for k, i in readouts.items()}
     motor_hz = {k: (float(live[i].sum()) / max(1, i.size) / dt if i.size else 0.0) for k, i in readouts.items()}
     gf = int(live[readouts["GF"]].sum())
@@ -598,8 +603,9 @@ class ProcessBrain(_PipeClient):
         return self._request(self.fly, "advance", dt, rates, col_idx, col_hz, seq, want_learned)
 
     def learned(self, bt: BrainTick) -> float:
-        """The learned odour bias this tick's answer carries (the child read it from the same arrays, after its step;
-        nothing changes them between the step and odour steering)."""
+        """The learned odour bias the answer carries (the child read it from the same arrays, after its step; in the
+        lockstep nothing changes them between the step and odour steering; under the brain lag the answer is the tick
+        before's, one step older, like the rest of the motor path, and every answer carries the bias: game.py)."""
         return bt.learned
 
     def peek(self, dt: float, seq: int, readouts: dict = None) -> BrainTick:
@@ -996,3 +1002,37 @@ def advance_all(brains, inputs) -> list:
                 io.recv_advance()
             except Exception:                     # the failure that stopped the barrier, or a second dead child
                 pass
+
+
+def send_all(brains, inputs) -> list:
+    """The first half of :func:`advance_all`, for the brain lag (game.py, ``Game.brain_lag``): send every brain its
+    tick's input and return the brains sent, in order, for :func:`receive_all`; the game moves the bodies while the
+    brains compute. A brain sent its input holds its pipe until it is received, so the caller must hand the list to
+    :func:`receive_all` whatever happens in between. If a send fails, the brains already sent are received first (their
+    answers and locks let go, their failures swallowed), so nothing is left in flight, and the failure is raised."""
+    sent = []
+    try:
+        for io, args in zip(brains, inputs):
+            io.send_advance(*args)
+            sent.append(io)
+    except BaseException:
+        receive_all(sent, quiet=True)
+        raise
+    return sent
+
+
+def receive_all(sent, quiet: bool = False) -> list:
+    """The second half of :func:`advance_all`: every sent brain's answer, in order. Every brain is received even when
+    one fails (so no lock stays held and no answer stays in a pipe to be taken for the next tick's), then the first
+    failure is raised; ``quiet`` swallows the failures instead and returns the answers that came (for a caller that is
+    already raising its own)."""
+    ticks, first = [], None
+    for io in sent:
+        try:
+            ticks.append(io.recv_advance())
+        except BaseException as e:                # a dead child, a timeout: the rest are still received
+            if first is None:
+                first = e
+    if first is not None and not quiet:
+        raise first
+    return ticks

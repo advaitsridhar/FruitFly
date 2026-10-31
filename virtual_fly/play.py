@@ -108,11 +108,19 @@ def _main(argv=None):
     ap.add_argument("--physics-levers", metavar="LIST", default=None,
                     help="physics body: speed levers to switch on, a comma list of " + ", ".join(
                         f"{k} ({v})" for k, v in __import__("virtual_fly.physics", fromlist=["LEVERS"]).LEVERS.items())
-                    + "; each changes the physics and is measured before it is adopted (docs/SCIENCE.md 13.5); the default is "
-                      "dedupe, which changes no number, and 'none' switches every lever off")
+                    + "; each changes the physics and is measured before it is adopted (docs/SCIENCE.md 13.5); none is on by "
+                      "default (on flygym 2.1 the model already is what the earlier default, dedupe, asked for), and 'none' "
+                      "switches off every lever")
     ap.add_argument("--partner-body", choices=("drawn", "physics"), default=None,
                     help="with --partner: the partner's body; it is the protagonist's (--body): physics puts both flies in one "
                          "MuJoCo world, so --partner-body physics needs --body physics, and --partner-body drawn the drawn body")
+    ap.add_argument("--brain-lag", choices=("auto", "on", "off"), default=None,
+                    help="with --partner: the brains think while the bodies move, so each brain's answer reaches its body one "
+                         "tick (25 ms) later (hand-built; a tethered fly's wing steering lags what it sees by more than 40 ms): "
+                         "auto (default) = on for two physics bodies, whose physics then no longer waits for the brains (about "
+                         "three quarters of real time instead of two thirds, or half with --parts, measured on a laptop), off "
+                         "for drawn flies (they run faster than real time already); on = also for drawn flies; off = each "
+                         "tick's answer moves the body in the same tick (docs/SCIENCE.md 13.6)")
     args = ap.parse_args(argv)
     if args.female and args.fly not in (None, "flywire"):
         ap.error(f"--female means --fly flywire; it cannot go with --fly {args.fly}")
@@ -130,6 +138,13 @@ def _main(argv=None):
                  "--body physics both are NeuroMechFly bodies in one MuJoCo world); leave out --partner-body, or make them agree")
     if partner is not None and args.stride_average:
         ap.error("--stride-average is the single physics fly's: in a pair each fly's senses see its body as it is")
+    if args.brain_lag is not None and partner is None:
+        ap.error("--brain-lag only applies with --partner female, male or banc (one fly's tick has nothing to overlap); "
+                 "add it, or leave out --brain-lag")
+    if args.brain_lag == "on" and args.brain_procs == "off":
+        ap.error("--brain-lag on needs the brains in their own processes: leave --brain-procs at auto (or use on or server), "
+                 "or leave out --brain-lag")
+    brain_lag = args.brain_lag or "auto"
     if args.social is not None:
         try:
             social = SocialConfig.from_list(args.social)
@@ -139,7 +154,7 @@ def _main(argv=None):
         social = SocialConfig.from_list(None)
     if args.physics_levers is not None and args.body != "physics":
         ap.error("--physics-levers only applies to the physics body: add --body physics")
-    levers = None                                # None: the game's default (none for one fly; the pair's adopted set)
+    levers = None                                # None: the game's default (physics.DEFAULT_LEVERS: none since v3.0)
     if args.physics_levers is not None:
         from .physics import parse_levers
         try:
@@ -205,11 +220,14 @@ def _main(argv=None):
         print("Physics levers on (each changes the physics; docs/SCIENCE.md 13.5): " + ", ".join(levers) + ".", file=sys.stderr)
     elif args.body == "physics" and levers is None:
         from .physics import DEFAULT_LEVERS
-        print("Physics levers on, the adopted default (docs/SCIENCE.md 13.5): " + ", ".join(DEFAULT_LEVERS)
-              + " (it changes no number; --physics-levers none switches it off).", file=sys.stderr)
+        if DEFAULT_LEVERS:                       # none since v3.0 (flygym 2.1's model already is what dedupe asked for)
+            print("Physics levers on, the adopted default (docs/SCIENCE.md 13.5): " + ", ".join(DEFAULT_LEVERS)
+                  + " (it changes no number; --physics-levers none switches it off).", file=sys.stderr)
     if args.body == "physics" and partner is not None:
         print("Body: physics for both flies (NeuroMechFly v2 in one MuJoCo world, each with its own brain, able to touch; "
-              "about half real time on a laptop; both drawn at real size).", file=sys.stderr)
+              + ("about three quarters of real time on a laptop with the brain lag" if brain_lag != "off" and args.brain_procs != "off"
+                 else "about two thirds of real time on a laptop, half with --parts") + "; both drawn at real size).",
+              file=sys.stderr)
     elif args.body == "physics":
         print("Body: physics (NeuroMechFly v2 legs in MuJoCo through flygym 2.1; about real time"
               + ("; the senses see the pose averaged over a stride)." if args.stride_average else ")."), file=sys.stderr)
@@ -223,7 +241,7 @@ def _main(argv=None):
                 profile_name=profile, brain_factory=lambda c, **kw: build_brain(c, profile, **{**overrides, **kw}),
                 parts_list=parts_list, brain_kwargs={k: v for k, v in overrides.items() if k != "parts"}, body=args.body,
                 stride_average=args.stride_average, brain_procs=args.brain_procs, partner=partner_spec, social=social,
-                physics_levers=levers)
+                physics_levers=levers, brain_lag=brain_lag)
     del brain                                    # the game owns it now (or, in its own process, has let it go)
     if args.backend == "cupy":
         backend = game.flies[0].io.settings().get("backend")
@@ -237,6 +255,10 @@ def _main(argv=None):
         print(f"Partner: {pconn.dataset} ({pconn.sex}), its brain {where}, as is the first fly's; "
               f"the channels between them: {', '.join(social.names()) or 'none'} (hand-built, see What's real here?).",
               file=sys.stderr)
+        if game.brain_lag:
+            print("Brain lag: on (hand-built timing: the brains think while the bodies move, so each brain's answer reaches its "
+                  "body one tick, 25 ms, later; --brain-lag off moves each body on its brain's answer in the same tick).",
+                  file=sys.stderr)
     if args.no_learning:
         game.learning_on = False
     if args.grow:

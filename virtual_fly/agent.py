@@ -6,8 +6,10 @@ the event log, the scenarios and the recording. Everything that belongs to one f
 simulated fly is another :class:`FlyAgent` in the same dish, sensing the first one only through the world (the
 two-flies work, docs/TWO_FLIES_PLAN.md). With one fly the game runs exactly as before: the code below was moved out
 of ``Game`` unchanged, and the tick order (senses, brain, decoder, body, bookkeeping, world, events, watchdog) is the
-one the single fly always had. The senses, the decoder, the walking urge and the internal state are hand-built and
-labelled as such (:meth:`FlyAgent.whats_real`); only the wiring in between is the connectome's.
+one the single fly always had. With two physics bodies the brain lag (game.py, :meth:`FlyAgent.lagged_tick`) moves the
+decoder and the body onto the tick before's answer, while the brain computes this tick's: a hand-built timing. The
+senses, the decoder, the walking urge and the internal state are hand-built and labelled as such
+(:meth:`FlyAgent.whats_real`); only the wiring in between is the connectome's.
 """
 
 from __future__ import annotations
@@ -205,6 +207,11 @@ class FlyAgent:
         self.done: set[str] = set()                      # the checklist: kept when the player asks for a new fly
         # what one tick leaves for the next steps of the same tick (see Game.tick)
         self.bt: BrainTick = _empty_tick(self.readouts)  # what the brain said this tick
+        # the brain lag (lagged_tick): the brain's epoch goes up whenever it is reset or replaced, and an answer carries
+        # the epoch of the brain that gave it, so a body never moves on an old brain's last answer (-1: none yet)
+        self.brain_epoch = 0
+        self.bt_epoch = -1
+        self._bt_pose = None                             # the body's pose object when self.bt arrived (a reset makes a new one)
         self.m: dict = dict(self.decoder.m)
         self._why: list = []
         self.courting = 0.0
@@ -270,6 +277,7 @@ class FlyAgent:
     def reset_brain(self):
         """Every neuron back at rest (a new fly, a calm, the watchdog); the histories start again, as the monitors do."""
         self.io.reset()
+        self.brain_epoch += 1                            # the last answer was the old brain's (the brain lag acts on none)
         for h in self.histories.values():
             h.clear()
 
@@ -480,6 +488,7 @@ class FlyAgent:
                 h.clear()
             self.zaps = []
             self.runaway_s = 0.0
+        self.brain_epoch += 1                            # a new brain: the brain lag acts on none of the old one's answers
         level, seed = a["level"], a["seed"]
         self.parts_on = bool(a.get("parts", self.parts_on))
         self.genome.update(level=level, seed=seed, growing=None, wiring=a["wiring"], rules=a["rules"], error=None,
@@ -822,6 +831,7 @@ class FlyAgent:
     def advance_done(self, bt: BrainTick) -> BrainTick:
         """Keep this tick's answer (the later steps read it) and, for a process brain, the readout histories."""
         self.bt = bt
+        self.bt_epoch, self._bt_pose = self.brain_epoch, self.body.pose     # whose answer, seen from where (lagged_tick)
         if self.io.parent_histories:
             for k, h in self.histories.items():
                 h.append(round(bt.hz.get(k, 0.0), 2))
@@ -832,6 +842,18 @@ class FlyAgent:
     def advance(self, dt: float, rates: dict, col_idx, col_hz, seq: int = 0) -> BrainTick:
         """Drive the brain with this tick's rates and step it for TICK_MS; the readouts it leaves."""
         return self.advance_done(self.io.advance(*self.advance_input(dt, rates, col_idx, col_hz, seq)))
+
+    def lagged_tick(self) -> BrainTick:
+        """The answer this fly's body moves on under the brain lag (Game.tick; docs/SCIENCE.md 13.6; a hand-built timing):
+        the one its brain gave last tick. A brain that has given none since it was started, reset (a new fly, a calm, the
+        watchdog) or replaced (grow, parts), or whose last answer was to senses at a place the body has since been lifted
+        from (place_fly, a scenario's start: every reset makes a new pose), or whose tick failed, has nothing valid to say,
+        so the body gets an empty answer for that one tick (no command), never an old brain's or an old place's; ``self.bt``
+        becomes that empty answer, as odour steering reads it, until this tick's arrives (advance_done). Every answer is
+        acted on once, so a giant-fibre burst is never counted twice."""
+        if self.bt_epoch != self.brain_epoch or self._bt_pose is not self.body.pose:
+            self.bt = _empty_tick(self.readouts)
+        return self.bt
 
     def act(self, dt: float, bt: BrainTick, others=()):
         """Decode the descending neurons, choose a mode, add the hand-built walking urge and steering, move the body,
@@ -1266,6 +1288,11 @@ class FlyAgent:
                                      "other fly has a brain of its own)")
         hb.append("Two simulated flies reach each other only through the world, never synapse to synapse; each channel below "
                   "is a hand-built encoder with a switch (--social), and what its sensory neurons do next is the wiring.")
+        if getattr(self.game, "brain_lag", False):       # the brain lag (game.py, lagged_tick; docs/SCIENCE.md 13.6)
+            hb.append("Brain lag: each body moves on the answer its brain gave one tick (25 ms) earlier, while the brains compute "
+                      "this tick's, so the brains run alongside the physics instead of before it. Each brain still senses every "
+                      "tick; its descending neurons reach the legs 25 ms later than in the lockstep. A hand-built timing chosen "
+                      "for speed (the physics pair's default); --brain-lag off gives the lockstep.")
         if cfg.seen:
             hb.append("Seen: the other fly is a small dark object to the retina (radius 1.6 mm, height 2.2 mm at the drawn scale, "
                       "as the scripted female was); the detectors that turn it into LC10a/LC11/LC4/LPLC2 rates are the kit's.")

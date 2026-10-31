@@ -1121,3 +1121,202 @@ def test_pair_checks_are_listed_only_for_channels_that_are_on(conn, fconn, monke
     g = pair(conn, fconn)
     assert [i for i, _ in g.flies[0].pair_checks()] == ["pair:seen", "pair:sang", "pair:tapped"]
     assert [i for i, _ in g.flies[1].pair_checks()] == ["pair:heard", "pair:seen_him", "pair:touched"]
+
+
+# ------------------------------------------------------------------ the brain lag (v3.1, docs/SCIENCE.md 13.6)
+def test_the_brain_lag_is_the_physics_pairs_default_and_needs_brain_processes(conn, fconn):
+    lag = Game._brain_lag
+    assert lag("auto", True, True, "procs") and lag("auto", True, True, "server")          # a physics pair: on
+    assert not lag("auto", True, False, "procs") and not lag("auto", False, False, "local")   # a drawn pair, one fly: lockstep
+    assert not lag("auto", True, True, "local")                                             # brains in this process overlap nothing
+    assert lag("on", True, False, "procs") and lag("on", True, False, "server") and not lag("off", True, True, "procs")
+    with pytest.raises(ValueError, match="needs a partner"):
+        lag("on", False, False, "procs")
+    with pytest.raises(ValueError, match="own processes"):
+        lag("on", True, True, "local")
+    with pytest.raises(ValueError, match="brain_lag must be"):
+        pair(conn, fconn, brain_lag="sometimes")
+    with pytest.raises(ValueError, match="own processes"):
+        pair(conn, fconn, brain_lag="on")                                                    # procs off: refused before any brain
+    assert pair(conn, fconn).brain_lag is False and pair(conn, fconn, brain_lag="off").brain_lag is False
+    assert Game(build_brain(conn, "game", seed=0), seed=1).brain_lag is False                 # one fly: never
+    assert not any("Brain lag" in line for line in pair(conn, fconn).whats_real()["hand_built"])
+    g = pair(conn, fconn, procs="auto", brain_lag="on")
+    try:                                                                                     # labelled where it is on (rule 2)
+        assert any("Brain lag" in line and "25 ms" in line for line in g.whats_real()["hand_built"])
+        assert "Brain lag" in g.layout_json.decode()
+    finally:
+        g.close()
+
+
+def _spy_ticks(monkeypatch):
+    """Which BrainTick each fly acted on, and which it received (advance_done), in call order: [(fly id, the BrainTick)]."""
+    from virtual_fly.agent import FlyAgent
+    acted, received = [], []
+    act, done = FlyAgent.act, FlyAgent.advance_done
+
+    def spy_act(self, dt, bt, others=()):
+        acted.append((self.id, bt))
+        return act(self, dt, bt, others)
+
+    def spy_done(self, bt):
+        received.append((self.id, bt))
+        return done(self, bt)
+    monkeypatch.setattr(FlyAgent, "act", spy_act)
+    monkeypatch.setattr(FlyAgent, "advance_done", spy_done)
+    return acted, received
+
+
+def _one_tick(g, acted, received):
+    acted.clear()
+    received.clear()
+    g.tick()
+    return list(acted), list(received)
+
+
+def _same(a, b) -> bool:
+    return len(a) == len(b) and all(i == j and x is y for (i, x), (j, y) in zip(a, b))
+
+
+def _empty(bt) -> bool:
+    return bt.spikes_shown == [] and bt.n_spikes == 0 and bt.gf == 0 and not any(bt.motor_hz.values())
+
+
+@pytest.mark.parametrize("procs", ["auto", "server"])
+def test_with_the_brain_lag_each_body_moves_on_its_brains_answer_from_the_tick_before(conn, fconn, monkeypatch, procs):
+    g = pair(conn, fconn, procs=procs, brain_lag="on")
+    try:
+        assert g.brain_lag is True and g.brain_mode == {"auto": "procs", "server": "server"}[procs]
+        acted, received = _spy_ticks(monkeypatch)
+        a, r = _one_tick(g, acted, received)
+        assert [i for i, _ in a] == [0, 1] and [i for i, _ in r] == [0, 1]
+        assert all(_empty(bt) and bt is not got for (_, bt), (_, got) in zip(a, r))   # the first tick: nothing said yet
+        for _ in range(3):
+            last = r
+            a, r = _one_tick(g, acted, received)
+            assert _same(a, last)                           # the bodies moved on last tick's answers ...
+            assert all(x is not y for (_, x), (_, y) in zip(r, last))   # ... and this tick's arrived after the move
+            assert all(f.bt is bt for f, (_, bt) in zip(g.flies, r)) and all(f.bt_epoch == f.brain_epoch for f in g.flies)
+        assert g.action({"type": "reset"})["ok"]            # a new fly: both brains reset, their last answers the old brains'
+        last = r
+        a, r = _one_tick(g, acted, received)
+        assert all(_empty(bt) and bt is not old for (_, bt), (_, old) in zip(a, last))   # never an old brain's answer
+        last = r
+        a, r = _one_tick(g, acted, received)
+        assert _same(a, last)                               # then the lag again
+        g.flies[1].reset_brain()                            # one fly calmed (or reset by the watchdog)
+        last = r
+        a, r = _one_tick(g, acted, received)
+        assert a[0][1] is last[0][1] and _empty(a[1][1]) and a[1][1] is not last[1][1]   # only that fly waits a tick
+    finally:
+        g.close()
+
+
+def test_with_the_brain_lag_a_zap_moves_the_body_one_tick_later(conn, fconn):
+    """The lag's whole effect on a quiet pair: the brains see the same senses tick for tick (nothing moves until the zap
+    does), so the zap's moonwalk starts exactly one tick later, and two runs with the lag give the same bytes."""
+    first, hashes = {}, {}
+    for lag in ("off", "on", "on"):
+        g = pair(conn, fconn, procs="auto", brain_lag=lag, partner={"autopilot": False})
+        try:
+            for _ in range(3):
+                g.tick()
+            assert g.action({"type": "zap", "spec": "MDN", "hz": 60, "secs": 1.0})["ok"]
+            modes, h = [], hashlib.sha1()
+            for _ in range(20):
+                g.tick()
+                modes.append(g.flies[0].mode)
+                h.update(g.state_json)
+            assert "backward" in modes
+            first.setdefault(lag, modes.index("backward"))
+            hashes.setdefault(lag, set()).add(h.hexdigest())
+        finally:
+            g.close()
+    assert first["on"] == first["off"] + 1
+    assert len(hashes["on"]) == 1 and hashes["on"] != hashes["off"]
+
+
+def test_a_failure_while_the_bodies_move_leaves_no_brain_waiting(conn, fconn, monkeypatch):
+    """Under the lag the brains hold their pipes while the bodies move: an exception there must still receive every
+    answer and let every lock go, so the next tick (and the HTTP threads' requests) find the pipes free."""
+    from virtual_fly.agent import FlyAgent
+    g = pair(conn, fconn, procs="auto", brain_lag="on")
+    try:
+        g.tick()
+        g.tick()
+        act = FlyAgent.act
+
+        def broken(self, dt, bt, others=()):
+            raise RuntimeError("a body that cannot move")
+        monkeypatch.setattr(FlyAgent, "act", broken)
+        t = g.t
+        with pytest.raises(RuntimeError, match="cannot move"):
+            g.tick()
+        for f in g.flies:
+            assert f.io._lock.acquire(blocking=False)       # free: the answer was read
+            f.io._lock.release()
+            assert not f.io._pipe.poll(0.2)                 # and nothing is left in the pipe for the next tick to take
+        monkeypatch.setattr(FlyAgent, "act", act)
+        g.tick()
+        assert g.t == pytest.approx(t + TICK_MS / 1000.0) and g.flies[0].io.settings()["seed"] == 0
+    finally:
+        g.close()
+
+
+def test_under_the_brain_lag_every_answer_carries_the_learned_bias(conn, fconn, monkeypatch):
+    """Odour steering reads the learned bias off the answer it acts on, which under the lag is the tick before's, so every
+    brain is asked for it on every tick (the lockstep asks only on the ticks the fly smells): the first tick of a smell
+    steers on a one-tick-old bias, never on none (the v3.1 review)."""
+    asked = []
+    real = ProcessBrain.send_advance
+
+    def spy(self, dt, rates, col_idx, col_hz, seq, readouts=None, want_learned=False):
+        asked.append(want_learned)
+        return real(self, dt, rates, col_idx, col_hz, seq, readouts, want_learned)
+    monkeypatch.setattr(ProcessBrain, "send_advance", spy)
+    for lag, want in (("on", True), ("off", False)):
+        g = pair(conn, fconn, procs="auto", brain_lag=lag)
+        try:
+            asked.clear()
+            for _ in range(3):
+                g.tick()
+            assert not any(f.smelling for f in g.flies) and asked == [want] * 6, (lag, asked)   # no odour in the dish
+        finally:
+            g.close()
+
+
+def test_send_all_and_receive_all_leave_nothing_in_flight():
+    """brainio.send_all and receive_all, the two halves of advance_all: a failed send receives the brains already sent; a
+    failed receive still receives the rest and raises the first failure; quiet swallows it."""
+    from virtual_fly.brainio import receive_all, send_all
+
+    class Seam:
+        def __init__(self, name, log, fail_send=False, fail_recv=False):
+            self.name, self.log, self.fail_send, self.fail_recv = name, log, fail_send, fail_recv
+
+        def send_advance(self, *args):
+            if self.fail_send:
+                raise RuntimeError(f"{self.name} send")
+            self.log.append(("send", self.name))
+
+        def recv_advance(self):
+            self.log.append(("recv", self.name))
+            if self.fail_recv:
+                raise RuntimeError(f"{self.name} recv")
+            return self.name
+
+    log = []
+    seams = [Seam("a", log), Seam("b", log)]
+    sent = send_all(seams, [(), ()])
+    assert sent == seams and log == [("send", "a"), ("send", "b")]
+    assert receive_all(sent) == ["a", "b"] and log[2:] == [("recv", "a"), ("recv", "b")]
+    log.clear()
+    with pytest.raises(RuntimeError, match="b send"):
+        send_all([Seam("a", log), Seam("b", log, fail_send=True)], [(), ()])
+    assert log == [("send", "a"), ("recv", "a")]                    # the brain already sent was received
+    log.clear()
+    sent = send_all([Seam("a", log, fail_recv=True), Seam("b", log), Seam("c", log, fail_recv=True)], [(), (), ()])
+    with pytest.raises(RuntimeError, match="a recv"):
+        receive_all(sent)
+    assert [e for e in log if e[0] == "recv"] == [("recv", "a"), ("recv", "b"), ("recv", "c")]
+    assert receive_all(sent, quiet=True) == ["b"]
