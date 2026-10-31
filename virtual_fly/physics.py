@@ -18,8 +18,9 @@ stepping does not turn (the drawn body turns in place).
 The body (v3.0, the real-time route of docs/TWO_FLIES_PROGRESS.md): flygym 2.1's NeuroMechFly on MuJoCo 3.9, composed
 here from flygym's parts (its legs-only skeleton: 66 hinges, 42 of them actuated, the four passive tarsal joints per
 leg; position actuators; tarsal adhesion; its flat ground) plus the kit's wall. One fly in the game runs at real time on a
-laptop and two at half (measured: 1.04 and 0.49), where flygym 1.2.1 gave 0.16 and 0.085. What carries over from the body
-the kit validated on 1.2.1
+laptop and two at half (measured: 1.04 and 0.49), where flygym 1.2.1 gave 0.16 and 0.085; since v3.1, with the leg
+controller's update compiled (bit for bit NumPy's, :func:`fast_controller`) and the pair's brain lag (game.py), one fly
+at 1.05-1.09 and two at 0.72-0.74 (docs/SCIENCE.md 13.6). What carries over from the body the kit validated on 1.2.1
 (docs/SCIENCE.md 6.7): the joints' spring and damping (0.05 / 0.06 on the actuated joints, 7.5 / 0.01 on the passive
 tarsi), the servos (kp 45, force +-65) and the adhesion (40), because 2.1's own stiffer joints (10 / 0.5) hold the
 recorded stride back (measured: 10.3 against 14.3 mm/s at full drive); the stride itself, NeuroMechFly's recorded
@@ -49,6 +50,7 @@ from pathlib import Path
 import numpy as np
 
 from .body import FlyBody, Pose
+from .fastbrain import HAVE_NUMBA, njit          # numba, where installed: the leg controller's compiled update
 from .world import ARENA_R, wrap
 
 os.environ.setdefault("MUJOCO_GL", "disable")          # physics only; set MUJOCO_GL=egl/glfw yourself to render
@@ -379,6 +381,7 @@ class FlyRig:
         self._sw1 = st.swing_end + SWING_EXTENSION
         self._six = np.arange(6)
         self._neutral_flat = st.neutral.ravel()
+        self._fast = fast_controller()                  # the compiled update, where it gives NumPy's numbers exactly
 
     def reset_control(self, d) -> None:
         """The oscillators back to their seeded start, the legs at the standing pose, adhesion on."""
@@ -396,21 +399,113 @@ class FlyRig:
 
     def write_controls(self, ctrl) -> None:
         """Called before every physics step: every ``control_steps`` steps the oscillators advance by that much and the 42
-        targets and the 6 adhesion states are written; in between the servos hold their targets."""
+        targets and the 6 adhesion states are written; in between the servos hold their targets. The update runs compiled
+        where numba gives NumPy's numbers exactly (:func:`fast_controller`): the same numbers either way."""
         self._i += 1
         if self._i < self.control_steps:
             return
         self._i = 0
         cpg, st = self.cpg, self.stride
-        cpg.step()
-        ph = cpg.curr_phases % (2 * np.pi)
-        u = ph / (2 * np.pi) * st.n
-        i0 = u.astype(np.int64) % st.n
-        i1 = (i0 + 1) % st.n
-        fr = (u - np.floor(u))[:, None]
-        off = st.offsets[i0, self._six] * (1 - fr) + st.offsets[i1, self._six] * fr
-        ctrl[self.act] = (st.neutral + cpg.curr_magnitudes[:, None] * off).ravel()
-        ctrl[self.adh] = ~((self._sw0 < ph) & (ph < self._sw1))
+        if self._fast:
+            _controller_update(cpg.curr_phases, cpg.curr_magnitudes, cpg.intrinsic_freqs, cpg.intrinsic_amps,
+                               cpg.coupling_weights, cpg.phase_biases, cpg.convergence_coefs, cpg.timestep, st.offsets,
+                               st.neutral, st.n, self._sw0, self._sw1, ctrl, self.act, self.adh)
+        else:
+            _controller_update_numpy(cpg, st, self._six, self._sw0, self._sw1, ctrl, self.act, self.adh)
+
+
+def _controller_update_numpy(cpg, st, six, sw0, sw1, ctrl, act, adh) -> None:
+    """One leg-controller update in NumPy (the code the kit validated): the oscillators' Euler step (CPG.step), then each
+    leg's 7 targets ``neutral + magnitude x step(phase)``, linear between the stride's frames, and its adhesion, off during
+    the swing plus SWING_EXTENSION."""
+    cpg.step()
+    ph = cpg.curr_phases % (2 * np.pi)
+    u = ph / (2 * np.pi) * st.n
+    i0 = u.astype(np.int64) % st.n
+    i1 = (i0 + 1) % st.n
+    fr = (u - np.floor(u))[:, None]
+    off = st.offsets[i0, six] * (1 - fr) + st.offsets[i1, six] * fr
+    ctrl[act] = (st.neutral + cpg.curr_magnitudes[:, None] * off).ravel()
+    ctrl[adh] = ~((sw0 < ph) & (ph < sw1))
+
+
+@njit(cache=True)
+def _controller_update(theta, r, freqs, amps, W, B, conv, ts, offsets, neutral, n, sw0, sw1, ctrl, act, adh):
+    """:func:`_controller_update_numpy` compiled, operation for operation and in the same order: CPG.step's coupling sum
+    runs left to right, as NumPy's sum over a row of six does, and math.sin is the C library's sine, which NumPy's float64
+    sine is on the machines checked; no fused multiply-adds (numba's default). So its numbers are NumPy's bit for bit,
+    and :func:`fast_controller` checks that on random states before it is ever used. About 12x faster per update (6-9 %
+    off the physics pair's step, docs/SCIENCE.md 13.6)."""
+    m = theta.size
+    two_pi = 2 * np.pi
+    dtheta = np.empty(m)
+    for i in range(m):
+        acc = (r[0] * W[i, 0]) * math.sin((theta[0] - theta[i]) - B[i, 0])
+        for j in range(1, m):
+            acc = acc + (r[j] * W[i, j]) * math.sin((theta[j] - theta[i]) - B[i, j])
+        dtheta[i] = two_pi * freqs[i] + acc
+    for i in range(m):
+        dr = conv[i] * (amps[i] - r[i])
+        theta[i] = theta[i] + dtheta[i] * ts
+        r[i] = r[i] + dr * ts
+    nj = neutral.shape[1]
+    for k in range(m):
+        ph = theta[k] % two_pi
+        u = ph / two_pi * n
+        i0 = np.int64(u) % n
+        i1 = (i0 + 1) % n
+        fr = u - math.floor(u)
+        omf = 1 - fr
+        for j in range(nj):
+            ctrl[act[k * nj + j]] = neutral[k, j] + r[k] * (offsets[i0, k, j] * omf + offsets[i1, k, j] * fr)
+        ctrl[adh[k]] = 0.0 if (sw0[k] < ph and ph < sw1[k]) else 1.0
+
+
+_FAST: bool | None = None       # whether the compiled update may run (fast_controller), decided once per process
+
+
+def fast_controller() -> bool:
+    """Whether FlyRig.write_controls runs the compiled update: numba is installed, VF_FAST_CONTROLLER is not 0, and the
+    compiled update gives NumPy's numbers exactly on random oscillator states (:func:`_fast_agrees`, once per process; a
+    machine whose NumPy sine or sum differs from the C library's keeps NumPy's code). The first call compiles it, or
+    loads it from numba's cache, in about a second."""
+    global _FAST
+    if _FAST is None:
+        wanted = HAVE_NUMBA and os.environ.get("VF_FAST_CONTROLLER", "1") != "0"
+        try:
+            _FAST = bool(wanted and _fast_agrees())
+            if wanted and not _FAST:             # a machine whose NumPy sine or sum is not the C library's: said once
+                print("physics: the compiled leg controller differs from NumPy's on this machine; using NumPy's",
+                      file=sys.stderr)
+        except Exception as e:                   # numba could not compile it here: NumPy's code, the same numbers
+            print(f"physics: the compiled leg controller is unavailable ({e!r}); using NumPy's", file=sys.stderr)
+            _FAST = False
+    return _FAST
+
+
+def _fast_agrees(states: int = 200, seed: int = 20261101) -> bool:
+    """The compiled update against NumPy's on ``states`` random oscillator states (phases far past 2 pi too, drives of
+    both signs), every output compared exactly: the phases, the magnitudes and all 48 controls."""
+    st = stride()
+    rng = np.random.default_rng(seed)
+    six, sw0, sw1 = np.arange(6), st.swing_start, st.swing_end + SWING_EXTENSION
+    act, adh = np.arange(42, dtype=np.int64), np.arange(42, 48, dtype=np.int64)
+    for k in range(states):
+        c = CPG(TIMESTEP * 5, np.ones(6) * CPG_FREQ_HZ, np.zeros(6), TRIPOD_COUPLING, TRIPOD_PHASE_BIASES,
+                np.ones(6) * CPG_CONVERGENCE, seed=k)
+        left, right = rng.uniform(-1.2, 1.2, 2)
+        c.intrinsic_amps = np.repeat(np.abs([left, right]), 3)
+        c.intrinsic_freqs = np.repeat([CPG_FREQ_HZ if left > 0 else -CPG_FREQ_HZ, CPG_FREQ_HZ if right > 0 else -CPG_FREQ_HZ], 3)
+        c.curr_phases = rng.uniform(-60.0, 600.0, 6) if k % 2 else rng.uniform(0.0, 2 * np.pi, 6)
+        c.curr_magnitudes = rng.uniform(0.0, 1.3, 6)
+        ph, mag = c.curr_phases.copy(), c.curr_magnitudes.copy()
+        want, got = np.full(48, -1.0), np.full(48, -1.0)
+        _controller_update_numpy(c, st, six, sw0, sw1, want, act, adh)
+        _controller_update(ph, mag, c.intrinsic_freqs, c.intrinsic_amps, c.coupling_weights, c.phase_biases,
+                           c.convergence_coefs, c.timestep, st.offsets, st.neutral, st.n, sw0, sw1, got, act, adh)
+        if not (np.array_equal(ph, c.curr_phases) and np.array_equal(mag, c.curr_magnitudes) and np.array_equal(got, want)):
+            return False
+    return True
 
 
 class Walker:
