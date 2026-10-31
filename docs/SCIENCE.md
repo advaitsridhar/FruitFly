@@ -1455,7 +1455,8 @@ is the way to run the two-fly physics game faster if the lure count is an accept
 0.46, `none` 0.52), against 0.085 on 1.2.1; with `dt2` 0.69 (MuJoCo 55 % of the tick). The rest of the pair's tick is the
 game's own two-fly work (senses, brain traffic, the state), about 16 ms, which no body setting touches: real time for the
 pair would need the brains to compute while the bodies step (a tick of sensorimotor latency, a game-loop change), or a
-faster solver than MuJoCo's single thread.
+faster solver than MuJoCo's single thread. v3.1 did the first, with the leg controller compiled (section 13.6): the pair
+at 0.72-0.74x with the brain lag, its default, and 0.50-0.54x without it; one physics fly at 1.05-1.09x.
 
 ## 7. The genome as a wiring recipe (v2.3)
 
@@ -2422,7 +2423,9 @@ sensory rates and receives a `BrainTick` (readout rates, the giant-fibre spikes,
 draw, the learning summary), then moves every body. All flies sense the same start-of-tick snapshot, all brains
 advance together, all bodies move, so sensing and collisions do not depend on the order of the flies (a test swaps
 them and gets the mirror result). Fly 0 keeps the game's random stream; fly *k* gets `random.Random(f"{seed}:fly{k}")`
-and brain seed `seed + 1000k`. A single fly run through a process brain gives the same golden hashes as inline.
+and brain seed `seed + 1000k`. A single fly run through a process brain gives the same golden hashes as inline. The
+drawn pair keeps this lockstep; with two physics bodies, or with `--brain-lag on`, the bodies move on the answers the
+brains gave the tick before while the brains compute (section 13.6).
 
 Measured twice on the machine of section 9.6 (`tools/bench_two_flies.py --only pair-game`: the male with a FlyWire
 female partner, both brains in their own processes, the four default channels on, game profile, 400 ticks after 20
@@ -2760,7 +2763,8 @@ bodies, each driven by its own brain, able to touch each other (`virtual_fly/phy
 docs/TWO_FLIES_PLAN.md section 8, decisions 20-24). The single physics body of section 6.7 (`physics.py`) is the same
 body: the pair module reuses its drive mapping, its fly, its wall and its leg controller, and puts two flies into one
 flygym world. Without a partner nothing changes; without `--body physics` the two-fly game is section 10's. Built on
-flygym 1.2.1 in v2.12 (a tenth of real time), on flygym 2.1 since v3.0 (section 6.7.1: about real time).
+flygym 1.2.1 in v2.12 (a tenth of real time), on flygym 2.1 since v3.0 (section 6.7.1: about half real time for the
+pair, one fly about real time), with the brain lag since v3.1 (section 13.6: about 0.73x).
 
 ### 13.1 What is physical and what is hand-built
 
@@ -2771,9 +2775,12 @@ and then moved by writing its root free joint so that its thorax lands on the ki
 thorax is the root; on 1.2.1 it sat 0.496 mm ahead of the spawn site); the same write (its joints back to the spawn
 pose, its velocities zeroed, its CPG reset) moves a fly later without rebuilding the model, which costs about a
 second. Each fly has its own six
-coupled oscillators (seeded `seed + 1000 k`, as its brain is); per 0.1 ms step both flies' leg targets and adhesion
-are written, then MuJoCo steps once; per 25 ms tick the game sets both drives first, then the world steps 250 times,
-then each body reads its thorax pose, its own wall contact and its tap.
+coupled oscillators (seeded `seed + 1000 k`, as its brain is); per 0.1 ms step MuJoCo steps once, and every 0.5 ms
+(`CONTROL_MS`, since v3.0) each fly's oscillators advance and its leg targets and adhesion are written; per 25 ms tick
+the game sets both drives first, then the world steps 250 times,
+then each body reads its thorax pose, its own wall contact and its tap. Since v3.1 the drives come by default from the
+answers the brains gave the tick before, and the world steps while the brains compute this tick's (the brain lag,
+section 13.6).
 
 The flies touch through explicit contact pairs, because flygym gives every fly geom `contype 0, conaffinity 0`
 (only pairs collide). Every pair is checked on every step, so the set is a choice (decision 22, hand-built, a
@@ -2785,12 +2792,14 @@ body, with the summed normal force (the model's units, mm and g: 1 is 1 µN, and
 place of the drawn rule (a foreleg tip within 3.4 mm of the other's centre). Each fly's wall bump is its own
 contact with the wall, not the other fly's.
 
-Hand-built, labelled in "What's real here?", on the page's pace line and here: the contact set; the size the other
+Hand-built, labelled in "What's real here?", on the page's pace line (shown when the game runs below 0.6x) and here:
+the contact set; the size the other
 fly's retina gives a physics fly (a dark cylinder 0.7 mm in radius and 1.1 mm tall, from the standing model's
 measured 2.8 x 1.0 x 1.1 mm; a drawn fly is 1.6 and 2.2, section 10.1); that both flies are drawn at real size,
 0.389 of the drawn fly, in the 2-D dish and the 3-D view (decision 23: two physics flies in contact are 1-2 mm
-apart, which the drawn-scale senses would get wrong); and, as for one fly, the decoder's weights, the forward term
-and the drawn proboscis, wings and abdomen. Song and cVA already use real centre-to-centre millimetres (section
+apart, which the drawn-scale senses would get wrong); the brain lag (on by default, section 13.6); and, as for one
+fly, the decoder's weights, the forward term and the drawn proboscis, wings and abdomen. Song and cVA already use real
+centre-to-centre millimetres (section
 10.1). NeuroMechFly's body was built from a micro-CT scan of a female fly: the male wears it too (decision 24;
 flygym has no male body, and scaling this one would be hand-built). Not modelled: the escape jump (a
 giant-fibre burst is the escape command with the legs standing, as in section 6.7); the drawn bodies' capsule
@@ -2834,11 +2843,12 @@ collisions do not apply (the contact is physical).
 
 ### 13.4 Record and replay, and a video (plan 8.7-8.9)
 
-A physics pair ran at about a tenth of real time on flygym 1.2.1 (since v3.0 it runs at about real time, section 6.7), and
-the way to see a run again at any speed is to record it and play it back. The `capture` action (the page's "Save replay" switch; `docs/API.md`) writes a folder
+A physics pair ran at about a tenth of real time on flygym 1.2.1 (about half since v3.0, section 6.7.1, and about 0.73x
+with the brain lag since v3.1, section 13.6), and the way to see a run again at any speed is to record it and play it back. The `capture` action (the page's "Save replay" switch; `docs/API.md`) writes a folder
 `recordings/<YYYYmmdd-HHMMSS>/` in a checkout (ignored by git) or under the data folder in an installed copy, never
 into site-packages: `header.json` (the kit's version and commit, the tick, every fly's sex, dataset, body and brain
-settings, the social channels, the physics settings and the model's name), `frames.jsonl.gz` (one line per tick:
+settings, the social channels, whether the brain lag was on (13.6), the physics settings and the model's name),
+`frames.jsonl.gz` (one line per tick:
 every fly's body, mode, rates, senses and events-per-second, and the dish), and, with physics bodies, `qpos.npy`
 and `t.npy` (MuJoCo's whole state after every tick), the model as compiled, meshes included (`model/two_flies.mjb.gz`,
 MuJoCo's own binary format written by `mj_saveModel` and gzipped: 21 MB for a pair, 46 unzipped, most of it the simplified
@@ -2947,7 +2957,203 @@ flygym 2.1's model already is (each contact pair once, the Newton solver at 100 
 self-collision pairs), so they are accepted and change nothing, and no lever is on by default (`physics.DEFAULT_LEVERS` is
 empty). `noslip0` still sets 0 noslip iterations, `simple` now fits every body part to a capsule (flygym 2.1's
 `ALL_TO_CAPSULES`), and `dt2` is measured in 6.7.1: within tolerance on speeds and turn rates, outside on the lure, so still a
-switch. The owner's own word on the earlier faster preset holds: the body's pace is the engine's, not a lever's.
+switch. The owner's own word on the earlier faster preset holds: the body's pace is the engine's, not a lever's. The levers
+measured again on flygym 2.1 in v3.1, with the brain lag on, are in section 13.6.
+
+### 13.6 The brain lag: the brains compute while the bodies move (v3.1)
+
+v3.0 left the two-fly physics game at half real time and one question for the owner: whether the brains should compute
+while the bodies step, at the price of a tick of sensorimotor latency. The owner's answer of 2026-11-01 was yes. Since
+v3.1 the game does that for two physics bodies by default (`Game.brain_lag`; `fly_game.py --brain-lag auto|on|off`).
+
+**What changes, and what does not.** Per 25 ms tick every fly still senses the start-of-tick dish, and every brain is sent
+those rates (`brainio.send_all`). While the brain processes compute, each fly decodes the answer its brain gave the tick
+before, chooses its mode, sets its drive, and the shared MuJoCo world steps 250 times (`Game._move`). Then this tick's
+answers are received (`brainio.receive_all`). Everything after them reads this tick's rates, spikes and counts as
+before: the bookkeeping, `after_senses`, the watchdog, the recording and the published frame. The mode, the motor
+drives, the decoder's lines of the driver text and the learned bias stay what `act` made of the tick before's answer,
+also in the frame and in the bookkeeping. So the brains still sense every tick, and only the motor path acts 25 ms later
+than in the lockstep of section 10.2: the decoder, the mode, odour steering's learned bias and the drive. A descending neuron's rate in tick t moves the legs in tick t+1. The song a partner hears also comes from the
+singer's decoded song, so it gains the same tick. Under the lag every answer carries the learned odour bias, where the
+lockstep computes it only on the ticks the fly smells, so the first tick of a smell steers on a one-tick-old bias rather
+than none (a review finding, fixed before the measurements were written up; the courtship runs below have no odours).
+
+Some brains have nothing valid to say for a tick:
+- the first tick;
+- the tick after a reset, a calm or the watchdog's reset;
+- the tick after a new brain (grow, parts);
+- the tick after the fly was placed somewhere new (`place_fly`, a scenario's start: each makes a new pose);
+- the tick after a failed tick.
+
+Such a brain gives its body an empty answer, no command for that one tick, never an old brain's or an old place's
+(`FlyAgent.lagged_tick`). Every answer is acted on once, so a giant-fibre burst is never counted twice.
+
+While the brains compute, every brain's pipe is held, so nothing in that stretch may ask a brain anything (tested). An
+HTTP query of a brain waits at most one tick. An exception while the bodies move still receives every answer before it
+is raised (tested: no lock held, nothing left in a pipe, the next tick runs).
+
+**Where it applies.**
+- `auto`, the default: on for two physics bodies whose brains have their own processes (a process each, or the GPU
+  brain server).
+- `on`: also for a drawn pair.
+- `off`: today's lockstep.
+- Refused for one fly, and with `--brain-procs off`, since a brain in the game's process cannot compute while the bodies
+  move.
+
+The drawn pair keeps its lockstep by default: it already runs at 2.1x real time (parts list off, in the session probe
+`../runs/lag/p7-probe-drawn.json`), so the lag would buy it nothing on screen. The single fly is unchanged byte for
+byte: the 9 synthetic and 18 real-data golden hashes are unchanged. The lag is labelled hand-built in four places: "What's
+real here?" (a pair with the lag on), the start-up line, the code (`Game.tick`, `FlyAgent.lagged_tick`) and here.
+
+For scale: in tethered flight a *Drosophila*'s head follows a visual stimulus within 10 ms, while its wing steering lags
+by more than 40 ms (Cellini & Mongeau 2020). The model's own path from the retina to the legs already holds a 25 ms tick
+of integration, 1.8 ms synaptic delays and the decoder's low-pass filters (0.10-0.15 s), so the lag's 25 ms adds a
+modest share. It is a pure delay on the motor path, chosen for speed, not a measured property of the fly.
+
+**The compiled leg controller (v3.1).** In the physics pair, the leg controller's update took 1.4-3.3 ms of each tick:
+its six oscillators' Euler step, then the targets and adhesion of 42 joints and 6 feet, every 0.5 ms for each fly, in
+NumPy. Two measurements bound it:
+- 100 updates a tick at 13.9 µs each, measured alone (`../runs/lag/p7-probe_fastctl.log`), give 1.4 ms;
+- the paired game benches below give 2.2-3.3 ms (the same contacts in each pair of runs; their run-to-run spread is a
+  few per cent).
+
+It now runs compiled with numba where numba is installed (`physics._controller_update`).
+
+The compiled code performs the same operations in the same order as the NumPy code:
+- the coupling sum over the six oscillators runs left to right, as NumPy's `sum(axis=1)` over a row of six does (checked
+  on 1.2 million rows);
+- `math.sin` is the C library's sine, which NumPy's float64 sine is on this machine (checked on 5.7 million inputs);
+- there are no fused multiply-adds.
+
+So its numbers are NumPy's bit for bit. That holds on 20,000 random oscillator states, and over 0.4 s of a physics pair
+with changing drives, which ends on the same qpos (`../runs/lag/p7-probe_exact.log`, `p7-probe_fastctl.log`, nice 10,
+load 0.3). The physics golden hashes are unchanged. Every process checks it again on 200 random states before using it
+(`physics.fast_controller`), so a machine where it would differ keeps NumPy's code and says so. `VF_FAST_CONTROLLER=0`
+switches it off. One update takes 1.2 µs against 13.9. The pair's physics step goes from 0.137-0.141 ms to
+0.124-0.131 ms per 0.1 ms step (both flies), and the single physics fly runs 1.05-1.09x real time against 1.03-1.05x.
+
+**Measured: pace.**
+- Conditions: `tools/bench_two_flies.py --only physics,pair-physics`, the pair with the parts list on and the brains in
+  their own processes (numba). The single physics fly's rows run with the parts list off and its brain in the game's
+  process. 80 ticks after 20.
+- One run at a time at `nice 10`, two rounds, 2026-11-01 (IST; the files' clock says 2026-10-31 UTC), this laptop,
+  1-minute load 0.8-3.0.
+- `VF_FAST_CONTROLLER=0` gives NumPy's controller.
+- Files: `../runs/lag/p7-bench-<lag>[-numpy]-<round>.json`; the session's output in `p7-final-pace.out`.
+
+| two-fly physics game | lockstep (`--brain-lag off`) | the brain lag (the default) |
+|---|---|---|
+| NumPy's controller (v3.0) | 0.50, 0.48x (tick p50 49.0, 50.7 ms) | 0.68, 0.67x (35.7, 35.4 ms) |
+| the compiled controller (v3.1) | 0.54, 0.50x (45.1, 48.5 ms) | **0.72, 0.74x** (33.3, 32.2 ms) |
+
+The physics' share of the tick rises from 65-68 % to 93 % under the lag: what is left is the physics. With the GPU
+brains (`--backend cupy`, the brain server, the same bench): 0.58x in lockstep and 0.74x with the lag
+(`p7-bench-cupy-<lag>.json`): the lag hides the GPU brains' time as it hides the CPU's, and the physics sets the same pace.
+
+Where a tick went (the session probe `../runs/lag/probe_tick.py`, parts on, 120 ticks):
+- **Lockstep, NumPy's controller:** 52.0 ms in all. MuJoCo and the controller 35.4 ms, waiting for the brains 14.4 ms,
+  the senses 0.8, the published frame 0.7, the rest about 0.8.
+- **The brain lag, the compiled controller:** 33.8 ms (0.74x). MuJoCo and the controller 31.4 ms, the wait for the
+  brains 0.2 ms, the senses 0.8, the published frame 0.6 (`p7-probe-lag-final.json`).
+
+The live game. The Ctrl+C recipe of plan 1.7, `../runs/p1-ctrlc.sh`, runs `fly_game.py --partner female --body physics`
+with the parts list off and reads the page's own real-time factor 6 s apart (the recipe's output in
+`../runs/lag/p7-final-pace.out`, the game's own in `p7-ctrlc-pair*.log`):
+- with the brain lag: 0.76 and 0.78;
+- with `--brain-lag off`: 0.64 and 0.67;
+- v3.0: 0.62.
+
+Both runs gave "Bye!", exit code 0 and nothing left in the session. The start-up lines say the lag is on. These runs came
+before the review's learned-bias fix (above); the bench, re-run after it, did not move (0.74x, `p7-bench-on-3.json`).
+
+**Measured: behaviour.** Conditions:
+- `tools/pair_courtship.py --conditions full --body physics --brain-lag off|on`: the male and the FlyWire female, the four
+  default channels, both walking urges on, the parts list off.
+- Seeds 0-4, 90 s each. The two arms ran side by side, since behaviour is in simulated time.
+- Files: `../runs/lag/p7-courtship-physics-<lag>.json`.
+- The same comparison on the drawn pair: `p7-courtship-drawn-<lag>.json`.
+
+The criterion was written before the runs: the lag changes a measure where one arm's mean over the five seeds falls
+outside the other arm's range. "Near" is within 15 mm centre to centre, and "facing" is her bearing within 30 deg of his
+heading.
+
+| physics pair | lockstep: per seed (mean) | the brain lag: per seed (mean) | changed |
+|---|---|---|---|
+| time near her, s of 90 | 20.6, 17.5, 3.0, 3.3, 0 (8.9) | 82.3, 87.7, 4.8, 15.5, 0 (38.1) | yes |
+| facing her when near | 0.65, 0.62, 0.31, 0.31, – (0.47) | 0.02, 0.15, 0.17, 0.26, – (0.15) | yes, each mean outside the other's range |
+| time singing, s | 8.2, 4.5, 3.3, 2.8, 0 (3.8) | 11.7, 57.1, 0, 2.8, 0 (14.3) | yes |
+| share of ticks she hears song | 0.21, 0.16, 0.02, 0.02, 0 (0.08) | 0.84, 0.95, 0.04, 0.16, 0 (0.40) | yes |
+| her speed while he sings, mm/s | 6.3, 5.2, 6.7, 4.9, – (5.8) | 0.5, 1.6, –, 0.5, – (0.9) | yes, each mean outside the other's range |
+| his escape events | 1, 0, 1, 1, 0 (0.6) | 6, 1, 0, 0, 0 (1.4) | yes |
+| contacts per minute | 16, 2, 4, 2, 0 (4.8) | 6.7, 63.3, 0, 2.7, 0 (14.5) | no |
+| her speed while he is quiet; his speed, mm/s | 1.5; 1.8 (means) | 2.3; 3.1 (means) | no |
+| closest approach, mm; his giant-fibre bursts | 6.8; 2.0 (means) | 6.7; 3.4 (means) | no |
+
+The drawn pair on the same five seeds changed in no measure: time near 79 against 80 s, facing 0.22 against 0.20,
+singing 69 against 68 s, contacts 13.2 against 13.2 per minute, her speeds 5.7 and 7.4 against 5.7 and 7.4 mm/s. Its
+lockstep arm also reproduced the Phase 1 rerun of 2026-10-01 value for value.
+
+A focused probe isolated the steering (the session probe `../runs/lag/probe_pursuit.py`, `p7-pursuit.json`). The female
+stood still 13.9 mm ahead and 30 deg to the male's left, her urge off, and the male walked, steering by his own wiring;
+seeds 0-4, 6 s each. The lag did not make him steer worse:
+
+| steering probe | lockstep | the brain lag |
+|---|---|---|
+| first faced her | 0.48-1.8 s (4 of 5) | 0.48-1.95 s (5 of 5) |
+| mean bearing off her while near | 60 deg | 62 deg |
+| spread of his yaw rate | 94 deg/s | 98 deg/s |
+| her bearing changing side | 0.6 per s | 0.14 per s (no overshoot) |
+
+**What this shows.** The lag changes the physics pair's courtship and leaves the drawn pair's alone. With the lag:
+- in two of five seeds the flies stay together for most of the 90 s while he sings (no lockstep seed does);
+- she walks slowly while he sings;
+- a male near her faces her about a third as often as without it.
+
+His approach is not the cause: in the probe he turns to her as fast and as steadily with the lag as without. The runs
+part where the two flies, both moving, keep or lose each other. Five seeds cannot tell a systematic effect of the
+25 ms from closed-loop chaos (the lockstep arm's own seeds range from 0 to 21 s near her).
+
+In both arms the physics male grooms about half the time (0.53 and 0.47 of the ticks). This is a trait of the physics
+pair that these runs surfaced, not studied here. The physics pair's courtship had never been measured before this
+(section 13: body-level checks only), so neither arm is a validated reference. Whether the lag stays the physics pair's
+default is the owner's call (docs/TWO_FLIES_PROGRESS.md, Open issues).
+
+**What the pace shows.** The lag hides the brains' whole time behind the physics. With the compiled controller, the
+two-fly physics game goes from 0.49x real time (v3.0) to about 0.73x: 1.5 times as fast, measured. It cannot reach real time on
+its own, because the physics alone runs at 0.76-0.81x for the pair (MuJoCo's single thread). Real time needs a faster
+world: one of the levers below, or a newer engine (MuJoCo 3.10's thread pool, which flygym 2.1 excludes; plan 8.6).
+
+**The levers on flygym 2.1, with the lag** (the gate of decision 25: `tools/physics_table.py --bodies physics --levers
+LIST --baseline ../runs/p6-table-k5.json`, the single physics fly, seeds 0-4, four runs at a time, `../runs/lag/p7-table-*`;
+seeds 5-9 against a run of the unchanged body on the same seeds, `p7-table-base-s5-9.json`, as information; the pair's pace
+from the bench above with the lever on):
+
+| lever | speed | turn rate | faces the lure, seeds 0-4 / 5-9 (baseline 9 / 9 of 10) | within decision 25 | the pair with the lag |
+|---|---|---|---|---|---|
+| none | – | – | – | – | 0.72-0.74x |
+| `noslip0` | within 10 % | within 10 % | 8 / 8 | **yes** (both seed sets) | 0.88x |
+| `simple` | within 10 % | outside | 9 / – | no (turn) | 0.75x (without the compiled controller) |
+| `noslip0`, `simple` | within 10 % | outside | 10 / – | no (turn) | 0.91x (without the compiled controller) |
+| `dt2` | within 10 % | within 10 % | 7 / 9 | no on seeds 0-4 (the lure), yes on 5-9 | **1.18x** (tick p50 20.8 ms) |
+| `dt2`, `noslip0` | outside | outside | 10 / 9 | no (speed, turn) | 1.31x (without the compiled controller) |
+
+`noslip0` is within tolerance on both seed sets, as it was on flygym 1.2.1. As on 1.2.1 it raises the quiet arena's HS:
+12-127 Hz (mean 46) on seeds 0-4 against the baseline's 6-39 (18), and 11-98 (42) on seeds 5-9 against 8-78 (27). The
+quiet-arena numbers scatter from run to run, as 6.7.1 says. On 1.2.1 the owner kept the noslip levers a switch for that
+reason (13.5). `dt2` is the one setting that takes the two-fly physics game past real time with the lag (1.18x; one
+physics fly 1.45x), at the price measured in 6.7.1: the lure faced on 7 of 10 runs against 9 on seeds 0-4 (9 against 9 on
+seeds 5-9, so on 20 runs 16 against 18). Both stay switches: adopting one changes the physics golden hashes and is the
+owner's call.
+
+**Tried, not adopted: the physics in a thread.** MuJoCo's `mj_step` lets go of the interpreter lock, but the stepping loop
+around it is Python. Next to a busy Python thread, one 250-step tick of the pair took 1,358-1,427 ms instead of 31-32 ms:
+each step waits for the lock behind the other thread (`../runs/lag/probe_gil.py`, two runs: `p7-probes-first.out` and
+`p7-probe_gil.log`). So the overlap is between processes (the brains in theirs, the bodies in the game's), not threads.
+
+Hand-built, still: the lag's length (one tick, 25 ms), and that it applies to the whole motor path at once. Not
+modelled: a delay that differs by pathway (vision, touch, the giant fibre's fast escape), or that changes with
+temperature. Cost: 25 ms more between a brain's senses and its legs in the physics pair; a brain's answers arrive at the
+end of the physics step, so an API query of a brain may wait up to a tick.
 
 ## 14. The female fly with a nerve cord: BANC (v2.13)
 
@@ -3195,6 +3401,8 @@ The starter kit's list, extended. These are the things a neuroscientist would po
   *Nature* 492(7429):433-437. doi:10.1038/nature11614
 * Busch S, Selcho M, Ito K, Tanimoto H (2009). A map of octopaminergic neurons in the *Drosophila*
   brain. *Journal of Comparative Neurology* 513(6):643-667. doi:10.1002/cne.21966
+* Cellini B, Mongeau J-M (2020). Active vision shapes and coordinates flight motor responses in flies. *PNAS*
+  117(37):23085-23095. doi:10.1073/pnas.1920846117
 * Chiang AS, Lin CY, Chuang CC, Chang HM, Hsieh CH, Yeh CW, Shih CT, Wu JJ, et al. (2011).
   Three-dimensional reconstruction of brain-wide wiring networks in *Drosophila* at single-cell
   resolution. *Current Biology* 21(1):1-11. doi:10.1016/j.cub.2010.11.056

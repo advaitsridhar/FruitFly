@@ -14,6 +14,13 @@ endpoint that reads one fly takes `?fly=k` (k = 0, the protagonist, when left ou
 is not the id of a fly in the dish answers `{"ok": false, "error": "no fly k"}` with status 404. The actions that act
 on one fly take an optional `"fly": k` (below). With one fly nothing here changes.
 
+With the brain lag (`--brain-lag`, on by default for two physics bodies; docs/SCIENCE.md 13.6) each body moves on the
+answer its brain gave the tick before, so in a frame `mode`, `motor`, the body's motion, the decoder's part of `driver`
+and `learning.learned_bias` (odour steering's: 0.0 on a tick with no valid answer and on the first tick of a smell)
+follow that answer, while `hz`,
+`spikes`, `sps`, `graded_eps` and the rest of `learning` are this tick's (the brain is 25 ms ahead of the legs). A request that asks a brain something (`/api/neuron`, `/api/learning`, ...) waits while that
+brain computes, at most one tick. The layout's `whats_real.hand_built` says when the lag is on.
+
 ## Static data
 
 ### `GET /api/layout[?fly=k]`
@@ -203,7 +210,7 @@ neuron is annotated as expressing them, and the synthesis/transport genes of its
 | endpoint | answer |
 |---|---|
 | `GET /api/replays` | `{ok, replays: [{id, started, active, ticks, seconds, bytes, flies: [{id, sex, body}], physics, poses}]}`, newest first |
-| `GET /api/replay/<id>/header` | the recording's `header.json` (format, kit, git, tick_ms, seed, profile, flies with their brain settings, social, physics, poses, ticks, seconds, bytes) |
+| `GET /api/replay/<id>/header` | the recording's `header.json` (format, kit, git, tick_ms, seed, profile, flies with their brain settings, social, `brain_lag` (whether the bodies moved on the tick before's answers, docs/SCIENCE.md 13.6), physics, poses, ticks, seconds, bytes) |
 | `GET /api/replay/<id>/frames` | one JSON object per line, one per tick: `{seq, t, flies: [{id, sex, fly, mode, hz, senses, sps, graded_eps, driver}], world: {food, obstacles, odours, wind, stripes, tool, hand, female}}`; sent gzip-encoded (the browser's fetch inflates it) |
 | `GET /api/replay/<id>/poses` | physics runs only: `poses.f32`, float32 little-endian `(ticks, flies, geoms, 7)`: each geom's position (mm) and quaternion (w, x, y, z) in its fly's thorax frame, in the header's `poses.geoms` order (the 3-D view's atlas order); 404 for a drawn run |
 

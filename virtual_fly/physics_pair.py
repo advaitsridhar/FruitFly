@@ -8,6 +8,9 @@ its leg controller (``physics.FlyRig``), and puts several flies into one flygym 
     both drives set --> PairWorld.advance_tick(): per 0.1 ms step each fly's CPG and control writes, then ONE mj_step
     --> each PairPhysicsBody reads its thorax pose, its own wall contact and its tap on the other fly
 
+With the brain lag (game.py, the default here: docs/SCIENCE.md 13.6) the drives are the brains' answers from the tick
+before, and advance_tick runs while both brains compute this tick's (hand-built timing: each body acts 25 ms late).
+
 What is physical here: the bodies, the floor and the wall, the contact between the flies (explicit MuJoCo contact pairs:
 every pair is checked on every step, so the set is kept small, ``CONTACT_SETS``), the tap (a foreleg or the head on the
 other fly's body, with MuJoCo's contact force). What stays hand-built: everything the single physics body lists (the
@@ -19,7 +22,7 @@ NeuroMechFly body was built from a micro-CT scan of a female fly: the male wears
 Frames: MuJoCo's frame IS the kit's frame here (the wall is centred at the origin), unlike the single-fly body, which
 builds its world around the fly's start. Positions in mm, headings counter-clockwise from +x, as everywhere in the kit.
 Since v3.0 the world is flygym 2.1's (MuJoCo 3.9): the pair runs at about half real time, 5.8x faster than before
-(docs/SCIENCE.md 6.7.1).
+(docs/SCIENCE.md 6.7.1); since v3.1 at 0.72-0.74 with the brain lag and the compiled leg controller (13.6).
 """
 from __future__ import annotations
 

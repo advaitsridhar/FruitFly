@@ -11,7 +11,8 @@ Plan: docs/TWO_FLIES_PLAN.md. Newest session notes first.
 | 3 | claude/two-flies-p3-3d-view | #19 | merged (squash, `157ffa9`) | 2026-10-03 |
 | 4 | claude/two-flies-p4-physics-pair | #20 | merged (squash, `5a27efe`) | 2026-10-04 |
 | 5 | claude/two-flies-p5-banc | #21 | merged (squash, `ff16d8c`) | 2026-10-04 |
-| real time | claude/flygym2-realtime | #22 | the flygym 2.1 migration, v3.0.0: built, measured, the physics golden hashes re-saved on the owner's word; marked ready and squash-merged on it | 2026-10-04 |
+| real time | claude/flygym2-realtime | #22 | the flygym 2.1 migration, v3.0.0: built, measured, the physics golden hashes re-saved on the owner's word; marked ready and squash-merged on it (squash, `0f34b58`) | 2026-10-04 |
+| brain lag | claude/pair-brain-lag | #23 | the brain lag and the compiled leg controller, v3.1.0: built, measured, verified; a draft PR, waiting for the owner's word | 2026-11-01 |
 
 ## This machine
 - OS: WSL2 (Ubuntu 24.04.5 LTS) on Windows; the repository lives under the Linux home folder, not `/mnt/c`.
@@ -98,6 +99,9 @@ Plan: docs/TWO_FLIES_PLAN.md. Newest session notes first.
 | 33 (applied) | the default gain | no gain met the rule; **1.0** shipped (the paper's value, no runaway, 2 of 6 classic as FlyWire's female) | the owner: "sure gain 1" | 2026-10-04 |
 | 28 (confirmed) | version 3.0 of the deposit | confirmed | the owner: "version 3.0" | 2026-10-04 |
 | 20 (applied) | the flygym 2.x migration as the route to real-time physics | go: a time-boxed spike after Phase 5's merge, on its own branch; the physics extra moves to flygym 2.1 and MuJoCo 3.9 (Python 3.12 or newer), the body re-validated against the gate; the physics golden hashes will change and are re-saved once the owner has seen the numbers | the owner: "route to real time" | 2026-10-04 |
+| – (the brain lag) | the pair's remaining half: let the brains compute while the bodies step, at a tick (25 ms) of motor lag (v3.0's last open question) | yes: on by default for two physics bodies (`--brain-lag auto`), a switch for any pair whose brains have their own processes (`on`, `off`), refused for one fly and with `--brain-procs off`; a brain with nothing valid to say (the start, a reset, a calm or the watchdog, a new brain, a placed fly, a failed tick) gives its body an empty answer for that tick. It changes plan D4's and 8.5's order for the physics pair only (the bodies move on the tick before's answers); the start-of-tick snapshot and the drawn pair's lockstep stay. Decision 25's gate measures one fly and cannot see it; its effect on the pair's behaviour is measured instead (Measurements) | the owner: "yes" (to "getting it to full speed means letting the brains think while the bodies move, which adds about 25 ms of reaction delay"; Claude then corrected itself: this alone reaches about 0.7x, not full speed) | 2026-11-01 |
+| – (the compiled controller) | the leg controller's update (1.4-3.3 ms of the pair's tick in NumPy), compiled | yes: numba where installed (flygym 2.1 brings it), operation for operation NumPy's, checked bit for bit on 200 random states in every process before use, `VF_FAST_CONTROLLER=0` switches it off; every golden hash unchanged (plan 1.5 rule 4) | Claude, within rule 4; flagged in the PR | 2026-11-01 |
+| – (the version) | which version for the brain lag | 3.1.0 (decision 5, a minor version per merged piece of work; plan 1.8 item 8 asks first, so it is flagged in the PR for the owner to veto) | Claude, flagged | 2026-11-01 |
 
 ## Measurements
 All on 2026-09-27, this machine, `nice -n 10`, one job at a time, machine otherwise idle (load average under 1.5).
@@ -648,6 +652,89 @@ size and whether the brain map was open were not recorded): the 7.7 target of 50
 - Verification: **649 passed, 7 skipped** (the browser tests, run apart in Phase 4), the 18 real golden hashes unchanged
   (`../runs/p5-verify1.log`); draft PR #21 opened (`60cd766` and after).
 
+### v3.1: the brain lag and the compiled controller (2026-11-01; `../runs/lag/`; SCIENCE.md 13.6)
+- **Where the pair's tick went, before** (the session probe `../runs/lag/probe_tick.py`, which wraps the methods `Game.tick`
+  calls with timers; the physics pair with the parts list off, on, and with the GPU brains; 120 ticks after 20;
+  `p7-probe-*.json`):
+
+  | configuration | tick | rtf | MuJoCo and the controller | waiting for the brains |
+  |---|---|---|---|---|
+  | parts on | 52.0 ms | 0.48 | 35.4 ms | 14.4 ms |
+  | parts off | 44.6 ms | 0.56 | 33.8 ms | 8.5 ms |
+  | GPU brains | 47.7 ms | 0.52 | 35.0 ms | 10.5 ms |
+
+  The senses, the frame and the rest come to about 2.3 ms. The drawn pair took 11.7 ms, 2.13x.
+- **Threads, tried, not adopted** (`../runs/lag/probe_gil.py`; two runs, `p7-probes-first.out` and `p7-probe_gil.log`):
+  MuJoCo's `mj_step` lets go of the interpreter lock, but a Python stepping loop next to a busy Python thread took
+  1,358-1,427 ms per tick instead of 31-32. The overlap is between processes.
+  The same probe stepped `mj_step` alone, 26.8-27.0 ms per 250 steps, against 30.8-31.9 ms with the controller. That
+  difference overstates the controller, because without it the leg targets stand still. Two measurements bound what
+  compiling it saves: 1.4 ms per tick from the per-update time, 2.2-3.3 ms from the paired bench rows.
+- **The compiled controller**, before it was written and again on the finished code (`../runs/lag/probe_exact.py`,
+  `probe_fastctl.py`; the second runs saved in `p7-probe_exact.log` and `p7-probe_fastctl.log`, nice 10, load 0.3):
+  - NumPy's float64 sine equals the C library's on 5.7 million inputs.
+  - `.sum(axis=1)` over a row of six runs left to right (1.2 million rows).
+  - numba's sine and remainder equal NumPy's (2 million each); numba was built without SVML.
+  - The compiled update gives NumPy's numbers on 20,000 random states, and 0.4 s of a pair ends on the same qpos.
+  - One update: 1.2 µs against 13.9 µs.
+- **Pace** (`tools/bench_two_flies.py --only physics,pair-physics`, parts on, 80 ticks after 20, one run at a time at
+  `nice 10`, two rounds, load 0.8-3.0; `VF_FAST_CONTROLLER=0` for NumPy's controller; `p7-bench-*.json`):
+
+  | two-fly physics game | lockstep | with the brain lag |
+  |---|---|---|
+  | NumPy's controller | 0.50, 0.48x | 0.68, 0.67x |
+  | compiled controller | 0.54, 0.50x | **0.72, 0.74x** |
+
+  - One physics fly: 1.03-1.05x with NumPy's controller, 1.05-1.09x compiled.
+  - The GPU brains (cupy): 0.58x in lockstep, 0.74x with the lag.
+  - With the lag and the compiled controller: `noslip0` 0.88x, `dt2` 1.18x (the single fly 1.22 and 1.45x).
+  - The probe with the lag: 33.8 ms per tick, the brain wait 0.2 ms.
+  - After the review's fix (every answer under the lag carries the learned bias), the same pair-physics row again: 0.74x
+    (`p7-bench-on-3.json`).
+- **The levers' gate on flygym 2.1** (`tools/physics_table.py --bodies physics --jobs 4`, against `../runs/p6-table-k5.json`
+  for seeds 0-4 and against `p7-table-base-s5-9.json` for seeds 5-9; `p7-table-*.json`):
+
+  | lever | seeds 0-4 | seeds 5-9 |
+  |---|---|---|
+  | `noslip0` | in tolerance (lure 8 of 10) | in tolerance (8 of 10) |
+  | `simple` | outside (turn) | – |
+  | `noslip0`, `simple` | outside (turn) | – |
+  | `dt2` | outside (lure 7 of 10, `p6-table-dt2.json`) | in tolerance (9 of 10) |
+  | `dt2`, `noslip0` | outside (speed, turn) | outside (speed, turn) |
+
+  The unchanged body faces the lure on 9 of 10 runs on both seed sets. `noslip0` raises the quiet arena's HS: mean 46 against
+  18 Hz on seeds 0-4, 42 against 27 on seeds 5-9.
+- **The live game** (`../runs/p1-ctrlc.sh`, `--partner female --body physics`, parts off): with the lag, rtf 0.76 and 0.78;
+  with `--brain-lag off`, 0.64 and 0.67. Both gave "Bye!", exit 0, and nothing left in the session (the recipe's output
+  in `../runs/lag/p7-final-pace.out`, the game's own in `p7-ctrlc-pair*.log`; the start-up line's pace text was reworded
+  after these runs).
+- **Behaviour** (`tools/pair_courtship.py --conditions full --body physics --brain-lag off|on`, seeds 0-4, 90 s each, parts off;
+  `../runs/lag/p7-courtship-physics-*.json`). The criterion was written before the runs: the lag is said to change a measure
+  only where one arm's mean over the five seeds falls outside the other arm's range.
+  - **The physics pair changed** in six measures (SCIENCE.md 13.6 has the table):
+    - facing her when near: 0.47 against 0.15, each mean outside the other's range;
+    - her speed while he sings: 5.8 against 0.9 mm/s, each mean outside the other's range;
+    - time near her: 8.9 against 38.1 s, two lag seeds together 82-88 s of the 90;
+    - time singing: 3.8 against 14.3 s;
+    - her hearing share: 0.08 against 0.40;
+    - his escapes: 0.6 against 1.4.
+
+    Contacts, speeds, the closest approach and the bursts did not change.
+  - **The drawn pair changed in none.** Its lockstep arm reproduced `../runs/p1-pair-courtship-rerun.json` value for value
+    (`p7-courtship-drawn-<lag>.json`).
+  - **A steering probe** (`../runs/lag/probe_pursuit.py`, `p7-pursuit.json`; the female still 13.9 mm ahead at 30 deg, seeds
+    0-4, 6 s) showed no worse steering with the lag. He first faced her at 0.48-1.95 s against 0.48-1.8 s, his mean bearing
+    while near was 62 against 60 deg, his yaw-rate spread 98 against 94 deg/s, and her bearing changed side 0.14 against 0.6
+    times per second. So the courtship runs part in how the two moving flies keep or lose each other, and five seeds cannot
+    tell the lag's effect from chaos.
+  - In both arms the physics male grooms about half the time (0.53, 0.47), a physics-pair trait these runs surfaced.
+- **Verified** on the finished tree, after the review's fixes (`../runs/lag/p7-verify3.log`):
+  - `../runs/p1-verify.sh`: **661 passed, 7 skipped**; the golden compare 18 unchanged; the synthetic golden test passes.
+  - The browser tests, run apart (`VF_BROWSER_TESTS=1`, Chromium's two libraries on `LD_LIBRARY_PATH`): 24 passed with
+    `tests/test_web.py`.
+  - The classic experiments equal the Phase 0 baselines: the male 40/40 readouts, 16/16 (Smell of vinegar fragile); with
+    the parts list 40/40, 16/16; the female 15/26 readouts, 3/13 experiments, 3 n/a.
+
 ### Golden hashes (plan 4.9)
 - Synthetic (`tests/golden_single_fly.json`): nine configurations, made with Python 3.12.3, NumPy 2.5.3, numba 0.67.0; a second
   run reproduces every hash (the test passes in normal mode; a determinism test runs one configuration twice).
@@ -657,15 +744,21 @@ size and whether the brain map was open were not recorded): the 7.7 target of 50
   `--compare ../runs/p0-golden-real.json` at the end of every phase.
 
 ## Open issues
-- **The two-fly physics game is at half real time, not real time** (v3.0, 2026-10-04): one physics fly runs at 1.04x, the pair at
-  0.49 (0.62 in the live game of the Ctrl+C check; 0.69 with `--physics-levers dt2`). MuJoCo and the controller are 69 % of the
-  pair's tick; the other 16 ms are the game's own two-fly work (senses, brain traffic, the state), which no body setting touches.
-  The route left: let the brains compute while the bodies step (one tick of sensorimotor latency, a game-loop change; real flies
-  have 20-40 ms visuomotor latencies), which is the owner's call, or a multithreaded solver MuJoCo's Python bindings do not expose.
-- **The physics golden hashes changed** (by nature: a new engine and body): `tests/test_golden_single_fly.py[physics_body]` fails
-  locally and `tools/golden_hashes.py --compare ../runs/p0-golden-real.json` reports the two physics configurations changed (16
-  unchanged). Re-save on the owner's word: `VF_UPDATE_GOLDEN=1 .venv/bin/python -m pytest -q tests/test_golden_single_fly.py` and
-  `.venv/bin/python tools/golden_hashes.py --save ../runs/p0-golden-real.json` (the synthetic file is committed, the real one not).
+- **The two-fly physics game is at about 0.73x real time, not real time** (v3.1, 2026-11-01): with the brain lag and the compiled
+  controller the pair runs at 0.72-0.74x (the live game 0.76-0.78), against 0.49 in v3.0; one physics fly at 1.05-1.09x. The
+  physics is now 93 % of the pair's tick, and MuJoCo with the controller runs at 0.76-0.81x for two flies, so no game-loop change
+  is left. The routes left are the owner's:
+  - `--physics-levers noslip0`: within decision 25's tolerance on seeds 0-4 and 5-9, 0.88x, but it raises the quiet arena's HS
+    as on 1.2.1, where the owner kept the noslip levers switches.
+  - `--physics-levers dt2`: 1.18x, past real time, but the lure is faced on 7 of 10 against 9 on seeds 0-4 (9 of 10 against 9 on
+    seeds 5-9).
+  - A newer engine: MuJoCo 3.10's thread pool, which flygym 2.1 excludes.
+- **The brain lag changes the physics pair's courtship** (v3.1, 2026-11-01; Measurements, "v3.1"; SCIENCE.md 13.6). By the
+  criterion written before the runs it changes six of eleven measures, among them facing her when near (0.47 to 0.15). The
+  drawn pair is unchanged. A steering probe shows no worse steering, and five seeds cannot separate the lag from chaos.
+  The owner decides whether it stays the physics pair's default (`--brain-lag off` keeps the v3.0 behaviour at 0.50-0.54x)
+  or whether more seeds should be run first. The physics male grooms about half the time in both arms, a physics-pair
+  trait not studied yet.
 - **The turn rate at full steering is 129 deg/s, not 165** (SCIENCE.md 6.7.1): the 1.2.1 body itself gives 136 under MuJoCo 3.9 with
   the kit's controller, so this is the engine's solver, not the port; speeds match to 1 %. The lure is faced on 9 of 10 runs (10 of 10
   before; the published 1.2.1 table said 8 of 10).
@@ -678,12 +771,77 @@ size and whether the brain map was open were not recorded): the 7.7 target of 50
   would be a new hand-built controller: ask the owner before adding one.
 
 ## Next step
-The owner reads the draft PR of the migration (the numbers in SCIENCE.md 6.7.1 and below) and says: whether v3.0.0 is the version
-they meant ("version 3.0"), whether the physics golden hashes may be re-saved (Open issues), whether `dt2` stays a switch, and
-whether the pair's remaining half (the game loop's own work) is worth a latency-for-speed change of the game loop. Then: re-save
-the hashes, mark the PR ready, merge on their word. The MuJoCo Warp question (plan 8.10) stays closed as before.
+The owner reads draft PR #23 (the brain lag, v3.1.0; SCIENCE.md 13.6) and says: merge or not, whether 3.1.0 is the version,
+and whether the lag stays the physics pair's default now that it is measured to change the pair's courtship (Open issues).
+Separately, and only on their word, whether the physics pair should reach real time through a lever (Open issues: `noslip0` in
+tolerance at 0.88x, `dt2` past real time but outside on the lure); either would change the physics golden hashes, re-saved on
+that word. Then: mark the PR ready, squash-merge on their word.
 
 ## Session notes
+### 2026-11-01 (the brain lag and the compiled leg controller: v3.1.0, a draft PR)
+- **Started from** `origin/main` at `0f34b58` (v3.0.0), fetched into the WSL clone (`~/flywork/FruitFly`); branch
+  `claude/pair-brain-lag`. Claude Code ran on Windows this time and reached the repository through `\\wsl.localhost`. Edits made
+  that way drop the executable bit, so `tools/bench_two_flies.py` and `tools/pair_courtship.py` were `chmod 755`'d again before
+  the commit.
+- **The owner's word:** asked what the next step was, the owner was told it was the game-loop change and said "yes". Claude had
+  said this would reach full speed. Claude corrected that from the v3.0 bench before building anything: MuJoCo alone runs the
+  pair at 0.72x, so overlapping the brains reaches about 0.7x, not real time. The work went ahead on the same word, since every
+  route to real time needs the overlap.
+- **Written:**
+  - The brain lag: `Game(brain_lag=)`, `Game._brain_lag`, `Game._move`, the lagged branch of `Game.tick`;
+    `FlyAgent.lagged_tick` with the brain epochs (`brain_epoch`, `bt_epoch`, the answer's pose); `brainio.send_all` and
+    `receive_all`; `fly_game.py --brain-lag` with its refusals; `brain_lag` in the replay header, in "What's real here?" and on
+    the start-up line.
+  - The compiled leg controller: `physics._controller_update` and `fast_controller`, with `_fast_agrees`.
+  - `--brain-lag` for `tools/bench_two_flies.py`; `--body` and `--brain-lag` for `tools/pair_courtship.py`.
+  - The macOS `ru_maxrss` unit in the bench (claude[bot]'s review comment on PR #16, posted after its merge).
+  - The stale lever texts in `play.py`: the help, a comment, and the start-up line that printed an empty "adopted default"
+    since v3.0.
+  - The README placeholder `GAME_SPEED_README_PLACEHOLDER` (from Phase 2), replaced with SCIENCE.md 11.3's measured two-fly
+    GPU game speed.
+  - The docs: SCIENCE.md 6.7.1, 10.2, 13, 13.1, 13.4, the new 13.6 and the references (Cellini & Mongeau 2020); README;
+    API.md; ARCHITECTURE.md; the docstrings; the page's pair pace text; this log.
+  - Tests: the setting and its refusals, the order (each body moves on the tick before's answer, an empty one after a start, a
+    reset or a calm, per fly), a zap moving the body exactly one tick later, determinism, a failure while the bodies move
+    leaving no lock held and nothing in a pipe, `send_all` / `receive_all`, the physics pair's pipes held during the physics,
+    the compiled controller against NumPy, the CLI refusals, and the header key.
+- **Decided alone, flagged:**
+  - A brain with nothing valid to say gives its body an empty answer for one tick. This replaced a first design that ran that
+    tick in lockstep, because the lockstep acted twice on the same answer and could count a giant-fibre burst twice.
+  - A placed fly, or a failed tick, counts as nothing valid (the concurrency review's finding).
+  - The drawn pair keeps the lockstep by default.
+  - The compiled controller.
+  - The version, 3.1.0.
+  - The levers stay switches. `noslip0` and `dt2` are put to the owner with their numbers.
+- **Reviewed before writing:** four read-only readers mapped the concurrency, the tests, the docs and the pair's behaviour
+  checks (a workflow).
+  - No brain request can run between the send and the receive.
+  - The HTTP threads wait at most a tick.
+  - Every invalidating event goes through `reset_brain`, `_swap_brain` or a new pose.
+- **Reviewed after writing:** four independent reviewers (concurrency, semantics, the controller, the docs' claims), and
+  one skeptic per finding told to refute it (a workflow). Confirmed and fixed:
+  - Under the lag the learned odour bias was dropped, not delayed, on the first tick of every smell, because
+    `want_learned` followed the sending tick's smelling. Under the lag every answer now carries the bias (tested); the
+    pace is unchanged.
+  - API.md now says that `learning.learned_bias` follows the lagged answer.
+  - The "hand-built" label was missing from the three places SCIENCE.md 13.6 names (the start-up line, `Game.tick`,
+    `lagged_tick`); it is there now.
+  - The NumPy controller's cost was overstated (5 ms, from a probe whose legs stood still). It is now given as 1.4-3.3 ms,
+    from the per-update time and the paired benches.
+  - The bench rows record which controller ran, and a check that fails says so. The bit-for-bit test no longer depends on
+    `VF_FAST_CONTROLLER` in the environment.
+  - The probes' and the live game's outputs are saved (`p7-probe_*.log`, `p7-final-pace.out`).
+  - The lockstep pair's pace is quoted with its parts list ("two thirds; half with the parts list on").
+  - The two tools' stale "dedupe" defaults are fixed.
+  - The single-fly rows' conditions are stated.
+  - ARCHITECTURE, `Game.tick` and SCIENCE say that the frame's mode, motor and learned bias are the tick before's.
+  - SCIENCE 13.1's "per 0.1 ms step" controller now reads "every 0.5 ms".
+  - The page's pace note appears only below 0.6x, which the lag now beats, so the README no longer claims the page says so.
+- **Measured / Verified:** see Measurements, "v3.1".
+- Helper scripts in `../runs/lag/`: `probe_tick.py`, `probe_gil.py`, `probe_exact.py`, `probe_fastctl.py`,
+  `probe_pursuit.py`, the `run_*.sh` drivers, and their outputs (`p7-*`). Chromium's two missing libraries for the browser
+  tests were unpacked again, without root, into `../runs/lag/chromium-libs/` (as in Phase 3).
+
 ### 2026-10-04 (the flygym 2.1 migration: v3.0.0, a draft PR)
 - The owner: "Resave mark ready merge" → the physics golden hashes re-saved (the committed synthetic file: one line, `physics_body`;
   the real-data file `../runs/p0-golden-real.json`: 18 hashes, `--compare` 18 unchanged; the golden test passes), PR #22 marked
