@@ -134,11 +134,15 @@ needs_numba = pytest.mark.skipif(not physics.HAVE_NUMBA, reason="numba is not in
 
 @needs_numba
 def test_the_compiled_leg_controller_gives_numpys_numbers_bit_for_bit(monkeypatch):
-    """Without flygym too: the update is plain arithmetic on the stride file, so CI checks it on every Python it runs."""
-    assert physics._fast_agrees(states=3000, seed=7)                     # phases, magnitudes and all 48 controls, exactly
+    """Without flygym too: the update is plain arithmetic on the stride file, so CI checks it on every Python it runs. The
+    compiled update is used exactly where it gives NumPy's numbers: a machine whose NumPy sine is not the C library's (an
+    AVX-512 build's own sine, say) keeps NumPy's code, and there this test can only check that it does."""
     monkeypatch.delenv("VF_FAST_CONTROLLER", raising=False)              # the default decision, whatever the environment
     monkeypatch.setattr(physics, "_FAST", None)
-    assert physics.fast_controller() is True                             # so the game uses it (decided once per process)
+    agrees = physics._fast_agrees(states=3000, seed=7)                   # phases, magnitudes and all 48 controls, exactly
+    assert physics.fast_controller() is agrees                           # the 200-state check decides as 3,000 states do
+    if not agrees:
+        pytest.skip("on this machine the compiled controller's numbers differ from NumPy's: NumPy's code runs, as designed")
 
 
 def test_the_compiled_controller_can_be_switched_off(monkeypatch, capsys):
